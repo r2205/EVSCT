@@ -9,7 +9,7 @@ import com.evsct.app.data.entity.Trip
 @Database(
     entities = [ChargingSession::class, Trip::class],
     version = 1,
-    exportSchema = true,
+    exportSchema = false,
 )
 @TypeConverters(Converters::class)
 abstract class EvsctDatabase : RoomDatabase() {

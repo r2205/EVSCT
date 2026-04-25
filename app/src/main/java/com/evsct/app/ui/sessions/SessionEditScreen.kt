@@ -15,15 +15,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -292,7 +292,6 @@ private fun PricingModel.displayName(): String = when (this) {
     PricingModel.HYBRID -> "Hybrid"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BrandPicker(
     value: String,
@@ -300,33 +299,41 @@ private fun BrandPicker(
     onValue: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val options = (history + Brands.SUGGESTED).distinct()
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-    ) {
+    val options = remember(history) { (history + Brands.SUGGESTED).distinct() }
+    val filtered = options.filter { value.isBlank() || it.contains(value, ignoreCase = true) }.take(12)
+
+    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = value,
-            onValueChange = onValue,
-            modifier = Modifier.fillMaxWidth().menuAnchor(),
+            onValueChange = {
+                onValue(it)
+                expanded = true
+            },
             label = { Text("Station brand") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-        )
-        androidx.compose.material3.ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            options.filter { it.contains(value, ignoreCase = true) || value.isBlank() }
-                .take(12)
-                .forEach { opt ->
-                    DropdownMenuItem(
-                        text = { Text(opt) },
-                        onClick = {
-                            onValue(opt)
-                            expanded = false
-                        },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            trailingIcon = {
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Toggle brand suggestions",
                     )
                 }
+            },
+        )
+        DropdownMenu(
+            expanded = expanded && filtered.isNotEmpty(),
+            onDismissRequest = { expanded = false },
+        ) {
+            filtered.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(opt) },
+                    onClick = {
+                        onValue(opt)
+                        expanded = false
+                    },
+                )
+            }
         }
     }
 }

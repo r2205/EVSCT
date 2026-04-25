@@ -41,69 +41,86 @@ class XlsxImporter @Inject constructor(
             requireNotNull(input) { "Could not open file" }
             XSSFWorkbook(input).use { wb ->
                 val sheet = wb.getSheetAt(0)
-                var headerRow: Row? = null
+                var headerSeen = false
                 for (r in 0..sheet.lastRowNum) {
-                    val row = sheet.getRow(r) ?: continue
-                    val first = row.getCell(0)?.toStringSafe()?.trim()?.uppercase()
-                    if (first == "DATE") {
-                        headerRow = row
-                        continue
+                    val row = sheet.getRow(r)
+                    val parsed = parseRow(row, headerSeen)
+                    when (parsed) {
+                        ParsedRow.Header -> headerSeen = true
+                        ParsedRow.Skip -> Unit
+                        ParsedRow.Invalid -> if (headerSeen) skipped++
+                        is ParsedRow.Session -> {
+                            sessions += parsed.session
+                            imported++
+                        }
                     }
-                    if (headerRow == null) continue
-
-                    val date = row.getCell(0)
-                    val time = row.getCell(1)
-                    val sessionStart = combineDateTime(date, time) ?: run {
-                        skipped++; continue
-                    }
-
-                    val mileage = row.getCell(2)?.numericOrNull()
-                    val energy = row.getCell(3)?.numericOrNull()
-                    val cost = row.getCell(4)?.numericOrNull()
-                    val durationCell = row.getCell(5)
-                    val durationSeconds = durationToSeconds(durationCell)
-                    val postedKwh = row.getCell(7)?.numericOrNull()
-                    val postedTimeRate = row.getCell(9)?.numericOrNull()
-                    val postedMaxKw = row.getCell(12)?.numericOrNull()
-                    val battStart = row.getCell(13)?.numericOrNull()?.let { (it * 100).toInt() }
-                    val battEnd = row.getCell(14)?.numericOrNull()?.let { (it * 100).toInt() }
-                    val brand = row.getCell(15)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
-                    val cityProv = row.getCell(16)?.toStringSafe()?.trim()
-                    val (city, prov) = splitCityProv(cityProv)
-                    val address = row.getCell(17)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
-                    val station = row.getCell(18)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
-                    val notes = row.getCell(19)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
-
-                    val pricing = inferPricing(cost, energy, postedKwh, postedTimeRate)
-                    val type = inferType(postedMaxKw, energy, durationSeconds)
-
-                    sessions += ChargingSession(
-                        sessionStart = sessionStart,
-                        durationSeconds = durationSeconds,
-                        odometerKm = mileage,
-                        energyKwh = energy,
-                        totalCost = cost,
-                        currency = "CAD",
-                        postedEnergyPricePerKwh = postedKwh,
-                        postedTimeRatePerMin = postedTimeRate,
-                        postedMaxPowerKw = postedMaxKw,
-                        batteryStartPct = battStart,
-                        batteryEndPct = battEnd,
-                        chargingType = type,
-                        pricingModel = pricing,
-                        brand = brand,
-                        locationCity = city,
-                        locationProvince = prov,
-                        locationAddress = address,
-                        stationName = station,
-                        notes = notes,
-                    )
-                    imported++
                 }
             }
         }
         if (sessions.isNotEmpty()) sessionRepository.insertAll(sessions)
         XlsxImportResult(imported, skipped, errors)
+    }
+
+    private sealed interface ParsedRow {
+        data object Header : ParsedRow
+        data object Skip : ParsedRow
+        data object Invalid : ParsedRow
+        data class Session(val session: ChargingSession) : ParsedRow
+    }
+
+    private fun parseRow(row: Row?, headerSeen: Boolean): ParsedRow {
+        if (row == null) return ParsedRow.Skip
+        val first = row.getCell(0)?.toStringSafe()?.trim()?.uppercase()
+        if (first == "DATE") return ParsedRow.Header
+        if (!headerSeen) return ParsedRow.Skip
+
+        val date = row.getCell(0)
+        val time = row.getCell(1)
+        val sessionStart = combineDateTime(date, time) ?: return ParsedRow.Invalid
+
+        val mileage = row.getCell(2)?.numericOrNull()
+        val energy = row.getCell(3)?.numericOrNull()
+        val cost = row.getCell(4)?.numericOrNull()
+        val durationCell = row.getCell(5)
+        val durationSeconds = durationToSeconds(durationCell)
+        val postedKwh = row.getCell(7)?.numericOrNull()
+        val postedTimeRate = row.getCell(9)?.numericOrNull()
+        val postedMaxKw = row.getCell(12)?.numericOrNull()
+        val battStart = row.getCell(13)?.numericOrNull()?.let { (it * 100).toInt() }
+        val battEnd = row.getCell(14)?.numericOrNull()?.let { (it * 100).toInt() }
+        val brand = row.getCell(15)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
+        val cityProv = row.getCell(16)?.toStringSafe()?.trim()
+        val (city, prov) = splitCityProv(cityProv)
+        val address = row.getCell(17)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
+        val station = row.getCell(18)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
+        val notes = row.getCell(19)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
+
+        val pricing = inferPricing(cost, energy, postedKwh, postedTimeRate)
+        val type = inferType(postedMaxKw, energy, durationSeconds)
+
+        return ParsedRow.Session(
+            ChargingSession(
+                sessionStart = sessionStart,
+                durationSeconds = durationSeconds,
+                odometerKm = mileage,
+                energyKwh = energy,
+                totalCost = cost,
+                currency = "CAD",
+                postedEnergyPricePerKwh = postedKwh,
+                postedTimeRatePerMin = postedTimeRate,
+                postedMaxPowerKw = postedMaxKw,
+                batteryStartPct = battStart,
+                batteryEndPct = battEnd,
+                chargingType = type,
+                pricingModel = pricing,
+                brand = brand,
+                locationCity = city,
+                locationProvince = prov,
+                locationAddress = address,
+                stationName = station,
+                notes = notes,
+            )
+        )
     }
 
     private fun Cell.numericOrNull(): Double? {
