@@ -32,6 +32,7 @@ object CsvFormat {
         "station_name",
         "stall_name",
         "trip_name",
+        "vehicle_name",
         "notes",
     )
 
@@ -39,7 +40,7 @@ object CsvFormat {
     private val isoTime = SimpleDateFormat("HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getDefault() }
     private val isoDateTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getDefault() }
 
-    fun toRow(session: ChargingSession, tripName: String?): List<String?> {
+    fun toRow(session: ChargingSession, tripName: String?, vehicleName: String?): List<String?> {
         val date = Date(session.sessionStart)
         return listOf(
             session.id.toString(),
@@ -64,12 +65,19 @@ object CsvFormat {
             session.stationName,
             session.stallName,
             tripName,
+            vehicleName,
             session.notes,
         )
     }
 
-    /** Returns the parsed session and an optional trip name (caller resolves trip ID). */
-    fun fromRow(headers: List<String>, row: List<String?>): Pair<ChargingSession, String?>? {
+    data class ParsedCsvRow(
+        val session: ChargingSession,
+        val tripName: String?,
+        val vehicleName: String?,
+    )
+
+    /** Returns the parsed session plus the trip and vehicle names (caller resolves IDs). */
+    fun fromRow(headers: List<String>, row: List<String?>): ParsedCsvRow? {
         fun get(name: String): String? {
             val idx = headers.indexOf(name)
             if (idx < 0 || idx >= row.size) return null
@@ -106,6 +114,6 @@ object CsvFormat {
             stallName = get("stall_name"),
             notes = get("notes"),
         )
-        return session to get("trip_name")
+        return ParsedCsvRow(session, get("trip_name"), get("vehicle_name"))
     }
 }

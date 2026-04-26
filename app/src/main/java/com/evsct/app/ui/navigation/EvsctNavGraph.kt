@@ -11,6 +11,8 @@ import com.evsct.app.ui.sessions.SessionListScreen
 import com.evsct.app.ui.settings.SettingsScreen
 import com.evsct.app.ui.trips.TripDetailScreen
 import com.evsct.app.ui.trips.TripListScreen
+import com.evsct.app.ui.vehicles.VehicleEditScreen
+import com.evsct.app.ui.vehicles.VehicleListScreen
 
 object Routes {
     const val SESSION_LIST = "sessions"
@@ -19,12 +21,18 @@ object Routes {
     const val TRIP_LIST = "trips"
     const val TRIP_DETAIL = "trips/detail"
     const val TRIP_DETAIL_ARG = "tripId"
+    const val VEHICLE_LIST = "vehicles"
+    const val VEHICLE_EDIT = "vehicles/edit"
+    const val VEHICLE_EDIT_ARG = "vehicleId"
     const val SETTINGS = "settings"
 
     fun sessionEdit(id: Long? = null): String =
         if (id == null) "$SESSION_EDIT?$SESSION_EDIT_ARG=-1" else "$SESSION_EDIT?$SESSION_EDIT_ARG=$id"
 
     fun tripDetail(id: Long): String = "$TRIP_DETAIL/$id"
+
+    fun vehicleEdit(id: Long? = null): String =
+        if (id == null) "$VEHICLE_EDIT?$VEHICLE_EDIT_ARG=-1" else "$VEHICLE_EDIT?$VEHICLE_EDIT_ARG=$id"
 }
 
 @Composable
@@ -64,8 +72,29 @@ fun EvsctNavGraph(navController: NavHostController) {
                 onEditSession = { id -> navController.navigate(Routes.sessionEdit(id)) },
             )
         }
+        composable(Routes.VEHICLE_LIST) {
+            VehicleListScreen(
+                onBack = { navController.popBackStack() },
+                onAddVehicle = { navController.navigate(Routes.vehicleEdit()) },
+                onEditVehicle = { id -> navController.navigate(Routes.vehicleEdit(id)) },
+            )
+        }
+        composable(
+            route = "${Routes.VEHICLE_EDIT}?${Routes.VEHICLE_EDIT_ARG}={${Routes.VEHICLE_EDIT_ARG}}",
+            arguments = listOf(
+                navArgument(Routes.VEHICLE_EDIT_ARG) {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            ),
+        ) {
+            VehicleEditScreen(onDone = { navController.popBackStack() })
+        }
         composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenVehicles = { navController.navigate(Routes.VEHICLE_LIST) },
+            )
         }
     }
 }

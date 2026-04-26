@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.evsct.app.data.db.ChargingSessionDao
 import com.evsct.app.data.db.EvsctDatabase
 import com.evsct.app.data.db.TripDao
+import com.evsct.app.data.db.VehicleDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -20,6 +21,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): EvsctDatabase =
         Room.databaseBuilder(context, EvsctDatabase::class.java, EvsctDatabase.NAME)
+            .addMigrations(EvsctDatabase.MIGRATION_1_2)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -28,4 +30,7 @@ object AppModule {
 
     @Provides
     fun provideTripDao(db: EvsctDatabase): TripDao = db.tripDao()
+
+    @Provides
+    fun provideVehicleDao(db: EvsctDatabase): VehicleDao = db.vehicleDao()
 }

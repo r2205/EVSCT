@@ -3,8 +3,10 @@ package com.evsct.app.data.csv
 import android.content.Context
 import android.net.Uri
 import com.evsct.app.data.entity.Trip
+import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
+import com.evsct.app.data.repository.VehicleRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -87,15 +89,25 @@ class CsvIo @Inject constructor(
     @ApplicationContext private val context: Context,
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
+    private val vehicleRepository: VehicleRepository,
 ) {
     suspend fun export(uri: Uri): Int = withContext(Dispatchers.IO) {
         val sessions = sessionRepository.observeAll().first()
         val trips = tripRepository.observeAll().first().associate { it.id to it.name }
+        val vehicles = vehicleRepository.observeAll().first().associate { it.id to it.name }
         context.contentResolver.openOutputStream(uri, "wt")?.use { os ->
             OutputStreamWriter(os, Charsets.UTF_8).use { w ->
                 w.appendLine(Csv.encodeRow(CsvFormat.HEADERS))
                 for (s in sessions) {
-                    w.appendLine(Csv.encodeRow(CsvFormat.toRow(s, trips[s.tripId])))
+                    w.appendLine(
+                        Csv.encodeRow(
+                            CsvFormat.toRow(
+                                session = s,
+                                tripName = trips[s.tripId],
+                                vehicleName = vehicles[s.vehicleId],
+                            )
+                        )
+                    )
                 }
             }
         }
@@ -115,6 +127,8 @@ class CsvIo @Inject constructor(
 
         val tripIdByName = mutableMapOf<String, Long>()
         tripRepository.observeAll().first().forEach { tripIdByName[it.name] = it.id }
+        val vehicleIdByName = mutableMapOf<String, Long>()
+        vehicleRepository.observeAll().first().forEach { vehicleIdByName[it.name] = it.id }
 
         var imported = 0
         var skipped = 0
@@ -123,11 +137,13 @@ class CsvIo @Inject constructor(
             if (row.all { it.isBlank() }) continue
             val parsed = CsvFormat.fromRow(headers, row)
             if (parsed == null) { skipped++; continue }
-            val (session, tripName) = parsed
-            val tripId = tripName?.takeIf { it.isNotBlank() }?.let { name ->
+            val tripId = parsed.tripName?.takeIf { it.isNotBlank() }?.let { name ->
                 tripIdByName.getOrPut(name) { tripRepository.upsert(Trip(name = name)) }
             }
-            sessionRepository.upsert(session.copy(tripId = tripId))
+            val vehicleId = parsed.vehicleName?.takeIf { it.isNotBlank() }?.let { name ->
+                vehicleIdByName.getOrPut(name) { vehicleRepository.upsert(Vehicle(name = name)) }
+            }
+            sessionRepository.upsert(parsed.session.copy(tripId = tripId, vehicleId = vehicleId))
             imported++
         }
         CsvImportResult(imported, skipped)

@@ -18,8 +18,14 @@ enum class PricingModel { PER_KWH, PER_MINUTE, FLAT, FREE, HYBRID }
             childColumns = ["tripId"],
             onDelete = ForeignKey.SET_NULL,
         ),
+        ForeignKey(
+            entity = Vehicle::class,
+            parentColumns = ["id"],
+            childColumns = ["vehicleId"],
+            onDelete = ForeignKey.SET_NULL,
+        ),
     ],
-    indices = [Index("tripId"), Index("sessionStart")],
+    indices = [Index("tripId"), Index("vehicleId"), Index("sessionStart")],
 )
 data class ChargingSession(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -55,6 +61,7 @@ data class ChargingSession(
     val stallName: String? = null,
 
     val tripId: Long? = null,
+    val vehicleId: Long? = null,
     val notes: String? = null,
 
     val createdAt: Long = System.currentTimeMillis(),

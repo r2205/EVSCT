@@ -7,8 +7,10 @@ import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.Trip
+import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
+import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -41,10 +43,12 @@ data class SessionEditUi(
     val stationName: String = "",
     val stallName: String = "",
     val tripId: Long? = null,
+    val vehicleId: Long? = null,
     val notes: String = "",
     val brandSuggestions: List<String> = emptyList(),
     val citySuggestions: List<String> = emptyList(),
     val trips: List<Trip> = emptyList(),
+    val vehicles: List<Vehicle> = emptyList(),
 )
 
 @HiltViewModel
@@ -52,6 +56,7 @@ class SessionEditViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
+    private val vehicleRepository: VehicleRepository,
 ) : ViewModel() {
 
     private val sessionId: Long = savedStateHandle.get<Long>(Routes.SESSION_EDIT_ARG) ?: -1L
@@ -74,11 +79,15 @@ class SessionEditViewModel @Inject constructor(
             tripRepository.observeAll().collect { _state.update { s -> s.copy(trips = it) } }
         }
         viewModelScope.launch {
+            vehicleRepository.observeAll().collect { _state.update { s -> s.copy(vehicles = it) } }
+        }
+        viewModelScope.launch {
             if (sessionId > 0) {
                 val s = sessionRepository.findById(sessionId)
                 if (s != null) loadFrom(s) else _state.update { it.copy(isLoading = false, isNew = true) }
             } else {
-                _state.update { it.copy(isLoading = false, isNew = true) }
+                val defaultVehicle = vehicleRepository.findDefault()
+                _state.update { it.copy(isLoading = false, isNew = true, vehicleId = defaultVehicle?.id) }
             }
         }
     }
@@ -108,6 +117,7 @@ class SessionEditViewModel @Inject constructor(
                 stationName = s.stationName.orEmpty(),
                 stallName = s.stallName.orEmpty(),
                 tripId = s.tripId,
+                vehicleId = s.vehicleId,
                 notes = s.notes.orEmpty(),
             )
         }
@@ -140,6 +150,7 @@ class SessionEditViewModel @Inject constructor(
                 stationName = s.stationName.takeIf { it.isNotBlank() },
                 stallName = s.stallName.takeIf { it.isNotBlank() },
                 tripId = s.tripId,
+                vehicleId = s.vehicleId,
                 notes = s.notes.takeIf { it.isNotBlank() },
             )
             sessionRepository.upsert(session)

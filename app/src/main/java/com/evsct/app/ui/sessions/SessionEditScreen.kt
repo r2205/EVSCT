@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -168,6 +169,9 @@ fun SessionEditScreen(
             TextFieldPlain("Station / stall name", state.stationName) { v ->
                 viewModel.update { it.copy(stationName = v) }
             }
+
+            SectionLabel("Vehicle")
+            VehiclePicker(state) { id -> viewModel.update { it.copy(vehicleId = id) } }
 
             SectionLabel("Trip")
             TripPicker(state) { id -> viewModel.update { it.copy(tripId = id) } }
@@ -357,6 +361,41 @@ private fun TripPicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
                 onClick = { onPick(trip.id) },
                 label = { Text(trip.name) },
                 colors = if (state.tripId == trip.id) AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                ) else AssistChipDefaults.assistChipColors(),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VehiclePicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
+    if (state.vehicles.isEmpty()) {
+        Text(
+            "Add a vehicle from Settings to tag sessions by car.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        return
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AssistChip(
+            onClick = { onPick(null) },
+            label = { Text("Unassigned") },
+            colors = if (state.vehicleId == null) AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            ) else AssistChipDefaults.assistChipColors(),
+        )
+        state.vehicles.forEach { vehicle ->
+            AssistChip(
+                onClick = { onPick(vehicle.id) },
+                label = { Text(vehicle.name) },
+                colors = if (state.vehicleId == vehicle.id) AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                 ) else AssistChipDefaults.assistChipColors(),
             )

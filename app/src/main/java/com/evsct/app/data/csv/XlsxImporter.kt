@@ -6,6 +6,7 @@ import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.repository.SessionRepository
+import com.evsct.app.data.repository.VehicleRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Calendar
 import java.util.Date
@@ -29,6 +30,7 @@ data class XlsxImportResult(val imported: Int, val skipped: Int, val errors: Lis
 class XlsxImporter @Inject constructor(
     @ApplicationContext private val context: Context,
     private val sessionRepository: SessionRepository,
+    private val vehicleRepository: VehicleRepository,
 ) {
 
     suspend fun import(uri: Uri): XlsxImportResult = withContext(Dispatchers.IO) {
@@ -36,6 +38,7 @@ class XlsxImporter @Inject constructor(
         var imported = 0
         var skipped = 0
         val sessions = mutableListOf<ChargingSession>()
+        val defaultVehicleId = vehicleRepository.findDefault()?.id
 
         context.contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Could not open file" }
@@ -50,7 +53,7 @@ class XlsxImporter @Inject constructor(
                         ParsedRow.Skip -> Unit
                         ParsedRow.Invalid -> if (headerSeen) skipped++
                         is ParsedRow.Session -> {
-                            sessions += parsed.session
+                            sessions += parsed.session.copy(vehicleId = defaultVehicleId)
                             imported++
                         }
                     }
