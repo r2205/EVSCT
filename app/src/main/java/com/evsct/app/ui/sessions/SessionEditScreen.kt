@@ -2,6 +2,7 @@ package com.evsct.app.ui.sessions
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,8 +10,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -18,12 +21,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -38,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -296,48 +299,189 @@ private fun PricingModel.displayName(): String = when (this) {
     PricingModel.HYBRID -> "Hybrid"
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BrandPicker(
     value: String,
     history: List<String>,
     onValue: (String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val options = remember(history) { (history + Brands.SUGGESTED).distinct() }
-    val filtered = options.filter { value.isBlank() || it.contains(value, ignoreCase = true) }.take(12)
+    var showSheet by remember { mutableStateOf(false) }
 
-    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxWidth()) {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showSheet = true },
+    ) {
         OutlinedTextField(
             value = value,
-            onValueChange = {
-                onValue(it)
-                expanded = true
-            },
+            onValueChange = {},
             label = { Text("Station brand") },
+            placeholder = { Text("Tap to choose…") },
+            readOnly = true,
+            enabled = false,
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             trailingIcon = {
-                IconButton(onClick = { expanded = !expanded }) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Toggle brand suggestions",
-                    )
-                }
-            },
-        )
-        DropdownMenu(
-            expanded = expanded && filtered.isNotEmpty(),
-            onDismissRequest = { expanded = false },
-        ) {
-            filtered.forEach { opt ->
-                DropdownMenuItem(
-                    text = { Text(opt) },
-                    onClick = {
-                        onValue(opt)
-                        expanded = false
-                    },
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Open brand picker",
                 )
+            },
+            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                disabledBorderColor = MaterialTheme.colorScheme.outline,
+                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                disabledPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
+    }
+
+    if (showSheet) {
+        BrandPickerSheet(
+            current = value,
+            history = history,
+            onPick = { picked ->
+                onValue(picked)
+                showSheet = false
+            },
+            onDismiss = { showSheet = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BrandPickerSheet(
+    current: String,
+    history: List<String>,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var query by remember { mutableStateOf("") }
+
+    val historySet = remember(history) { history.toSet() }
+    val curatedNotInHistory = remember(historySet) { Brands.SUGGESTED.filter { it !in historySet } }
+
+    val q = query.trim()
+    val filteredHistory = if (q.isEmpty()) history else history.filter { it.contains(q, ignoreCase = true) }
+    val filteredCurated = if (q.isEmpty()) curatedNotInHistory
+        else curatedNotInHistory.filter { it.contains(q, ignoreCase = true) }
+    val showCustomOption = q.isNotEmpty() &&
+        history.none { it.equals(q, ignoreCase = true) } &&
+        Brands.SUGGESTED.none { it.equals(q, ignoreCase = true) }
+
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "Choose a brand",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Search or type a custom brand…") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                        }
+                    }
+                } else null,
+            )
+
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp),
+            ) {
+                if (showCustomOption) {
+                    item {
+                        BrandRow(
+                            label = "Use \"$q\"",
+                            isCurrent = false,
+                            onClick = { onPick(q) },
+                        )
+                    }
+                    item { androidx.compose.material3.HorizontalDivider() }
+                }
+                if (filteredHistory.isNotEmpty()) {
+                    item { BrandSectionHeader("Used in your sessions") }
+                    items(filteredHistory) { brand ->
+                        BrandRow(
+                            label = brand,
+                            isCurrent = brand.equals(current, ignoreCase = true),
+                            onClick = { onPick(brand) },
+                        )
+                    }
+                }
+                if (filteredCurated.isNotEmpty()) {
+                    item { BrandSectionHeader("All networks") }
+                    items(filteredCurated) { brand ->
+                        BrandRow(
+                            label = brand,
+                            isCurrent = brand.equals(current, ignoreCase = true),
+                            onClick = { onPick(brand) },
+                        )
+                    }
+                }
+                if (filteredHistory.isEmpty() && filteredCurated.isEmpty() && !showCustomOption) {
+                    item {
+                        Text(
+                            "No matches.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(24.dp),
+                        )
+                    }
+                }
+                item { Spacer(Modifier.height(24.dp)) }
             }
+        }
+    }
+}
+
+@Composable
+private fun BrandSectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun BrandRow(label: String, isCurrent: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        if (isCurrent) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Currently selected",
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

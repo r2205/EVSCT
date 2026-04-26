@@ -21,7 +21,14 @@ interface ChargingSessionDao {
     @Query("SELECT * FROM charging_sessions WHERE id = :id")
     suspend fun findById(id: Long): ChargingSession?
 
-    @Query("SELECT DISTINCT brand FROM charging_sessions WHERE brand IS NOT NULL AND brand != '' ORDER BY brand COLLATE NOCASE")
+    @Query(
+        """
+        SELECT TRIM(brand) FROM charging_sessions
+        WHERE brand IS NOT NULL AND TRIM(brand) != ''
+        GROUP BY TRIM(brand) COLLATE NOCASE
+        ORDER BY COUNT(*) DESC, TRIM(brand) COLLATE NOCASE
+        """
+    )
     fun observeBrands(): Flow<List<String>>
 
     @Query("SELECT DISTINCT locationCity || ', ' || locationProvince AS city FROM charging_sessions WHERE locationCity IS NOT NULL ORDER BY city COLLATE NOCASE")
