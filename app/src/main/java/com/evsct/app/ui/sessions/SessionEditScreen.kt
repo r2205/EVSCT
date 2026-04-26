@@ -23,9 +23,12 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -33,10 +36,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,8 +70,29 @@ fun SessionEditScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val locationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        if (granted.values.any { it }) {
+            viewModel.autofillFromLocation()
+        } else {
+            viewModel.update {
+                it.copy(locationMessage = "Location permission denied.")
+            }
+        }
+    }
+
+    LaunchedEffect(state.locationMessage) {
+        state.locationMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearLocationMessage()
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -167,6 +194,17 @@ fun SessionEditScreen(
             BrandPicker(state.brand, state.brandSuggestions) { v ->
                 viewModel.update { it.copy(brand = v) }
             }
+            LocationAutofillCard(
+                isLoading = state.isFetchingLocation,
+                onRequestAutofill = {
+                    locationPermissionLauncher.launch(
+                        arrayOf(
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                        )
+                    )
+                },
+            )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextFieldPlain(
                     label = "City",
@@ -175,7 +213,7 @@ fun SessionEditScreen(
                     onValue = { v -> viewModel.update { it.copy(city = v) } },
                 )
                 TextFieldPlain(
-                    label = "Prov",
+                    label = "Prov / State",
                     value = state.province,
                     modifier = Modifier.weight(1f),
                     onValue = { v -> viewModel.update { it.copy(province = v) } },
@@ -563,6 +601,52 @@ private fun VehiclePicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
 }
 
 @Composable
+private fun LocationAutofillCard(
+    isLoading: Boolean,
+    onRequestAutofill: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !isLoading, onClick = onRequestAutofill),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.padding(end = 12.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 12.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (isLoading) "Finding location…" else "Use current location",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+                Text(
+                    "Auto-fills city, prov/state, and address from GPS.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DurationField(
     value: String,
     onValue: (String) -> Unit,
@@ -576,6 +660,21 @@ private fun DurationField(
         placeholder = { Text("e.g. 25  ·  1:25  ·  0:11:00") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         singleLine = true,
+        trailingIcon = {
+            // The phone keypad has no `:`, so offer it as an inline button while
+            // the field is focused. Tapping appends a colon to the current text.
+            if (hasFocus) {
+                IconButton(onClick = {
+                    if (!value.endsWith(":")) onValue("$value:")
+                }) {
+                    Text(
+                        ":",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    )
+                }
+            }
+        },
         modifier = Modifier
             .fillMaxWidth()
             .onFocusChanged { focusState ->

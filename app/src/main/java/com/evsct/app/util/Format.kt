@@ -24,6 +24,10 @@ object Format {
     fun rate(value: Double?, suffix: String): String =
         value?.let { "${rate.format(it)} $suffix" } ?: "—"
 
+    /** Format a money rate like "$0.385/kWh" or "$0.12/km". */
+    fun moneyRate(value: Double?, perUnit: String): String =
+        value?.let { "${'$'}${rate.format(it)}/$perUnit" } ?: "—"
+
     fun km(value: Double?): String = value?.let { "${km.format(it)} km" } ?: "—"
     fun kwh(value: Double?): String = value?.let { "${kwh.format(it)} kWh" } ?: "—"
     fun kw(value: Double?): String = value?.let { "${km.format(it)} kW" } ?: "—"

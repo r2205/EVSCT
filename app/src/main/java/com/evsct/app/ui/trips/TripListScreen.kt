@@ -109,7 +109,7 @@ fun TripListScreen(
                                 )
                                 if (tws.totalDistanceKm > 0) {
                                     Text(
-                                        "${Format.km(tws.totalDistanceKm)} · ${Format.rate(tws.costPerKm, "$/km")}",
+                                        "${Format.km(tws.totalDistanceKm)} · ${Format.moneyRate(tws.costPerKm, "km")}",
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }

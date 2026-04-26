@@ -79,8 +79,8 @@ fun TripDetailScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
                                 Stat("Distance", Format.km(st.totalDistanceKm))
-                                Stat("Cost / km", Format.rate(st.costPerKm, "$/km"))
-                                Stat("Cost / kWh", Format.rate(st.costPerKwh, "$/kWh"))
+                                Stat("Cost / km", Format.moneyRate(st.costPerKm, "km"))
+                                Stat("Cost / kWh", Format.moneyRate(st.costPerKwh, "kWh"))
                             }
                         }
                     }

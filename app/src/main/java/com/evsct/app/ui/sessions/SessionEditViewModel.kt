@@ -12,7 +12,9 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.AutofillResult
 import com.evsct.app.util.DurationFormat
+import com.evsct.app.util.LocationAutofill
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +52,8 @@ data class SessionEditUi(
     val citySuggestions: List<String> = emptyList(),
     val trips: List<Trip> = emptyList(),
     val vehicles: List<Vehicle> = emptyList(),
+    val isFetchingLocation: Boolean = false,
+    val locationMessage: String? = null,
 )
 
 @HiltViewModel
@@ -58,6 +62,7 @@ class SessionEditViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
     private val vehicleRepository: VehicleRepository,
+    private val locationAutofill: LocationAutofill,
 ) : ViewModel() {
 
     private val sessionId: Long = savedStateHandle.get<Long>(Routes.SESSION_EDIT_ARG) ?: -1L
@@ -158,6 +163,37 @@ class SessionEditViewModel @Inject constructor(
             onSaved()
         }
     }
+
+    fun autofillFromLocation() {
+        viewModelScope.launch {
+            _state.update { it.copy(isFetchingLocation = true, locationMessage = null) }
+            val message = when (val result = locationAutofill.fetch()) {
+                AutofillResult.MissingPermission ->
+                    "Location permission is required to use this feature."
+                AutofillResult.NoProvider ->
+                    "No location provider is enabled. Turn on location services and try again."
+                AutofillResult.NoLocation ->
+                    "Could not get a location fix. Try moving outside or wait a moment."
+                AutofillResult.GeocoderUnavailable ->
+                    "Address lookup isn't available on this device."
+                is AutofillResult.Failure -> "Lookup failed: ${result.reason}"
+                is AutofillResult.Success -> {
+                    val data = result.data
+                    _state.update {
+                        it.copy(
+                            city = data.city ?: it.city,
+                            province = data.provinceState ?: it.province,
+                            address = data.address ?: it.address,
+                        )
+                    }
+                    "Filled from current location."
+                }
+            }
+            _state.update { it.copy(isFetchingLocation = false, locationMessage = message) }
+        }
+    }
+
+    fun clearLocationMessage() = _state.update { it.copy(locationMessage = null) }
 
     fun deleteAndExit(onDeleted: () -> Unit) {
         viewModelScope.launch {

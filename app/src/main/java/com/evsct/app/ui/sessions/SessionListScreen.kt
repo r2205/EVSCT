@@ -261,7 +261,7 @@ private fun SessionRow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (effPrice != null) {
                             Text(
-                                "Eff. ${Format.rate(effPrice, "/kWh")}",
+                                "Eff. ${Format.moneyRate(effPrice, "kWh")}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
