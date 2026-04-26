@@ -49,6 +49,7 @@ fun TripListScreen(
 ) {
     val trips by viewModel.trips.collectAsStateWithLifecycle()
     var dialogOpen by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<com.evsct.app.data.entity.Trip?>(null) }
 
     Scaffold(
         topBar = {
@@ -114,7 +115,7 @@ fun TripListScreen(
                                     )
                                 }
                             }
-                            IconButton(onClick = { viewModel.delete(tws.trip) }) {
+                            IconButton(onClick = { pendingDelete = tws.trip }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete trip")
                             }
                         }
@@ -122,6 +123,28 @@ fun TripListScreen(
                 }
             }
         }
+    }
+
+    pendingDelete?.let { trip ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            title = { Text("Delete \"${trip.name}\"?") },
+            text = {
+                Text(
+                    "Sessions tagged with this trip will keep their data but be untagged."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.delete(trip)
+                    pendingDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            },
+        )
     }
 
     if (dialogOpen) {

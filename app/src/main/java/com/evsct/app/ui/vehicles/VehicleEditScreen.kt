@@ -38,6 +38,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +66,8 @@ fun VehicleEditScreen(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let { viewModel.pickImage(it) } }
 
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -85,7 +90,7 @@ fun VehicleEditScreen(
                 },
                 actions = {
                     if (!state.isNew) {
-                        IconButton(onClick = { viewModel.deleteAndExit(onDone) }) {
+                        IconButton(onClick = { showDeleteConfirm = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     }
@@ -201,6 +206,35 @@ fun VehicleEditScreen(
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (showDeleteConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            title = { Text("Delete this vehicle?") },
+            text = {
+                Text(
+                    "Sessions previously tagged with this vehicle will keep their data " +
+                        "but be unassigned."
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        viewModel.deleteAndExit(onDone)
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
