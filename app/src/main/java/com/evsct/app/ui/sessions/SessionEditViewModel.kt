@@ -12,6 +12,7 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.DurationFormat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,7 +99,7 @@ class SessionEditViewModel @Inject constructor(
                 isLoading = false,
                 isNew = false,
                 sessionStart = s.sessionStart,
-                durationText = s.durationSeconds?.let { secs -> formatDurationInput(secs) } ?: "",
+                durationText = DurationFormat.pretty(s.durationSeconds),
                 odometerText = s.odometerKm?.toString().orEmpty(),
                 energyText = s.energyKwh?.toString().orEmpty(),
                 costText = s.totalCost?.toString().orEmpty(),
@@ -131,7 +132,7 @@ class SessionEditViewModel @Inject constructor(
             val session = ChargingSession(
                 id = if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
-                durationSeconds = parseDurationInput(s.durationText),
+                durationSeconds = DurationFormat.parse(s.durationText),
                 odometerKm = s.odometerText.toDoubleOrNull(),
                 energyKwh = s.energyText.toDoubleOrNull(),
                 totalCost = s.costText.toDoubleOrNull(),
@@ -167,24 +168,4 @@ class SessionEditViewModel @Inject constructor(
         }
     }
 
-    private fun formatDurationInput(secs: Long): String {
-        val h = secs / 3600
-        val m = (secs % 3600) / 60
-        val s = secs % 60
-        return "%d:%02d:%02d".format(h, m, s)
-    }
-
-    private fun parseDurationInput(text: String): Long? {
-        val t = text.trim()
-        if (t.isEmpty()) return null
-        return runCatching {
-            val parts = t.split(":").map { it.toInt() }
-            when (parts.size) {
-                3 -> parts[0] * 3600L + parts[1] * 60L + parts[2]
-                2 -> parts[0] * 60L + parts[1]
-                1 -> parts[0] * 60L
-                else -> null
-            }
-        }.getOrNull()
-    }
 }

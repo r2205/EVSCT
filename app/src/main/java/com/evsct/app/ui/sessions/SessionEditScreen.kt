@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.util.Brands
+import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.Format
 import java.util.Calendar
 
@@ -113,9 +115,10 @@ fun SessionEditScreen(
             NumberField("Total cost (${state.currency})", state.costText) { v ->
                 viewModel.update { it.copy(costText = v) }
             }
-            TextFieldPlain("Charging duration (h:mm:ss or m:ss)", state.durationText) { v ->
-                viewModel.update { it.copy(durationText = v) }
-            }
+            DurationField(
+                value = state.durationText,
+                onValue = { v -> viewModel.update { it.copy(durationText = v) } },
+            )
             NumberField("Odometer (km)", state.odometerText) { v ->
                 viewModel.update { it.copy(odometerText = v) }
             }
@@ -545,6 +548,34 @@ private fun VehiclePicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
             )
         }
     }
+}
+
+@Composable
+private fun DurationField(
+    value: String,
+    onValue: (String) -> Unit,
+) {
+    var hasFocus by remember { mutableStateOf(false) }
+
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValue,
+        label = { Text("Charging duration") },
+        placeholder = { Text("e.g. 25  ·  1:25  ·  0:11:00") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focusState ->
+                val nowFocused = focusState.isFocused
+                if (hasFocus && !nowFocused) {
+                    DurationFormat.parse(value)?.let { onValue(DurationFormat.pretty(it)) }
+                } else if (!hasFocus && nowFocused) {
+                    DurationFormat.parse(value)?.let { onValue(DurationFormat.editable(it)) }
+                }
+                hasFocus = nowFocused
+            },
+    )
 }
 
 @Composable
