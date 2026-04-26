@@ -214,8 +214,7 @@ fun SessionEditScreen(
                     modifier = Modifier.weight(2f),
                     onValue = { v -> viewModel.update { it.copy(city = v) } },
                 )
-                TextFieldPlain(
-                    label = "Prov / State",
+                RegionField(
                     value = state.province,
                     modifier = Modifier.weight(1f),
                     onValue = { v -> viewModel.update { it.copy(province = v) } },
@@ -600,6 +599,30 @@ private fun VehiclePicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
             )
         }
     }
+}
+
+@Composable
+private fun RegionField(
+    value: String,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    onValue: (String) -> Unit,
+) {
+    var hasFocus by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValue,
+        label = { Text("Prov / State") },
+        placeholder = { Text("e.g. SK") },
+        singleLine = true,
+        modifier = modifier.onFocusChanged { focusState ->
+            val nowFocused = focusState.isFocused
+            if (hasFocus && !nowFocused) {
+                val normalized = com.evsct.app.util.RegionCodes.normalize(value)
+                if (normalized != value) onValue(normalized)
+            }
+            hasFocus = nowFocused
+        },
+    )
 }
 
 @Composable

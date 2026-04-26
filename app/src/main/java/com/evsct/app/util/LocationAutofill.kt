@@ -148,7 +148,7 @@ class LocationAutofill @Inject constructor(
             ?: subLocality
         return GeocodedLocation(
             city = cityCandidate?.takeIf { it.isNotBlank() },
-            provinceState = adminArea?.takeIf { it.isNotBlank() },
+            provinceState = adminArea?.takeIf { it.isNotBlank() }?.let { RegionCodes.normalize(it) },
             address = street ?: getAddressLine(0)?.takeIf { it.isNotBlank() },
             countryCode = countryCode,
         )
