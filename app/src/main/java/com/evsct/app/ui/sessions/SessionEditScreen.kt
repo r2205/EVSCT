@@ -52,6 +52,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -652,20 +654,42 @@ private fun DurationField(
     onValue: (String) -> Unit,
 ) {
     var hasFocus by remember { mutableStateOf(false) }
+    var fieldValue by remember {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+
+    // External value changes (e.g. focus-driven pretty <-> editable swap) need to
+    // be reflected in our local TextFieldValue so the cursor stays sane.
+    LaunchedEffect(value) {
+        if (fieldValue.text != value) {
+            fieldValue = TextFieldValue(value, TextRange(value.length))
+        }
+    }
 
     OutlinedTextField(
-        value = value,
-        onValueChange = onValue,
+        value = fieldValue,
+        onValueChange = { fv ->
+            fieldValue = fv
+            if (fv.text != value) onValue(fv.text)
+        },
         label = { Text("Charging duration") },
         placeholder = { Text("e.g. 25  ·  1:25  ·  0:11:00") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         singleLine = true,
         trailingIcon = {
-            // The phone keypad has no `:`, so offer it as an inline button while
-            // the field is focused. Tapping appends a colon to the current text.
+            // The phone keypad has no `:`, so insert one at the cursor position
+            // when the user taps this button. Visible only while the field is
+            // focused so the resting field stays clean.
             if (hasFocus) {
                 IconButton(onClick = {
-                    if (!value.endsWith(":")) onValue("$value:")
+                    val sel = fieldValue.selection
+                    val text = fieldValue.text
+                    val before = text.substring(0, sel.min)
+                    val after = text.substring(sel.max)
+                    val newText = "$before:$after"
+                    val newCursor = sel.min + 1
+                    fieldValue = TextFieldValue(newText, TextRange(newCursor))
+                    onValue(newText)
                 }) {
                     Text(
                         ":",
@@ -680,9 +704,13 @@ private fun DurationField(
             .onFocusChanged { focusState ->
                 val nowFocused = focusState.isFocused
                 if (hasFocus && !nowFocused) {
-                    DurationFormat.parse(value)?.let { onValue(DurationFormat.pretty(it)) }
+                    DurationFormat.parse(fieldValue.text)?.let {
+                        onValue(DurationFormat.pretty(it))
+                    }
                 } else if (!hasFocus && nowFocused) {
-                    DurationFormat.parse(value)?.let { onValue(DurationFormat.editable(it)) }
+                    DurationFormat.parse(fieldValue.text)?.let {
+                        onValue(DurationFormat.editable(it))
+                    }
                 }
                 hasFocus = nowFocused
             },
