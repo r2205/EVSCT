@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -54,7 +55,12 @@ fun VehicleListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Vehicles") },
+                title = { Text("Vehicles", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -63,7 +69,11 @@ fun VehicleListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddVehicle) {
+            FloatingActionButton(
+                onClick = onAddVehicle,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ) {
                 Icon(Icons.Default.Add, contentDescription = "Add vehicle")
             }
         },
