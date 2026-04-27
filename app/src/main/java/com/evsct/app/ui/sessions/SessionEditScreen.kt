@@ -74,6 +74,12 @@ fun SessionEditScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showOdometerWarning by remember { mutableStateOf(false) }
+
+    fun trySave() {
+        if (state.odometerText.isBlank()) showOdometerWarning = true
+        else viewModel.save(onDone)
+    }
 
     val locationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
@@ -121,7 +127,7 @@ fun SessionEditScreen(
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     }
-                    IconButton(onClick = { viewModel.save(onDone) }) {
+                    IconButton(onClick = { trySave() }) {
                         Icon(Icons.Default.Check, contentDescription = "Save")
                     }
                 },
@@ -151,6 +157,9 @@ fun SessionEditScreen(
             }
 
             SectionLabel("Session")
+            NumberField("Odometer (km)", state.odometerText) { v ->
+                viewModel.update { it.copy(odometerText = v) }
+            }
             NumberField("Energy delivered (kWh)", state.energyText) { v ->
                 viewModel.update { it.copy(energyText = v) }
             }
@@ -161,9 +170,6 @@ fun SessionEditScreen(
                 value = state.durationText,
                 onValue = { v -> viewModel.update { it.copy(durationText = v) } },
             )
-            NumberField("Odometer (km)", state.odometerText) { v ->
-                viewModel.update { it.copy(odometerText = v) }
-            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -244,6 +250,36 @@ fun SessionEditScreen(
 
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    if (showOdometerWarning) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showOdometerWarning = false },
+            icon = {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.Warning,
+                    contentDescription = null,
+                )
+            },
+            title = { Text("Save without odometer?") },
+            text = {
+                Text(
+                    "The odometer reading helps with trip distance and efficiency stats. " +
+                        "You can still save without it."
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showOdometerWarning = false
+                    viewModel.save(onDone)
+                }) { Text("Save anyway") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showOdometerWarning = false }) {
+                    Text("Add odometer")
+                }
+            },
+        )
     }
 
     if (showDeleteConfirm) {
