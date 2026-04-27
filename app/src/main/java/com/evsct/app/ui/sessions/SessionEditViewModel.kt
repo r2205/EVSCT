@@ -66,6 +66,9 @@ class SessionEditViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val sessionId: Long = savedStateHandle.get<Long>(Routes.SESSION_EDIT_ARG) ?: -1L
+    private val preselectVehicleId: Long? =
+        savedStateHandle.get<Long>(Routes.SESSION_PRESELECT_VEHICLE_ARG)
+            ?.takeIf { it > 0 }
 
     private val _state = MutableStateFlow(SessionEditUi())
     val state: StateFlow<SessionEditUi> = _state.asStateFlow()
@@ -92,8 +95,9 @@ class SessionEditViewModel @Inject constructor(
                 val s = sessionRepository.findById(sessionId)
                 if (s != null) loadFrom(s) else _state.update { it.copy(isLoading = false, isNew = true) }
             } else {
-                val defaultVehicle = vehicleRepository.findDefault()
-                _state.update { it.copy(isLoading = false, isNew = true, vehicleId = defaultVehicle?.id) }
+                val initialVehicleId = preselectVehicleId
+                    ?: vehicleRepository.findDefault()?.id
+                _state.update { it.copy(isLoading = false, isNew = true, vehicleId = initialVehicleId) }
             }
         }
     }

@@ -18,6 +18,7 @@ object Routes {
     const val SESSION_LIST = "sessions"
     const val SESSION_EDIT = "sessions/edit"
     const val SESSION_EDIT_ARG = "sessionId"
+    const val SESSION_PRESELECT_VEHICLE_ARG = "preselectVehicleId"
     const val TRIP_LIST = "trips"
     const val TRIP_DETAIL = "trips/detail"
     const val TRIP_DETAIL_ARG = "tripId"
@@ -26,8 +27,11 @@ object Routes {
     const val VEHICLE_EDIT_ARG = "vehicleId"
     const val SETTINGS = "settings"
 
-    fun sessionEdit(id: Long? = null): String =
-        if (id == null) "$SESSION_EDIT?$SESSION_EDIT_ARG=-1" else "$SESSION_EDIT?$SESSION_EDIT_ARG=$id"
+    fun sessionEdit(id: Long? = null, preselectVehicleId: Long? = null): String {
+        val sid = id ?: -1L
+        val vid = preselectVehicleId ?: -1L
+        return "$SESSION_EDIT?$SESSION_EDIT_ARG=$sid&$SESSION_PRESELECT_VEHICLE_ARG=$vid"
+    }
 
     fun tripDetail(id: Long): String = "$TRIP_DETAIL/$id"
 
@@ -40,19 +44,26 @@ fun EvsctNavGraph(navController: NavHostController) {
     NavHost(navController = navController, startDestination = Routes.SESSION_LIST) {
         composable(Routes.SESSION_LIST) {
             SessionListScreen(
-                onAddSession = { navController.navigate(Routes.sessionEdit()) },
+                onAddSession = { preselectVehicleId ->
+                    navController.navigate(Routes.sessionEdit(preselectVehicleId = preselectVehicleId))
+                },
                 onEditSession = { id -> navController.navigate(Routes.sessionEdit(id)) },
                 onOpenTrips = { navController.navigate(Routes.TRIP_LIST) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
         composable(
-            route = "${Routes.SESSION_EDIT}?${Routes.SESSION_EDIT_ARG}={${Routes.SESSION_EDIT_ARG}}",
+            route = "${Routes.SESSION_EDIT}?${Routes.SESSION_EDIT_ARG}={${Routes.SESSION_EDIT_ARG}}" +
+                "&${Routes.SESSION_PRESELECT_VEHICLE_ARG}={${Routes.SESSION_PRESELECT_VEHICLE_ARG}}",
             arguments = listOf(
                 navArgument(Routes.SESSION_EDIT_ARG) {
                     type = NavType.LongType
                     defaultValue = -1L
-                }
+                },
+                navArgument(Routes.SESSION_PRESELECT_VEHICLE_ARG) {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                },
             ),
         ) {
             SessionEditScreen(onDone = { navController.popBackStack() })

@@ -69,7 +69,7 @@ import com.evsct.app.util.Format
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionListScreen(
-    onAddSession: () -> Unit,
+    onAddSession: (preselectVehicleId: Long?) -> Unit,
     onEditSession: (Long) -> Unit,
     onOpenTrips: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -113,7 +113,7 @@ fun SessionListScreen(
         floatingActionButton = {
             if (!state.isSelectionMode) {
                 FloatingActionButton(
-                    onClick = onAddSession,
+                    onClick = { onAddSession(state.vehicleFilterId) },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
