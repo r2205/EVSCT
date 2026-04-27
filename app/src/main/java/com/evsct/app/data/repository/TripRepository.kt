@@ -31,7 +31,16 @@ class TripRepository @Inject constructor(
 
     suspend fun findById(id: Long): Trip? = tripDao.findById(id)
 
-    suspend fun upsert(trip: Trip): Long = tripDao.insert(trip)
+    suspend fun upsert(trip: Trip): Long =
+        if (trip.id == 0L) {
+            tripDao.insert(trip)
+        } else {
+            // Avoid REPLACE-on-conflict: it would delete the existing row first,
+            // which fires ON DELETE SET NULL on charging_sessions.tripId and
+            // strips every session of its trip tag.
+            tripDao.update(trip)
+            trip.id
+        }
 
     suspend fun delete(trip: Trip) = tripDao.delete(trip)
 

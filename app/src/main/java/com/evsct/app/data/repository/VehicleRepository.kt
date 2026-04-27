@@ -23,8 +23,15 @@ class VehicleRepository @Inject constructor(
         } else {
             vehicle.copy(updatedAt = now)
         }
-        val id = dao.insert(toSave)
-        if (toSave.isDefault) dao.clearDefaultExcept(if (toSave.id == 0L) id else toSave.id)
+        val id = if (toSave.id == 0L) {
+            dao.insert(toSave)
+        } else {
+            // REPLACE-on-conflict would delete and reinsert, untagging every
+            // session that points to this vehicle via ON DELETE SET NULL.
+            dao.update(toSave)
+            toSave.id
+        }
+        if (toSave.isDefault) dao.clearDefaultExcept(id)
         return id
     }
 

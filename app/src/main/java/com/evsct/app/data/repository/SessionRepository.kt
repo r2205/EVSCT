@@ -27,7 +27,12 @@ class SessionRepository @Inject constructor(
         } else {
             session.copy(updatedAt = now)
         }
-        return dao.insert(toSave)
+        return if (toSave.id == 0L) {
+            dao.insert(toSave)
+        } else {
+            dao.update(toSave)
+            toSave.id
+        }
     }
 
     suspend fun insertAll(sessions: List<ChargingSession>): List<Long> = dao.insertAll(sessions)
