@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
@@ -255,12 +256,7 @@ fun SessionEditScreen(
     if (showOdometerWarning) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showOdometerWarning = false },
-            icon = {
-                Icon(
-                    androidx.compose.material.icons.Icons.Default.Warning,
-                    contentDescription = null,
-                )
-            },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
             title = { Text("Save without odometer?") },
             text = {
                 Text(
