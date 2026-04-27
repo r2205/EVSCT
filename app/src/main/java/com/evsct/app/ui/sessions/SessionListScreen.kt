@@ -41,6 +41,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -121,9 +123,16 @@ fun SessionListScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (state.vehicles.size >= 2) {
+                VehicleTabs(
+                    vehicles = state.vehicles,
+                    selectedVehicleId = state.vehicleFilterId,
+                    onSelect = { id -> viewModel.setVehicleFilter(id) },
+                )
+            }
             SummaryCard(state)
             if (state.sessions.isEmpty()) {
-                EmptyState()
+                EmptyState(state.vehicleFilterId != null)
             } else {
                 LazyColumn(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -294,7 +303,7 @@ private fun Stat(label: String, value: String) {
 }
 
 @Composable
-private fun EmptyState() {
+private fun EmptyState(filtered: Boolean) {
     Box(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         contentAlignment = Alignment.Center,
@@ -316,14 +325,43 @@ private fun EmptyState() {
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                "No sessions yet",
+                if (filtered) "No sessions for this vehicle" else "No sessions yet",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Tap + to log your first charge.",
+                if (filtered) "Tap + to add one, or pick All to see other vehicles."
+                else "Tap + to log your first charge.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VehicleTabs(
+    vehicles: List<com.evsct.app.data.entity.Vehicle>,
+    selectedVehicleId: Long?,
+    onSelect: (Long?) -> Unit,
+) {
+    val tabs = buildList {
+        add(null to "All")
+        vehicles.forEach { add(it.id to it.name) }
+    }
+    val selectedIndex = tabs.indexOfFirst { it.first == selectedVehicleId }.coerceAtLeast(0)
+    ScrollableTabRow(
+        selectedTabIndex = selectedIndex,
+        edgePadding = 12.dp,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.primary,
+    ) {
+        tabs.forEachIndexed { index, (id, label) ->
+            Tab(
+                selected = index == selectedIndex,
+                onClick = { onSelect(id) },
+                text = { Text(label, fontWeight = if (index == selectedIndex) FontWeight.SemiBold else FontWeight.Normal) },
             )
         }
     }
