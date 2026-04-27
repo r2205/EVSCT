@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Map
@@ -142,9 +143,16 @@ fun SessionListScreen(
                 ) {
                     items(state.sessions, key = { it.id }) { s ->
                         val isSelected = s.id in state.selectedIds
+                        // Only surface the vehicle name when the user is on the
+                        // "All" tab — otherwise every row would carry the same
+                        // tag.
+                        val vehicleName = if (state.vehicleFilterId == null) {
+                            s.vehicleId?.let { state.vehicleNamesById[it] }
+                        } else null
                         SessionRow(
                             session = s,
                             tripName = s.tripId?.let { state.tripNamesById[it] },
+                            vehicleName = vehicleName,
                             isSelected = isSelected,
                             isSelectionMode = state.isSelectionMode,
                             onClick = {
@@ -372,6 +380,7 @@ private fun VehicleTabs(
 private fun SessionRow(
     session: ChargingSession,
     tripName: String?,
+    vehicleName: String?,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     onClick: () -> Unit,
@@ -472,9 +481,12 @@ private fun SessionRow(
                     )
                 }
                 val effPrice = Derived.effectiveEnergyPricePerKwh(session)
-                if (effPrice != null || tripName != null) {
+                if (effPrice != null || tripName != null || vehicleName != null) {
                     Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         if (effPrice != null) {
                             Text(
                                 "Eff. ${Format.moneyRate(effPrice, "kWh")}",
@@ -482,8 +494,8 @@ private fun SessionRow(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        if (effPrice != null && tripName != null) {
-                            Spacer(Modifier.width(12.dp))
+                        if (vehicleName != null) {
+                            VehiclePill(vehicleName)
                         }
                         if (tripName != null) {
                             TripPill(tripName)
@@ -525,6 +537,30 @@ private fun TripPill(name: String) {
             name,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun VehiclePill(name: String) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.DirectionsCar,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            name,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
         )
     }
 }
