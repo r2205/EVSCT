@@ -1,7 +1,10 @@
 package com.evsct.app.ui.sessions
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,21 +25,31 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,33 +74,49 @@ fun SessionListScreen(
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showTripPicker by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = state.isSelectionMode) {
+        viewModel.clearSelection()
+    }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Charging log", fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-                actions = {
-                    IconButton(onClick = onOpenTrips) {
-                        Icon(Icons.Default.Map, contentDescription = "Trips")
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                },
-            )
+            if (state.isSelectionMode) {
+                SelectionTopBar(
+                    selectedCount = state.selectedIds.size,
+                    onClear = { viewModel.clearSelection() },
+                    onSelectAll = { viewModel.selectAll() },
+                    onAssignTrip = { showTripPicker = true },
+                )
+            } else {
+                TopAppBar(
+                    title = { Text("Charging log", fontWeight = FontWeight.SemiBold) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    actions = {
+                        IconButton(onClick = onOpenTrips) {
+                            Icon(Icons.Default.Map, contentDescription = "Trips")
+                        }
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
+                    },
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddSession,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add session")
+            if (!state.isSelectionMode) {
+                FloatingActionButton(
+                    onClick = onAddSession,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add session")
+                }
             }
         },
     ) { padding ->
@@ -102,16 +132,131 @@ fun SessionListScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(state.sessions, key = { it.id }) { s ->
+                        val isSelected = s.id in state.selectedIds
                         SessionRow(
                             session = s,
                             tripName = s.tripId?.let { state.tripNamesById[it] },
-                            onClick = { onEditSession(s.id) },
+                            isSelected = isSelected,
+                            isSelectionMode = state.isSelectionMode,
+                            onClick = {
+                                if (state.isSelectionMode) viewModel.toggleSelection(s.id)
+                                else onEditSession(s.id)
+                            },
+                            onLongClick = { viewModel.toggleSelection(s.id) },
                         )
                     }
                     item { Spacer(Modifier.height(80.dp)) }
                 }
             }
         }
+    }
+
+    if (showTripPicker) {
+        TripPickerSheet(
+            trips = state.trips,
+            selectedCount = state.selectedIds.size,
+            onPick = { tripId ->
+                viewModel.assignTripToSelection(tripId)
+                showTripPicker = false
+            },
+            onDismiss = { showTripPicker = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionTopBar(
+    selectedCount: Int,
+    onClear: () -> Unit,
+    onSelectAll: () -> Unit,
+    onAssignTrip: () -> Unit,
+) {
+    TopAppBar(
+        title = { Text("$selectedCount selected", fontWeight = FontWeight.SemiBold) },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            titleContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            navigationIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            actionIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+        navigationIcon = {
+            IconButton(onClick = onClear) {
+                Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+            }
+        },
+        actions = {
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Default.DoneAll, contentDescription = "Select all")
+            }
+            IconButton(onClick = onAssignTrip) {
+                Icon(Icons.Default.Label, contentDescription = "Assign trip")
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TripPickerSheet(
+    trips: List<com.evsct.app.data.entity.Trip>,
+    selectedCount: Int,
+    onPick: (Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "Assign $selectedCount session${if (selectedCount == 1) "" else "s"} to…",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            TripPickerRow(
+                label = "Unassigned",
+                emphasis = false,
+                onClick = { onPick(null) },
+            )
+            HorizontalDivider()
+            if (trips.isEmpty()) {
+                Text(
+                    "No trips yet. Create one from the Trips screen.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(24.dp),
+                )
+            } else {
+                trips.forEach { trip ->
+                    TripPickerRow(
+                        label = trip.name,
+                        emphasis = true,
+                        onClick = { onPick(trip.id) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun TripPickerRow(label: String, emphasis: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (emphasis) FontWeight.Medium else FontWeight.Normal,
+            color = if (emphasis) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -184,16 +329,26 @@ private fun EmptyState() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionRow(
     session: ChargingSession,
     tripName: String?,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     val typeAccent = chargingTypeAccent(session.chargingType)
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(14.dp),
+        colors = if (isSelected) CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ) else CardDefaults.cardColors(),
     ) {
         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             // Leading colored bar by charging type
@@ -203,6 +358,29 @@ private fun SessionRow(
                     .fillMaxHeight()
                     .background(typeAccent.bar),
             )
+            if (isSelectionMode) {
+                Box(
+                    modifier = Modifier
+                        .padding(start = 12.dp)
+                        .align(Alignment.CenterVertically)
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
             Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

@@ -46,6 +46,9 @@ interface ChargingSessionDao {
     @Delete
     suspend fun delete(session: ChargingSession)
 
+    @Query("UPDATE charging_sessions SET tripId = :tripId, updatedAt = :now WHERE id IN (:ids)")
+    suspend fun assignTripToIds(ids: List<Long>, tripId: Long?, now: Long): Int
+
     @Query("DELETE FROM charging_sessions")
     suspend fun deleteAll()
 }

@@ -37,6 +37,11 @@ class SessionRepository @Inject constructor(
 
     suspend fun insertAll(sessions: List<ChargingSession>): List<Long> = dao.insertAll(sessions)
 
+    suspend fun assignTrip(ids: Collection<Long>, tripId: Long?) {
+        if (ids.isEmpty()) return
+        dao.assignTripToIds(ids.toList(), tripId, System.currentTimeMillis())
+    }
+
     suspend fun delete(session: ChargingSession) = dao.delete(session)
 
     suspend fun deleteAll() = dao.deleteAll()
