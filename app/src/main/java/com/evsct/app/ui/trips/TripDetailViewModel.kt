@@ -38,9 +38,7 @@ class TripDetailViewModel @Inject constructor(
     val state: StateFlow<TripDetailUi>
 
     init {
-        viewModelScope.launch {
-            _trip.value = tripRepository.findById(tripId)
-        }
+        viewModelScope.launch { refresh() }
         state = combine(_trip.asStateFlow(), sessionRepository.observeForTrip(tripId)) { trip, sessions ->
             val stats = trip?.let {
                 TripWithStats(
@@ -48,11 +46,19 @@ class TripDetailViewModel @Inject constructor(
                     sessionCount = sessions.size,
                     totalCost = sessions.sumOf { s -> s.totalCost ?: 0.0 },
                     totalEnergyKwh = sessions.sumOf { s -> s.energyKwh ?: 0.0 },
-                    totalDistanceKm = sessions.mapNotNull { s -> s.odometerKm }
-                        .let { o -> if (o.size < 2) 0.0 else o.max() - o.min() },
+                    totalDistanceKm = TripRepository.computeTripDistance(it, sessions),
                 )
             }
             TripDetailUi(trip = trip, sessions = sessions, stats = stats)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUi())
+    }
+
+    fun updateTrip(trip: Trip) = viewModelScope.launch {
+        tripRepository.upsert(trip)
+        refresh()
+    }
+
+    private suspend fun refresh() {
+        _trip.value = tripRepository.findById(tripId)
     }
 }

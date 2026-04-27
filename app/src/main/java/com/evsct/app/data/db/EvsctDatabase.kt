@@ -11,7 +11,7 @@ import com.evsct.app.data.entity.Vehicle
 
 @Database(
     entities = [ChargingSession::class, Trip::class, Vehicle::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -115,6 +115,13 @@ abstract class EvsctDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_charging_sessions_sessionStart` ON `charging_sessions` (`sessionStart`)"
                 )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `startOdometerKm` REAL")
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `endOdometerKm` REAL")
             }
         }
     }

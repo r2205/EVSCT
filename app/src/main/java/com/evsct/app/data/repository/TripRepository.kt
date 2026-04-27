@@ -24,7 +24,7 @@ class TripRepository @Inject constructor(
                     sessionCount = tripSessions.size,
                     totalCost = tripSessions.sumOf { it.totalCost ?: 0.0 },
                     totalEnergyKwh = tripSessions.sumOf { it.energyKwh ?: 0.0 },
-                    totalDistanceKm = tripDistanceKm(tripSessions.mapNotNull { it.odometerKm }),
+                    totalDistanceKm = computeTripDistance(trip, tripSessions),
                 )
             }
         }
@@ -35,9 +35,24 @@ class TripRepository @Inject constructor(
 
     suspend fun delete(trip: Trip) = tripDao.delete(trip)
 
-    private fun tripDistanceKm(odometers: List<Double>): Double {
-        if (odometers.size < 2) return 0.0
-        val sorted = odometers.sorted()
-        return sorted.last() - sorted.first()
+    companion object {
+        /**
+         * If the user filled in both trip-level start and end odometer values,
+         * use that (covers free home charging where session odometers under-report).
+         * Otherwise fall back to the spread of session odometer readings.
+         */
+        fun computeTripDistance(
+            trip: Trip,
+            sessions: List<com.evsct.app.data.entity.ChargingSession>,
+        ): Double {
+            val s = trip.startOdometerKm
+            val e = trip.endOdometerKm
+            if (s != null && e != null && e >= s) return e - s
+
+            val odometers = sessions.mapNotNull { it.odometerKm }
+            if (odometers.size < 2) return 0.0
+            val sorted = odometers.sorted()
+            return sorted.last() - sorted.first()
+        }
     }
 }

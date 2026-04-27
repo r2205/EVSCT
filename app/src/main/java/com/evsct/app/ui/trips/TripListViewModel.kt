@@ -21,8 +21,8 @@ class TripListViewModel @Inject constructor(
         tripRepository.observeAllWithStats()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun create(name: String) = viewModelScope.launch {
-        if (name.isNotBlank()) tripRepository.upsert(Trip(name = name.trim()))
+    fun upsert(trip: Trip) = viewModelScope.launch {
+        if (trip.name.isNotBlank()) tripRepository.upsert(trip)
     }
 
     fun delete(trip: Trip) = viewModelScope.launch {

@@ -21,7 +21,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -148,25 +147,13 @@ fun TripListScreen(
     }
 
     if (dialogOpen) {
-        var name by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { dialogOpen = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.create(name)
-                    dialogOpen = false
-                }) { Text("Create") }
+        TripEditDialog(
+            trip = null,
+            onDismiss = { dialogOpen = false },
+            onSave = { trip ->
+                viewModel.upsert(trip)
+                dialogOpen = false
             },
-            dismissButton = { TextButton(onClick = { dialogOpen = false }) { Text("Cancel") } },
-            title = { Text("New trip") },
-            text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                )
-            }
         )
     }
 }

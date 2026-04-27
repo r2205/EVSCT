@@ -9,6 +9,13 @@ data class Trip(
     val name: String,
     val startDate: Long? = null,
     val endDate: Long? = null,
+    /**
+     * Optional odometer reading at trip start. When both [startOdometerKm]
+     * and [endOdometerKm] are filled, the trip's total distance uses
+     * `end - start` instead of inferring from session odometer readings.
+     */
+    val startOdometerKm: Double? = null,
+    val endOdometerKm: Double? = null,
     val notes: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 )
