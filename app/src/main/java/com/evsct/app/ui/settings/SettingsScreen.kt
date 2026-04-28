@@ -51,6 +51,7 @@ fun SettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var replaceOnImport by remember { mutableStateOf(false) }
     var showXlsxConfirm by remember { mutableStateOf(false) }
+    var showRestoreConfirm by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv"),
@@ -63,6 +64,14 @@ fun SettingsScreen(
     val xlsxImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { viewModel.importXlsx(it) } }
+
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri -> uri?.let { viewModel.exportBackup(it) } }
+
+    val backupImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { showRestoreConfirm = it } }
 
     Scaffold(
         topBar = {
@@ -114,6 +123,44 @@ fun SettingsScreen(
                         )
                     }
                     Icon(Icons.Default.ChevronRight, contentDescription = null)
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Full backup",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Save or restore everything — sessions, trips, vehicles, and " +
+                            "vehicle photos — to a single .zip you can move to another phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(
+                        onClick = {
+                            val ts = java.text.SimpleDateFormat(
+                                "yyyy-MM-dd-HHmm",
+                                java.util.Locale.US,
+                            ).format(java.util.Date())
+                            backupExportLauncher.launch("evsct-backup-$ts.zip")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.busy,
+                    ) { Text("Export backup file…") }
+                    OutlinedButton(
+                        onClick = {
+                            backupImportLauncher.launch(
+                                arrayOf(
+                                    "application/zip",
+                                    "application/octet-stream",
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.busy,
+                    ) { Text("Restore from backup…") }
                 }
             }
 
@@ -196,6 +243,31 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showXlsxConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    showRestoreConfirm?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirm = null },
+            title = { Text("Restore from backup?") },
+            text = {
+                Text(
+                    "This will erase every session, trip, and vehicle currently in " +
+                        "the app and replace them with the contents of the backup file. " +
+                        "This can't be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestoreConfirm = null
+                    viewModel.restoreBackup(uri)
+                }) {
+                    Text("Erase and restore", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirm = null }) { Text("Cancel") }
             },
         )
     }

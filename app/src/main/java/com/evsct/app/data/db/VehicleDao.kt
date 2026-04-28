@@ -24,6 +24,9 @@ interface VehicleDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(vehicle: Vehicle): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(vehicles: List<Vehicle>): List<Long>
+
     @Update
     suspend fun update(vehicle: Vehicle)
 
@@ -32,4 +35,7 @@ interface VehicleDao {
 
     @Query("UPDATE vehicles SET isDefault = 0 WHERE id != :exceptId")
     suspend fun clearDefaultExcept(exceptId: Long)
+
+    @Query("DELETE FROM vehicles")
+    suspend fun deleteAll()
 }

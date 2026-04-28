@@ -21,9 +21,15 @@ interface TripDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(trip: Trip): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(trips: List<Trip>): List<Long>
+
     @Update
     suspend fun update(trip: Trip)
 
     @Delete
     suspend fun delete(trip: Trip)
+
+    @Query("DELETE FROM trips")
+    suspend fun deleteAll()
 }
