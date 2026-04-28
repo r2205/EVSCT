@@ -3,6 +3,8 @@ package com.evsct.app.ui.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -91,7 +93,11 @@ fun SettingsScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp),
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (state.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
