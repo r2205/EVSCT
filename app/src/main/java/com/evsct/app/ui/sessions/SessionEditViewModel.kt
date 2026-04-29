@@ -23,6 +23,31 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+data class RecentStop(
+    val brand: String?,
+    val city: String?,
+    val province: String?,
+    val address: String?,
+    val stationName: String?,
+    val stallName: String?,
+    val lastUsedAt: Long,
+    val visits: Int,
+) {
+    /** Single line that scans well in a list row. */
+    val primary: String get() = listOfNotNull(
+        brand?.trim()?.takeIf { it.isNotEmpty() },
+        (address ?: stationName)?.trim()?.takeIf { it.isNotEmpty() },
+    ).joinToString(" · ").ifEmpty { city ?: "Unknown stop" }
+
+    val secondary: String? get() {
+        val cityProv = listOfNotNull(
+            city?.trim()?.takeIf { it.isNotEmpty() },
+            province?.trim()?.takeIf { it.isNotEmpty() },
+        ).joinToString(", ")
+        return cityProv.takeIf { it.isNotEmpty() }
+    }
+}
+
 data class SessionEditUi(
     val isLoading: Boolean = true,
     val isNew: Boolean = true,
@@ -50,6 +75,7 @@ data class SessionEditUi(
     val notes: String = "",
     val brandSuggestions: List<String> = emptyList(),
     val citySuggestions: List<String> = emptyList(),
+    val recentStops: List<RecentStop> = emptyList(),
     val trips: List<Trip> = emptyList(),
     val vehicles: List<Vehicle> = emptyList(),
     val isFetchingLocation: Boolean = false,
@@ -82,6 +108,11 @@ class SessionEditViewModel @Inject constructor(
         viewModelScope.launch {
             sessionRepository.observeCities().collect { cities ->
                 _state.update { it.copy(citySuggestions = cities) }
+            }
+        }
+        viewModelScope.launch {
+            sessionRepository.observeAll().collect { sessions ->
+                _state.update { it.copy(recentStops = computeRecentStops(sessions)) }
             }
         }
         viewModelScope.launch {
@@ -134,6 +165,49 @@ class SessionEditViewModel @Inject constructor(
     }
 
     fun update(transform: (SessionEditUi) -> SessionEditUi) = _state.update(transform)
+
+    fun applyStop(stop: RecentStop) = _state.update { current ->
+        current.copy(
+            brand = stop.brand?.trim().orEmpty(),
+            city = stop.city.orEmpty(),
+            province = stop.province.orEmpty(),
+            address = stop.address.orEmpty(),
+            stationName = stop.stationName.orEmpty(),
+            stallName = stop.stallName.orEmpty(),
+        )
+    }
+
+    private fun computeRecentStops(sessions: List<ChargingSession>): List<RecentStop> {
+        if (sessions.isEmpty()) return emptyList()
+        return sessions
+            .filter {
+                !it.brand.isNullOrBlank() ||
+                    !it.locationCity.isNullOrBlank() ||
+                    !it.locationAddress.isNullOrBlank()
+            }
+            .groupBy { stopKey(it) }
+            .map { (_, group) ->
+                val mostRecent = group.maxBy { it.sessionStart }
+                RecentStop(
+                    brand = mostRecent.brand,
+                    city = mostRecent.locationCity,
+                    province = mostRecent.locationProvince,
+                    address = mostRecent.locationAddress,
+                    stationName = mostRecent.stationName,
+                    stallName = mostRecent.stallName,
+                    lastUsedAt = mostRecent.sessionStart,
+                    visits = group.size,
+                )
+            }
+            .sortedByDescending { it.lastUsedAt }
+    }
+
+    private fun stopKey(s: ChargingSession): String =
+        listOfNotNull(
+            s.brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+            (s.locationAddress ?: s.stationName)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+            s.locationCity?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+        ).joinToString("|")
 
     fun save(onSaved: () -> Unit) {
         viewModelScope.launch {

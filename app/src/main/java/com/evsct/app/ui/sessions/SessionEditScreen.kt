@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
@@ -201,6 +202,12 @@ fun SessionEditScreen(
             }
 
             SectionLabel("Station")
+            if (state.recentStops.isNotEmpty()) {
+                RecentStopsButton(
+                    stops = state.recentStops,
+                    onPick = { viewModel.applyStop(it) },
+                )
+            }
             BrandPicker(state.brand, state.brandSuggestions) { v ->
                 viewModel.update { it.copy(brand = v) }
             }
@@ -683,6 +690,135 @@ private fun RegionField(
             hasFocus = nowFocused
         },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecentStopsButton(
+    stops: List<RecentStop>,
+    onPick: (RecentStop) -> Unit,
+) {
+    var showSheet by remember { mutableStateOf(false) }
+    androidx.compose.material3.OutlinedButton(
+        onClick = { showSheet = true },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(
+            imageVector = Icons.Default.History,
+            contentDescription = null,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text("Use a recent stop…")
+    }
+    if (showSheet) {
+        RecentStopsSheet(
+            stops = stops,
+            onPick = {
+                onPick(it)
+                showSheet = false
+            },
+            onDismiss = { showSheet = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecentStopsSheet(
+    stops: List<RecentStop>,
+    onPick: (RecentStop) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var query by remember { mutableStateOf("") }
+    val q = query.trim()
+    val filtered = if (q.isEmpty()) stops else stops.filter {
+        listOfNotNull(it.brand, it.city, it.province, it.address, it.stationName)
+            .any { v -> v.contains(q, ignoreCase = true) }
+    }
+
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "Recent stops",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Search brand, city, address…") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                        }
+                    }
+                } else null,
+            )
+
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp),
+            ) {
+                if (filtered.isEmpty()) {
+                    item {
+                        Text(
+                            "No matches.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(24.dp),
+                        )
+                    }
+                } else {
+                    items(filtered, key = { "${it.brand}|${it.address}|${it.city}|${it.lastUsedAt}" }) { stop ->
+                        RecentStopRow(stop, onClick = { onPick(stop) })
+                    }
+                }
+                item { Spacer(Modifier.height(24.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentStopRow(stop: RecentStop, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                stop.primary,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+            )
+            stop.secondary?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            text = if (stop.visits == 1) "1 visit" else "${stop.visits} visits",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
