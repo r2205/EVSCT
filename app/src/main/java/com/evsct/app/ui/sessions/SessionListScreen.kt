@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -73,6 +74,7 @@ fun SessionListScreen(
     onAddSession: (preselectVehicleId: Long?) -> Unit,
     onEditSession: (Long) -> Unit,
     onOpenTrips: () -> Unit,
+    onOpenStats: () -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
@@ -101,6 +103,9 @@ fun SessionListScreen(
                         actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                     actions = {
+                        IconButton(onClick = onOpenStats) {
+                            Icon(Icons.Default.BarChart, contentDescription = "Stats")
+                        }
                         IconButton(onClick = onOpenTrips) {
                             Icon(Icons.Default.Map, contentDescription = "Trips")
                         }

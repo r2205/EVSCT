@@ -9,6 +9,7 @@ import androidx.navigation.navArgument
 import com.evsct.app.ui.sessions.SessionEditScreen
 import com.evsct.app.ui.sessions.SessionListScreen
 import com.evsct.app.ui.settings.SettingsScreen
+import com.evsct.app.ui.stats.StatsScreen
 import com.evsct.app.ui.trips.TripDetailScreen
 import com.evsct.app.ui.trips.TripListScreen
 import com.evsct.app.ui.vehicles.VehicleEditScreen
@@ -25,6 +26,7 @@ object Routes {
     const val VEHICLE_LIST = "vehicles"
     const val VEHICLE_EDIT = "vehicles/edit"
     const val VEHICLE_EDIT_ARG = "vehicleId"
+    const val STATS = "stats"
     const val SETTINGS = "settings"
 
     fun sessionEdit(id: Long? = null, preselectVehicleId: Long? = null): String {
@@ -49,8 +51,12 @@ fun EvsctNavGraph(navController: NavHostController) {
                 },
                 onEditSession = { id -> navController.navigate(Routes.sessionEdit(id)) },
                 onOpenTrips = { navController.navigate(Routes.TRIP_LIST) },
+                onOpenStats = { navController.navigate(Routes.STATS) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
+        }
+        composable(Routes.STATS) {
+            StatsScreen(onBack = { navController.popBackStack() })
         }
         composable(
             route = "${Routes.SESSION_EDIT}?${Routes.SESSION_EDIT_ARG}={${Routes.SESSION_EDIT_ARG}}" +
