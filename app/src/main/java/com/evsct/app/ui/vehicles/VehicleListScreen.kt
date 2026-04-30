@@ -47,7 +47,7 @@ import com.evsct.app.data.entity.Vehicle
 fun VehicleListScreen(
     onBack: () -> Unit,
     onAddVehicle: () -> Unit,
-    onEditVehicle: (Long) -> Unit,
+    onOpenVehicle: (Long) -> Unit,
     viewModel: VehicleListViewModel = hiltViewModel(),
 ) {
     val vehicles by viewModel.vehicles.collectAsStateWithLifecycle()
@@ -92,7 +92,7 @@ fun VehicleListScreen(
                 modifier = Modifier.padding(padding),
             ) {
                 items(vehicles, key = { it.id }) { v ->
-                    VehicleRow(v, onClick = { onEditVehicle(v.id) })
+                    VehicleRow(v, onClick = { onOpenVehicle(v.id) })
                 }
                 item { Spacer(Modifier.padding(top = 56.dp)) }
             }

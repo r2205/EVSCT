@@ -12,6 +12,7 @@ import com.evsct.app.ui.settings.SettingsScreen
 import com.evsct.app.ui.stats.StatsScreen
 import com.evsct.app.ui.trips.TripDetailScreen
 import com.evsct.app.ui.trips.TripListScreen
+import com.evsct.app.ui.vehicles.VehicleDetailScreen
 import com.evsct.app.ui.vehicles.VehicleEditScreen
 import com.evsct.app.ui.vehicles.VehicleListScreen
 
@@ -24,6 +25,8 @@ object Routes {
     const val TRIP_DETAIL = "trips/detail"
     const val TRIP_DETAIL_ARG = "tripId"
     const val VEHICLE_LIST = "vehicles"
+    const val VEHICLE_DETAIL = "vehicles/detail"
+    const val VEHICLE_DETAIL_ARG = "vehicleId"
     const val VEHICLE_EDIT = "vehicles/edit"
     const val VEHICLE_EDIT_ARG = "vehicleId"
     const val STATS = "stats"
@@ -39,6 +42,8 @@ object Routes {
 
     fun vehicleEdit(id: Long? = null): String =
         if (id == null) "$VEHICLE_EDIT?$VEHICLE_EDIT_ARG=-1" else "$VEHICLE_EDIT?$VEHICLE_EDIT_ARG=$id"
+
+    fun vehicleDetail(id: Long): String = "$VEHICLE_DETAIL/$id"
 }
 
 @Composable
@@ -93,7 +98,17 @@ fun EvsctNavGraph(navController: NavHostController) {
             VehicleListScreen(
                 onBack = { navController.popBackStack() },
                 onAddVehicle = { navController.navigate(Routes.vehicleEdit()) },
-                onEditVehicle = { id -> navController.navigate(Routes.vehicleEdit(id)) },
+                onOpenVehicle = { id -> navController.navigate(Routes.vehicleDetail(id)) },
+            )
+        }
+        composable(
+            route = "${Routes.VEHICLE_DETAIL}/{${Routes.VEHICLE_DETAIL_ARG}}",
+            arguments = listOf(navArgument(Routes.VEHICLE_DETAIL_ARG) { type = NavType.LongType }),
+        ) {
+            VehicleDetailScreen(
+                onBack = { navController.popBackStack() },
+                onEdit = { id -> navController.navigate(Routes.vehicleEdit(id)) },
+                onEditSession = { id -> navController.navigate(Routes.sessionEdit(id)) },
             )
         }
         composable(
