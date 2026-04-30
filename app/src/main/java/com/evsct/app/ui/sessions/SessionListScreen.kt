@@ -31,10 +31,23 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -80,9 +93,19 @@ fun SessionListScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showTripPicker by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var showFilterSheet by remember { mutableStateOf(false) }
+
+    // Keep the search/filter strip visible whenever there are active filters,
+    // so the user can always see and remove them.
+    val showSearchStrip = showSearch || state.filters.hasActive
 
     BackHandler(enabled = state.isSelectionMode) {
         viewModel.clearSelection()
+    }
+    BackHandler(enabled = !state.isSelectionMode && showSearchStrip) {
+        showSearch = false
+        viewModel.clearFilters()
     }
 
     Scaffold(
@@ -103,6 +126,12 @@ fun SessionListScreen(
                         actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                     actions = {
+                        IconButton(onClick = { showSearch = !showSearch }) {
+                            Icon(
+                                if (showSearch) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = if (showSearch) "Close search" else "Search",
+                            )
+                        }
                         IconButton(onClick = onOpenStats) {
                             Icon(Icons.Default.BarChart, contentDescription = "Stats")
                         }
@@ -129,6 +158,20 @@ fun SessionListScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (showSearchStrip) {
+                SearchAndFilterStrip(
+                    query = state.filters.query,
+                    onQueryChange = { viewModel.setQuery(it) },
+                    filters = state.filters,
+                    onOpenFilterSheet = { showFilterSheet = true },
+                    onClearAll = {
+                        showSearch = false
+                        viewModel.clearFilters()
+                    },
+                    onClearBrand = { viewModel.setBrandFilter(null) },
+                    onClearDateRange = { viewModel.setDateRange(null, null) },
+                )
+            }
             if (state.vehicles.size >= 2) {
                 VehicleTabs(
                     vehicles = state.vehicles,
@@ -182,6 +225,19 @@ fun SessionListScreen(
                 showTripPicker = false
             },
             onDismiss = { showTripPicker = false },
+        )
+    }
+
+    if (showFilterSheet) {
+        FilterSheet(
+            filters = state.filters,
+            brands = state.brandsInUse,
+            onApply = { brand, from, to ->
+                viewModel.setBrandFilter(brand)
+                viewModel.setDateRange(from, to)
+                showFilterSheet = false
+            },
+            onDismiss = { showFilterSheet = false },
         )
     }
 }
@@ -582,4 +638,310 @@ private fun ChargingType.shortLabel(): String = when (this) {
     ChargingType.DC_FAST -> "DC FAST"
     ChargingType.AC_L2 -> "AC L2"
     ChargingType.AC_L1 -> "AC L1"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchAndFilterStrip(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    filters: SessionFilters,
+    onOpenFilterSheet: () -> Unit,
+    onClearAll: () -> Unit,
+    onClearBrand: () -> Unit,
+    onClearDateRange: () -> Unit,
+) {
+    val anyChip = filters.brand != null || filters.dateFrom != null || filters.dateTo != null
+    val activeFilterCount = listOfNotNull(
+        filters.brand,
+        if (filters.dateFrom != null || filters.dateTo != null) "date" else null,
+    ).size
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = { Text("Search city, address, notes…") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                        }
+                    }
+                } else null,
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            BadgedBox(
+                badge = {
+                    if (activeFilterCount > 0) {
+                        Badge { Text(activeFilterCount.toString()) }
+                    }
+                },
+            ) {
+                IconButton(onClick = onOpenFilterSheet) {
+                    Icon(Icons.Default.Tune, contentDescription = "Filters")
+                }
+            }
+            if (filters.hasActive) {
+                TextButton(onClick = onClearAll) { Text("Clear") }
+            }
+        }
+        if (anyChip) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            ) {
+                filters.brand?.let { brand ->
+                    AssistChip(
+                        onClick = onClearBrand,
+                        label = { Text(brand) },
+                        leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
+                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove brand filter") },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                    )
+                }
+                if (filters.dateFrom != null || filters.dateTo != null) {
+                    AssistChip(
+                        onClick = onClearDateRange,
+                        label = { Text(formatDateRange(filters.dateFrom, filters.dateTo)) },
+                        leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
+                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove date filter") },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatDateRange(from: Long?, to: Long?): String {
+    val fmt = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+    return when {
+        from != null && to != null -> "${fmt.format(java.util.Date(from))} – ${fmt.format(java.util.Date(to))}"
+        from != null -> "From ${fmt.format(java.util.Date(from))}"
+        to != null -> "Until ${fmt.format(java.util.Date(to))}"
+        else -> "Date"
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterSheet(
+    filters: SessionFilters,
+    brands: List<String>,
+    onApply: (brand: String?, from: Long?, to: Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var brand by remember(filters.brand) { mutableStateOf(filters.brand) }
+    var dateFrom by remember(filters.dateFrom) { mutableStateOf(filters.dateFrom) }
+    var dateTo by remember(filters.dateTo) { mutableStateOf(filters.dateTo) }
+    var showFromPicker by remember { mutableStateOf(false) }
+    var showToPicker by remember { mutableStateOf(false) }
+
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+        ) {
+            Text(
+                "Filter sessions",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            Text("Date range", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            ) {
+                DatePresetChip("All time", isActive = dateFrom == null && dateTo == null) {
+                    dateFrom = null; dateTo = null
+                }
+                DatePresetChip("This month", isActive = matchesPreset(dateFrom, dateTo, DatePreset.THIS_MONTH)) {
+                    val (f, t) = DatePreset.THIS_MONTH.range()
+                    dateFrom = f; dateTo = t
+                }
+                DatePresetChip("Last 3 mo.", isActive = matchesPreset(dateFrom, dateTo, DatePreset.LAST_3_MONTHS)) {
+                    val (f, t) = DatePreset.LAST_3_MONTHS.range()
+                    dateFrom = f; dateTo = t
+                }
+                DatePresetChip("Last year", isActive = matchesPreset(dateFrom, dateTo, DatePreset.LAST_YEAR)) {
+                    val (f, t) = DatePreset.LAST_YEAR.range()
+                    dateFrom = f; dateTo = t
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AssistChip(
+                    onClick = { showFromPicker = true },
+                    label = { Text(dateFrom?.let { "From: ${formatDateRange(it, null).removePrefix("From ")}" } ?: "From…") },
+                )
+                AssistChip(
+                    onClick = { showToPicker = true },
+                    label = { Text(dateTo?.let { "To: ${formatDateRange(null, it).removePrefix("Until ")}" } ?: "To…") },
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Text("Brand", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            if (brands.isEmpty()) {
+                Text(
+                    "No brands recorded yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                ) {
+                    FilterChip(
+                        selected = brand == null,
+                        onClick = { brand = null },
+                        label = { Text("Any brand") },
+                    )
+                    brands.forEach { b ->
+                        FilterChip(
+                            selected = brand.equals(b, ignoreCase = true),
+                            onClick = { brand = if (brand.equals(b, ignoreCase = true)) null else b },
+                            label = { Text(b) },
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+                Spacer(Modifier.width(8.dp))
+                androidx.compose.material3.Button(onClick = { onApply(brand, dateFrom, dateTo) }) {
+                    Text("Apply")
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (showFromPicker) {
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = dateFrom)
+        DatePickerDialog(
+            onDismissRequest = { showFromPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    dateFrom = pickerState.selectedDateMillis?.let { startOfDay(it) }
+                    showFromPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFromPicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+    if (showToPicker) {
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = dateTo)
+        DatePickerDialog(
+            onDismissRequest = { showToPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    dateTo = pickerState.selectedDateMillis?.let { endOfDay(it) }
+                    showToPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showToPicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+}
+
+@Composable
+private fun DatePresetChip(label: String, isActive: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = isActive,
+        onClick = onClick,
+        label = { Text(label) },
+    )
+}
+
+private enum class DatePreset {
+    THIS_MONTH, LAST_3_MONTHS, LAST_YEAR;
+
+    fun range(): Pair<Long, Long> {
+        val cal = java.util.Calendar.getInstance()
+        val end = run {
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+            cal.set(java.util.Calendar.MINUTE, 59)
+            cal.set(java.util.Calendar.SECOND, 59)
+            cal.set(java.util.Calendar.MILLISECOND, 999)
+            cal.timeInMillis
+        }
+        val startCal = java.util.Calendar.getInstance()
+        when (this) {
+            THIS_MONTH -> {
+                startCal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+            }
+            LAST_3_MONTHS -> {
+                startCal.add(java.util.Calendar.MONTH, -3)
+            }
+            LAST_YEAR -> {
+                startCal.add(java.util.Calendar.YEAR, -1)
+            }
+        }
+        startCal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        startCal.set(java.util.Calendar.MINUTE, 0)
+        startCal.set(java.util.Calendar.SECOND, 0)
+        startCal.set(java.util.Calendar.MILLISECOND, 0)
+        return startCal.timeInMillis to end
+    }
+}
+
+private fun matchesPreset(from: Long?, to: Long?, preset: DatePreset): Boolean {
+    if (from == null || to == null) return false
+    val (pf, pt) = preset.range()
+    // Compare to within ~1 minute since "now" will move while the sheet is open.
+    return kotlin.math.abs(from - pf) < 60_000L && kotlin.math.abs(to - pt) < 60_000L
+}
+
+private fun startOfDay(epoch: Long): Long {
+    val cal = java.util.Calendar.getInstance().apply {
+        timeInMillis = epoch
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+}
+
+private fun endOfDay(epoch: Long): Long {
+    val cal = java.util.Calendar.getInstance().apply {
+        timeInMillis = epoch
+        set(java.util.Calendar.HOUR_OF_DAY, 23)
+        set(java.util.Calendar.MINUTE, 59)
+        set(java.util.Calendar.SECOND, 59)
+        set(java.util.Calendar.MILLISECOND, 999)
+    }
+    return cal.timeInMillis
 }
