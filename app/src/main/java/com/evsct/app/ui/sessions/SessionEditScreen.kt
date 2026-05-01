@@ -54,6 +54,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,6 +63,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -1096,6 +1099,17 @@ private fun ReceiptPreviewDialog(
 ) {
     val ctx = LocalContext.current
     val file = File(ctx.filesDir, relativePath)
+
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
+
+    fun resetTransform() {
+        scale = 1f
+        offsetX = 0f
+        offsetY = 0f
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -1104,14 +1118,43 @@ private fun ReceiptPreviewDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.92f))
-                .clickable(onClick = onDismiss),
+                // Pinch to zoom, drag to pan when zoomed.
+                .pointerInput(Unit) {
+                    androidx.compose.foundation.gestures.detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(1f, 6f)
+                        if (scale > 1f) {
+                            offsetX += pan.x
+                            offsetY += pan.y
+                        } else {
+                            offsetX = 0f
+                            offsetY = 0f
+                        }
+                    }
+                }
+                // Single tap dismisses while at native size; double tap toggles zoom.
+                .pointerInput(Unit) {
+                    androidx.compose.foundation.gestures.detectTapGestures(
+                        onTap = { if (scale == 1f) onDismiss() },
+                        onDoubleTap = {
+                            if (scale > 1f) resetTransform() else scale = 2.5f
+                        },
+                    )
+                },
             contentAlignment = Alignment.Center,
         ) {
             AsyncImage(
                 model = file,
                 contentDescription = "Receipt photo (full screen)",
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().padding(16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offsetX,
+                        translationY = offsetY,
+                    ),
             )
             Box(
                 modifier = Modifier
