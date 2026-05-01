@@ -170,6 +170,10 @@ fun SessionEditScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (state.hints.isNotEmpty()) {
+                ValidationHintsCard(state.hints)
+            }
+
             DateTimeRow(
                 epoch = state.sessionStart,
                 onPickDateTime = { newEpoch -> viewModel.update { it.copy(sessionStart = newEpoch) } },
@@ -287,10 +291,6 @@ fun SessionEditScreen(
                 onClear = { viewModel.clearReceipt() },
                 onPreview = { receiptToPreview = state.receiptImagePath },
             )
-
-            if (state.hints.isNotEmpty()) {
-                ValidationHintsCard(state.hints)
-            }
 
             SectionLabel("Notes")
             OutlinedTextField(
