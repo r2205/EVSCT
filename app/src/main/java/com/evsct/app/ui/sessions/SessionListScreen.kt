@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Label
@@ -999,7 +1000,7 @@ private fun BackupNudgeBanner(
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.CloudUpload,
+                    imageVector = Icons.Default.CloudUpload,
                     contentDescription = null,
                 )
                 Spacer(Modifier.width(8.dp))
