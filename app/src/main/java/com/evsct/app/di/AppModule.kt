@@ -21,7 +21,11 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): EvsctDatabase =
         Room.databaseBuilder(context, EvsctDatabase::class.java, EvsctDatabase.NAME)
-            .addMigrations(EvsctDatabase.MIGRATION_1_2, EvsctDatabase.MIGRATION_2_3)
+            .addMigrations(
+                EvsctDatabase.MIGRATION_1_2,
+                EvsctDatabase.MIGRATION_2_3,
+                EvsctDatabase.MIGRATION_3_4,
+            )
             .fallbackToDestructiveMigration()
             .build()
 

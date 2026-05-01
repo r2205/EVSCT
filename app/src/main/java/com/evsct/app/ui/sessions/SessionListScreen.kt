@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
@@ -510,12 +511,23 @@ private fun SessionRow(
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            Format.money(session.totalCost, session.currency),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (session.receiptImagePath != null) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Default.Receipt,
+                                    contentDescription = "Has receipt",
+                                    tint = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text(
+                                Format.money(session.totalCost, session.currency),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         Text(
                             Format.dateTime(session.sessionStart),
                             style = MaterialTheme.typography.labelSmall,

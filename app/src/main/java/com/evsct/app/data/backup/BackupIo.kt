@@ -25,10 +25,12 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private const val SCHEMA_VERSION = 1
+private const val SCHEMA_VERSION = 2
 private const val BACKUP_JSON = "backup.json"
 private const val IMAGE_DIR_IN_ZIP = "vehicles/"
 private const val IMAGE_DIR_IN_FILES = "vehicles"
+private const val RECEIPT_DIR_IN_ZIP = "receipts/"
+private const val RECEIPT_DIR_IN_FILES = "receipts"
 
 sealed interface BackupResult {
     data class ExportSuccess(val sessions: Int, val trips: Int, val vehicles: Int) : BackupResult
@@ -80,6 +82,16 @@ class BackupIo @Inject constructor(
                     file.inputStream().use { it.copyTo(zip) }
                     zip.closeEntry()
                 }
+
+                sessions.forEach { s ->
+                    val rel = s.receiptImagePath ?: return@forEach
+                    val file = File(context.filesDir, rel)
+                    if (!file.exists()) return@forEach
+                    val nameInZip = RECEIPT_DIR_IN_ZIP + file.name
+                    zip.putNextEntry(ZipEntry(nameInZip))
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
             }
             BackupResult.ExportSuccess(sessions.size, trips.size, vehicles.size)
         } catch (e: Exception) {
@@ -101,6 +113,7 @@ class BackupIo @Inject constructor(
             // before the DB swap so the new image paths are valid by the time
             // the new vehicle rows are inserted.
             val installedImages = installImages(tempDir, payload.vehicles)
+            val installedReceipts = installReceipts(tempDir, payload.sessions)
 
             val sessionDao = database.sessionDao()
             val tripDao = database.tripDao()
@@ -179,6 +192,7 @@ class BackupIo @Inject constructor(
                         tripId = raw.tripId?.let(tripIdMap::get),
                         vehicleId = raw.vehicleId?.let(vehicleIdMap::get),
                         notes = raw.notes,
+                        receiptImagePath = raw.receiptFile?.let { installedReceipts[it] },
                         createdAt = raw.createdAt,
                         updatedAt = raw.updatedAt,
                     )
@@ -189,7 +203,8 @@ class BackupIo @Inject constructor(
             // Best-effort: drop any image files in filesDir that weren't
             // referenced by the restored set. Old pre-restore images are now
             // orphaned and safe to remove.
-            cleanOrphanImages(installedImages.values.toSet())
+            cleanOrphans(IMAGE_DIR_IN_FILES, installedImages.values.toSet())
+            cleanOrphans(RECEIPT_DIR_IN_FILES, installedReceipts.values.toSet())
 
             BackupResult.RestoreSuccess(
                 sessions = payload.sessions.size,
@@ -271,6 +286,8 @@ class BackupIo @Inject constructor(
         putOptLong("tripId", tripId)
         putOptLong("vehicleId", vehicleId)
         putOptString("notes", notes)
+        // Strip the "receipts/" prefix; the directory is implicit in the zip.
+        putOptString("receiptFile", receiptImagePath?.removePrefix("$RECEIPT_DIR_IN_FILES/"))
         put("createdAt", createdAt)
         put("updatedAt", updatedAt)
     }
@@ -294,11 +311,10 @@ class BackupIo @Inject constructor(
                             json = JSONObject(String(bytes, Charsets.UTF_8))
                         }
                         entry.name.startsWith(IMAGE_DIR_IN_ZIP) -> {
-                            val rel = entry.name.removePrefix(IMAGE_DIR_IN_ZIP)
-                            // Guard against zip-slip — keep just the basename.
-                            val safeName = File(rel).name
-                            val out = File(tempDir, safeName)
-                            out.outputStream().use { os -> zip.copyTo(os) }
+                            extractInto(zip, entry.name, IMAGE_DIR_IN_ZIP, File(tempDir, IMAGE_DIR_IN_FILES))
+                        }
+                        entry.name.startsWith(RECEIPT_DIR_IN_ZIP) -> {
+                            extractInto(zip, entry.name, RECEIPT_DIR_IN_ZIP, File(tempDir, RECEIPT_DIR_IN_FILES))
                         }
                     }
                     zip.closeEntry()
@@ -372,6 +388,7 @@ class BackupIo @Inject constructor(
                     tripId = s.optLongOrNull("tripId"),
                     vehicleId = s.optLongOrNull("vehicleId"),
                     notes = s.optStringOrNull("notes"),
+                    receiptFile = s.optStringOrNull("receiptFile"),
                     createdAt = s.optLong("createdAt", System.currentTimeMillis()),
                     updatedAt = s.optLong("updatedAt", System.currentTimeMillis()),
                 )
@@ -380,12 +397,28 @@ class BackupIo @Inject constructor(
     }
 
     /** Copies extracted images into filesDir/vehicles/, returns map<imageFile -> imagePath>. */
+    private fun extractInto(
+        zip: ZipInputStream,
+        entryName: String,
+        prefix: String,
+        targetDir: File,
+    ) {
+        targetDir.mkdirs()
+        val rel = entryName.removePrefix(prefix)
+        // Guard against zip-slip — keep only the basename.
+        val safeName = File(rel).name
+        if (safeName.isBlank()) return
+        val out = File(targetDir, safeName)
+        out.outputStream().use { os -> zip.copyTo(os) }
+    }
+
     private fun installImages(tempDir: File, vehicles: List<RawVehicle>): Map<String, String> {
+        val tempImageDir = File(tempDir, IMAGE_DIR_IN_FILES)
         val targetDir = File(context.filesDir, IMAGE_DIR_IN_FILES).apply { mkdirs() }
         val map = mutableMapOf<String, String>()
         vehicles.forEach { v ->
             val name = v.imageFile ?: return@forEach
-            val src = File(tempDir, name)
+            val src = File(tempImageDir, name)
             if (!src.exists()) return@forEach
             val dest = File(targetDir, name)
             try {
@@ -400,11 +433,32 @@ class BackupIo @Inject constructor(
         return map
     }
 
-    private fun cleanOrphanImages(referencedPaths: Set<String>) {
-        val dir = File(context.filesDir, IMAGE_DIR_IN_FILES)
+    private fun installReceipts(tempDir: File, sessions: List<RawSession>): Map<String, String> {
+        val tempReceiptDir = File(tempDir, RECEIPT_DIR_IN_FILES)
+        val targetDir = File(context.filesDir, RECEIPT_DIR_IN_FILES).apply { mkdirs() }
+        val map = mutableMapOf<String, String>()
+        sessions.forEach { s ->
+            val name = s.receiptFile ?: return@forEach
+            val src = File(tempReceiptDir, name)
+            if (!src.exists()) return@forEach
+            val dest = File(targetDir, name)
+            try {
+                src.inputStream().use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+                map[name] = "$RECEIPT_DIR_IN_FILES/$name"
+            } catch (_: IOException) {
+                // Skip silently – session just won't have a receipt after restore.
+            }
+        }
+        return map
+    }
+
+    private fun cleanOrphans(subdir: String, referencedPaths: Set<String>) {
+        val dir = File(context.filesDir, subdir)
         if (!dir.isDirectory) return
         val keepNames = referencedPaths
-            .map { it.removePrefix("$IMAGE_DIR_IN_FILES/") }
+            .map { it.removePrefix("$subdir/") }
             .toSet()
         dir.listFiles()?.forEach { file ->
             if (file.name !in keepNames) file.delete()
@@ -472,6 +526,7 @@ private data class RawSession(
     val tripId: Long?,
     val vehicleId: Long?,
     val notes: String?,
+    val receiptFile: String?,
     val createdAt: Long,
     val updatedAt: Long,
 )

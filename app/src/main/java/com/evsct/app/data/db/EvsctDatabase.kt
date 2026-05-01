@@ -11,7 +11,7 @@ import com.evsct.app.data.entity.Vehicle
 
 @Database(
     entities = [ChargingSession::class, Trip::class, Vehicle::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -122,6 +122,12 @@ abstract class EvsctDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `trips` ADD COLUMN `startOdometerKm` REAL")
                 db.execSQL("ALTER TABLE `trips` ADD COLUMN `endOdometerKm` REAL")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `charging_sessions` ADD COLUMN `receiptImagePath` TEXT")
             }
         }
     }

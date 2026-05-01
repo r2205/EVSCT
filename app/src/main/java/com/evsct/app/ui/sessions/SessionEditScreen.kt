@@ -2,8 +2,10 @@ package com.evsct.app.ui.sessions
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,13 +14,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -37,6 +43,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -52,12 +59,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
+import java.io.File
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingType
@@ -95,6 +109,12 @@ fun SessionEditScreen(
             }
         }
     }
+
+    val receiptPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> uri?.let { viewModel.pickReceipt(it) } }
+
+    var receiptToPreview by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.locationMessage) {
         state.locationMessage?.let { msg ->
@@ -249,6 +269,20 @@ fun SessionEditScreen(
             SectionLabel("Trip")
             TripPicker(state) { id -> viewModel.update { it.copy(tripId = id) } }
 
+            SectionLabel("Receipt")
+            ReceiptCard(
+                imagePath = state.receiptImagePath,
+                onPick = {
+                    receiptPicker.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+                        ),
+                    )
+                },
+                onClear = { viewModel.clearReceipt() },
+                onPreview = { receiptToPreview = state.receiptImagePath },
+            )
+
             SectionLabel("Notes")
             OutlinedTextField(
                 value = state.notes,
@@ -259,6 +293,13 @@ fun SessionEditScreen(
 
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    receiptToPreview?.let { path ->
+        ReceiptPreviewDialog(
+            relativePath = path,
+            onDismiss = { receiptToPreview = null },
+        )
     }
 
     if (showOdometerWarning) {
@@ -968,4 +1009,126 @@ private fun TextFieldPlain(
         singleLine = true,
         modifier = modifier,
     )
+}
+
+
+@Composable
+private fun ReceiptCard(
+    imagePath: String?,
+    onPick: () -> Unit,
+    onClear: () -> Unit,
+    onPreview: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val file = imagePath?.let { File(ctx.filesDir, it) }
+    val hasImage = file != null && file.exists()
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            if (hasImage) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onPreview),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AsyncImage(
+                        model = file,
+                        contentDescription = "Receipt photo",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onPick) {
+                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Change")
+                    }
+                    OutlinedButton(onClick = onClear) { Text("Remove") }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onPick)
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.AddPhotoAlternate,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Attach a receipt photo",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Useful for expense reports.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReceiptPreviewDialog(
+    relativePath: String,
+    onDismiss: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val file = File(ctx.filesDir, relativePath)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.92f))
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center,
+        ) {
+            AsyncImage(
+                model = file,
+                contentDescription = "Receipt photo (full screen)",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp),
+            ) {
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.TopEnd),
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White,
+                    )
+                }
+            }
+        }
+    }
 }

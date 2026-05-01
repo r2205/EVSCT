@@ -63,6 +63,8 @@ data class ChargingSession(
     val tripId: Long? = null,
     val vehicleId: Long? = null,
     val notes: String? = null,
+    /** Optional path under filesDir to an attached receipt image. */
+    val receiptImagePath: String? = null,
 
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),

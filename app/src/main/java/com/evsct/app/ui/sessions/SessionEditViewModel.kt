@@ -11,10 +11,12 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
+import android.net.Uri
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.AutofillResult
 import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.LocationAutofill
+import com.evsct.app.util.ReceiptImageStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,6 +75,7 @@ data class SessionEditUi(
     val tripId: Long? = null,
     val vehicleId: Long? = null,
     val notes: String = "",
+    val receiptImagePath: String? = null,
     val brandSuggestions: List<String> = emptyList(),
     val citySuggestions: List<String> = emptyList(),
     val recentStops: List<RecentStop> = emptyList(),
@@ -89,6 +92,7 @@ class SessionEditViewModel @Inject constructor(
     private val tripRepository: TripRepository,
     private val vehicleRepository: VehicleRepository,
     private val locationAutofill: LocationAutofill,
+    private val receiptImageStore: ReceiptImageStore,
 ) : ViewModel() {
 
     private val sessionId: Long = savedStateHandle.get<Long>(Routes.SESSION_EDIT_ARG) ?: -1L
@@ -160,11 +164,29 @@ class SessionEditViewModel @Inject constructor(
                 tripId = s.tripId,
                 vehicleId = s.vehicleId,
                 notes = s.notes.orEmpty(),
+                receiptImagePath = s.receiptImagePath,
             )
         }
     }
 
     fun update(transform: (SessionEditUi) -> SessionEditUi) = _state.update(transform)
+
+    fun pickReceipt(uri: Uri) {
+        viewModelScope.launch {
+            val previous = _state.value.receiptImagePath
+            val path = receiptImageStore.copyFromUri(uri)
+            _state.update { it.copy(receiptImagePath = path) }
+            if (previous != null) receiptImageStore.delete(previous)
+        }
+    }
+
+    fun clearReceipt() {
+        viewModelScope.launch {
+            val previous = _state.value.receiptImagePath
+            _state.update { it.copy(receiptImagePath = null) }
+            if (previous != null) receiptImageStore.delete(previous)
+        }
+    }
 
     fun applyStop(stop: RecentStop) = _state.update { current ->
         current.copy(
@@ -236,6 +258,7 @@ class SessionEditViewModel @Inject constructor(
                 tripId = s.tripId,
                 vehicleId = s.vehicleId,
                 notes = s.notes.takeIf { it.isNotBlank() },
+                receiptImagePath = s.receiptImagePath,
             )
             sessionRepository.upsert(session)
             onSaved()
@@ -276,7 +299,10 @@ class SessionEditViewModel @Inject constructor(
     fun deleteAndExit(onDeleted: () -> Unit) {
         viewModelScope.launch {
             if (sessionId > 0) {
-                sessionRepository.findById(sessionId)?.let { sessionRepository.delete(it) }
+                sessionRepository.findById(sessionId)?.let {
+                    sessionRepository.delete(it)
+                    receiptImageStore.delete(it.receiptImagePath)
+                }
             }
             onDeleted()
         }
