@@ -188,18 +188,29 @@ fun SessionEditScreen(
                 viewModel.update { it.copy(pricingModel = pm) }
             }
 
+            val warnedFields = remember(state.hints) {
+                state.hints.flatMap { it.fields }.toSet()
+            }
+
             SectionLabel("Session")
-            NumberField("Odometer (km)", state.odometerText) { v ->
-                viewModel.update { it.copy(odometerText = v) }
-            }
-            NumberField("Energy delivered (kWh)", state.energyText) { v ->
-                viewModel.update { it.copy(energyText = v) }
-            }
-            NumberField("Total cost (${state.currency})", state.costText) { v ->
-                viewModel.update { it.copy(costText = v) }
-            }
+            NumberField(
+                label = "Odometer (km)",
+                value = state.odometerText,
+                isError = HintField.ODOMETER in warnedFields,
+            ) { v -> viewModel.update { it.copy(odometerText = v) } }
+            NumberField(
+                label = "Energy delivered (kWh)",
+                value = state.energyText,
+                isError = HintField.ENERGY in warnedFields,
+            ) { v -> viewModel.update { it.copy(energyText = v) } }
+            NumberField(
+                label = "Total cost (${state.currency})",
+                value = state.costText,
+                isError = HintField.COST in warnedFields,
+            ) { v -> viewModel.update { it.copy(costText = v) } }
             DurationField(
                 value = state.durationText,
+                isError = HintField.DURATION in warnedFields,
                 onValue = { v -> viewModel.update { it.copy(durationText = v) } },
             )
             Row(
@@ -210,24 +221,34 @@ fun SessionEditScreen(
                     label = "Battery start %",
                     value = state.batteryStartText,
                     modifier = Modifier.weight(1f),
+                    isError = HintField.BATTERY_START in warnedFields,
                     onValue = { v -> viewModel.update { it.copy(batteryStartText = v) } },
                 )
                 NumberField(
                     label = "Battery end %",
                     value = state.batteryEndText,
                     modifier = Modifier.weight(1f),
+                    isError = HintField.BATTERY_END in warnedFields,
                     onValue = { v -> viewModel.update { it.copy(batteryEndText = v) } },
                 )
             }
 
             SectionLabel("Posted rates (optional)")
-            NumberField("Posted energy price ($/kWh)", state.postedEnergyPriceText) { v ->
-                viewModel.update { it.copy(postedEnergyPriceText = v) }
-            }
-            NumberField("Posted time-based rate ($/min)", state.postedTimeRateText) { v ->
-                viewModel.update { it.copy(postedTimeRateText = v) }
-            }
-            NumberField("Posted max power (kW)", state.postedMaxPowerText) { v ->
+            NumberField(
+                label = "Posted energy price ($/kWh)",
+                value = state.postedEnergyPriceText,
+                isError = HintField.POSTED_ENERGY_PRICE in warnedFields,
+            ) { v -> viewModel.update { it.copy(postedEnergyPriceText = v) } }
+            NumberField(
+                label = "Posted time-based rate ($/min)",
+                value = state.postedTimeRateText,
+                isError = HintField.POSTED_TIME_RATE in warnedFields,
+            ) { v -> viewModel.update { it.copy(postedTimeRateText = v) } }
+            NumberField(
+                label = "Posted max power (kW)",
+                value = state.postedMaxPowerText,
+                isError = HintField.POSTED_MAX_POWER in warnedFields,
+            ) { v ->
                 viewModel.update { it.copy(postedMaxPowerText = v) }
             }
 
@@ -921,6 +942,7 @@ private fun LocationAutofillCard(
 @Composable
 private fun DurationField(
     value: String,
+    isError: Boolean = false,
     onValue: (String) -> Unit,
 ) {
     var hasFocus by remember { mutableStateOf(false) }
@@ -946,6 +968,7 @@ private fun DurationField(
         placeholder = { Text("e.g. 25  ·  1:25  ·  0:11:00") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         singleLine = true,
+        isError = isError,
         trailingIcon = {
             // The phone keypad has no `:`, so insert one at the cursor position
             // when the user taps this button. Visible only while the field is
@@ -992,6 +1015,7 @@ private fun NumberField(
     label: String,
     value: String,
     modifier: Modifier = Modifier.fillMaxWidth(),
+    isError: Boolean = false,
     onValue: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -1000,6 +1024,7 @@ private fun NumberField(
         label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         singleLine = true,
+        isError = isError,
         modifier = modifier,
     )
 }

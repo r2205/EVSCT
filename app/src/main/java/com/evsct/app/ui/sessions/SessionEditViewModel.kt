@@ -25,9 +25,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+enum class HintField {
+    ODOMETER, ENERGY, COST, DURATION,
+    POSTED_ENERGY_PRICE, POSTED_TIME_RATE, POSTED_MAX_POWER,
+    BATTERY_START, BATTERY_END,
+}
+
 data class ValidationHint(
     val title: String,
     val detail: String,
+    val fields: Set<HintField> = emptySet(),
 )
 
 data class RecentStop(
@@ -212,6 +219,7 @@ class SessionEditViewModel @Inject constructor(
             out += ValidationHint(
                 title = "Odometer went backward",
                 detail = "Previous session: ${"%,.0f".format(prevOdo)} km · Now: ${"%,.0f".format(odo)} km. Check for typos.",
+                fields = setOf(HintField.ODOMETER),
             )
         }
 
@@ -227,6 +235,7 @@ class SessionEditViewModel @Inject constructor(
                 out += ValidationHint(
                     title = "Effective $/kWh differs from posted",
                     detail = "Posted ${"%.3f".format(postedPrice)} · Effective ${"%.3f".format(effPricePerKwh)}. Check kWh or cost.",
+                    fields = setOf(HintField.COST, HintField.ENERGY, HintField.POSTED_ENERGY_PRICE),
                 )
             }
         }
@@ -240,6 +249,7 @@ class SessionEditViewModel @Inject constructor(
                 out += ValidationHint(
                     title = "Effective $/min differs from posted",
                     detail = "Posted ${"%.3f".format(postedTimeRate)} · Effective ${"%.3f".format(effPerMin)}. Check duration or cost.",
+                    fields = setOf(HintField.COST, HintField.DURATION, HintField.POSTED_TIME_RATE),
                 )
             }
         }
@@ -251,6 +261,7 @@ class SessionEditViewModel @Inject constructor(
             out += ValidationHint(
                 title = "Avg power exceeds posted max",
                 detail = "Posted max ${"%.0f".format(postedMaxKw)} kW · Effective avg ${"%.1f".format(avgPower)} kW. Check kWh or duration.",
+                fields = setOf(HintField.ENERGY, HintField.DURATION, HintField.POSTED_MAX_POWER),
             )
         }
 
@@ -260,6 +271,7 @@ class SessionEditViewModel @Inject constructor(
             out += ValidationHint(
                 title = "Battery decreased during charge",
                 detail = "Start $battStart% → End $battEnd%. Did you swap them?",
+                fields = setOf(HintField.BATTERY_START, HintField.BATTERY_END),
             )
         }
 
