@@ -4,6 +4,8 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1120,7 +1122,7 @@ private fun ReceiptPreviewDialog(
                 .background(Color.Black.copy(alpha = 0.92f))
                 // Pinch to zoom, drag to pan when zoomed.
                 .pointerInput(Unit) {
-                    androidx.compose.foundation.gestures.detectTransformGestures { _, pan, zoom, _ ->
+                    detectTransformGestures { _, pan, zoom, _ ->
                         scale = (scale * zoom).coerceIn(1f, 6f)
                         if (scale > 1f) {
                             offsetX += pan.x
@@ -1133,7 +1135,7 @@ private fun ReceiptPreviewDialog(
                 }
                 // Single tap dismisses while at native size; double tap toggles zoom.
                 .pointerInput(Unit) {
-                    androidx.compose.foundation.gestures.detectTapGestures(
+                    detectTapGestures(
                         onTap = { if (scale == 1f) onDismiss() },
                         onDoubleTap = {
                             if (scale > 1f) resetTransform() else scale = 2.5f
