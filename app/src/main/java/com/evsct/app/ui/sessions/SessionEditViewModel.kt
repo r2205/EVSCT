@@ -25,6 +25,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+data class ValidationHint(
+    val title: String,
+    val detail: String,
+)
+
 data class RecentStop(
     val brand: String?,
     val city: String?,
@@ -83,6 +88,7 @@ data class SessionEditUi(
     val vehicles: List<Vehicle> = emptyList(),
     val isFetchingLocation: Boolean = false,
     val locationMessage: String? = null,
+    val hints: List<ValidationHint> = emptyList(),
 )
 
 @HiltViewModel
@@ -94,6 +100,10 @@ class SessionEditViewModel @Inject constructor(
     private val locationAutofill: LocationAutofill,
     private val receiptImageStore: ReceiptImageStore,
 ) : ViewModel() {
+
+    /** Cached list of every session, used to derive validation hints (e.g.
+     *  comparing the current odometer to the previous session's). */
+    private var allSessionsCache: List<ChargingSession> = emptyList()
 
     private val sessionId: Long = savedStateHandle.get<Long>(Routes.SESSION_EDIT_ARG) ?: -1L
     private val preselectVehicleId: Long? =
@@ -116,7 +126,11 @@ class SessionEditViewModel @Inject constructor(
         }
         viewModelScope.launch {
             sessionRepository.observeAll().collect { sessions ->
-                _state.update { it.copy(recentStops = computeRecentStops(sessions)) }
+                allSessionsCache = sessions
+                _state.update {
+                    it.copy(recentStops = computeRecentStops(sessions))
+                        .let(::withHints)
+                }
             }
         }
         viewModelScope.launch {
@@ -138,8 +152,8 @@ class SessionEditViewModel @Inject constructor(
     }
 
     private fun loadFrom(s: ChargingSession) {
-        _state.update {
-            it.copy(
+        _state.update { current ->
+            withHints(current.copy(
                 isLoading = false,
                 isNew = false,
                 sessionStart = s.sessionStart,
@@ -165,11 +179,92 @@ class SessionEditViewModel @Inject constructor(
                 vehicleId = s.vehicleId,
                 notes = s.notes.orEmpty(),
                 receiptImagePath = s.receiptImagePath,
-            )
+            ))
         }
     }
 
-    fun update(transform: (SessionEditUi) -> SessionEditUi) = _state.update(transform)
+    fun update(transform: (SessionEditUi) -> SessionEditUi) =
+        _state.update { withHints(transform(it)) }
+
+    private fun withHints(form: SessionEditUi): SessionEditUi {
+        val prev = previousSessionFor(form)
+        return form.copy(hints = computeHints(form, prev))
+    }
+
+    private fun previousSessionFor(form: SessionEditUi): ChargingSession? {
+        val vid = form.vehicleId ?: return null
+        return allSessionsCache.asSequence()
+            .filter { it.vehicleId == vid }
+            .filter { it.id != sessionId }            // ignore the session we're currently editing
+            .filter { it.sessionStart < form.sessionStart }
+            .maxByOrNull { it.sessionStart }
+    }
+
+    private fun computeHints(
+        form: SessionEditUi,
+        previous: ChargingSession?,
+    ): List<ValidationHint> {
+        val out = mutableListOf<ValidationHint>()
+
+        val odo = form.odometerText.toDoubleOrNull()
+        val prevOdo = previous?.odometerKm
+        if (odo != null && prevOdo != null && odo < prevOdo) {
+            out += ValidationHint(
+                title = "Odometer went backward",
+                detail = "Previous session: ${"%,.0f".format(prevOdo)} km · Now: ${"%,.0f".format(odo)} km. Check for typos.",
+            )
+        }
+
+        val cost = form.costText.toDoubleOrNull()
+        val energy = form.energyText.toDoubleOrNull()
+        val durationSec = DurationFormat.parse(form.durationText)
+
+        val effPricePerKwh = if (cost != null && energy != null && energy > 0) cost / energy else null
+        val postedPrice = form.postedEnergyPriceText.toDoubleOrNull()
+        if (effPricePerKwh != null && postedPrice != null && postedPrice > 0) {
+            val deviation = kotlin.math.abs(effPricePerKwh - postedPrice) / postedPrice
+            if (deviation > 0.25) {
+                out += ValidationHint(
+                    title = "Effective $/kWh differs from posted",
+                    detail = "Posted ${"%.3f".format(postedPrice)} · Effective ${"%.3f".format(effPricePerKwh)}. Check kWh or cost.",
+                )
+            }
+        }
+
+        val effPerMin = if (cost != null && durationSec != null && durationSec > 0)
+            cost / (durationSec / 60.0) else null
+        val postedTimeRate = form.postedTimeRateText.toDoubleOrNull()
+        if (effPerMin != null && postedTimeRate != null && postedTimeRate > 0) {
+            val deviation = kotlin.math.abs(effPerMin - postedTimeRate) / postedTimeRate
+            if (deviation > 0.25) {
+                out += ValidationHint(
+                    title = "Effective $/min differs from posted",
+                    detail = "Posted ${"%.3f".format(postedTimeRate)} · Effective ${"%.3f".format(effPerMin)}. Check duration or cost.",
+                )
+            }
+        }
+
+        val avgPower = if (energy != null && durationSec != null && durationSec > 0)
+            energy / (durationSec / 3600.0) else null
+        val postedMaxKw = form.postedMaxPowerText.toDoubleOrNull()
+        if (avgPower != null && postedMaxKw != null && postedMaxKw > 0 && avgPower > postedMaxKw * 1.05) {
+            out += ValidationHint(
+                title = "Avg power exceeds posted max",
+                detail = "Posted max ${"%.0f".format(postedMaxKw)} kW · Effective avg ${"%.1f".format(avgPower)} kW. Check kWh or duration.",
+            )
+        }
+
+        val battStart = form.batteryStartText.toIntOrNull()
+        val battEnd = form.batteryEndText.toIntOrNull()
+        if (battStart != null && battEnd != null && battEnd < battStart) {
+            out += ValidationHint(
+                title = "Battery decreased during charge",
+                detail = "Start $battStart% → End $battEnd%. Did you swap them?",
+            )
+        }
+
+        return out
+    }
 
     fun pickReceipt(uri: Uri) {
         viewModelScope.launch {

@@ -288,6 +288,10 @@ fun SessionEditScreen(
                 onPreview = { receiptToPreview = state.receiptImagePath },
             )
 
+            if (state.hints.isNotEmpty()) {
+                ValidationHintsCard(state.hints)
+            }
+
             SectionLabel("Notes")
             OutlinedTextField(
                 value = state.notes,
@@ -1173,6 +1177,44 @@ private fun ReceiptPreviewDialog(
                         tint = Color.White,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ValidationHintsCard(hints: List<ValidationHint>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = com.evsct.app.ui.theme.EvAccents.DcFastContainer,
+            contentColor = Color(0xFF3B2400),
+        ),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (hints.size == 1) "Heads-up" else "${hints.size} things to double-check",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+            }
+            hints.forEach { hint ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    hint.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+                Text(
+                    hint.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
     }
