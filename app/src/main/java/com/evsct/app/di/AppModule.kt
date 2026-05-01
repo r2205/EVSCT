@@ -1,6 +1,9 @@
 package com.evsct.app.di
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.evsct.app.data.db.ChargingSessionDao
 import com.evsct.app.data.db.EvsctDatabase
@@ -12,6 +15,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+
+private val Context.evsctDataStore: DataStore<Preferences> by preferencesDataStore("evsct_prefs")
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -37,4 +42,10 @@ object AppModule {
 
     @Provides
     fun provideVehicleDao(db: EvsctDatabase): VehicleDao = db.vehicleDao()
+
+    @Provides
+    @Singleton
+    fun providePreferencesDataStore(
+        @ApplicationContext context: Context,
+    ): DataStore<Preferences> = context.evsctDataStore
 }

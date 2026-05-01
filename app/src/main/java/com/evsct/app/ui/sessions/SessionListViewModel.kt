@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
@@ -28,6 +29,11 @@ data class SessionFilters(
         get() = query.isNotBlank() || brand != null || dateFrom != null || dateTo != null
 }
 
+data class BackupNudge(
+    val show: Boolean = false,
+    val daysSinceLastBackup: Long? = null,
+)
+
 data class SessionListUi(
     val sessions: List<ChargingSession> = emptyList(),
     val trips: List<Trip> = emptyList(),
@@ -41,6 +47,7 @@ data class SessionListUi(
     val selectedIds: Set<Long> = emptySet(),
     val vehicleFilterId: Long? = null,
     val filters: SessionFilters = SessionFilters(),
+    val backupNudge: BackupNudge = BackupNudge(),
 ) {
     val isSelectionMode: Boolean get() = selectedIds.isNotEmpty()
 }
@@ -50,11 +57,13 @@ class SessionListViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
     private val vehicleRepository: VehicleRepository,
+    private val appPreferences: AppPreferences,
 ) : ViewModel() {
 
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
     private val vehicleFilter = MutableStateFlow<Long?>(null)
     private val filters = MutableStateFlow(SessionFilters())
+    private val backupNudgeDismissed = MutableStateFlow(false)
 
     /** Bundle the slow-changing data into one Triple so the outer combine fits the
      *  built-in 5-arg overload comfortably. */
@@ -64,7 +73,7 @@ class SessionListViewModel @Inject constructor(
         vehicleRepository.observeAll(),
     ) { sessions, trips, vehicles -> Triple(sessions, trips, vehicles) }
 
-    val state: StateFlow<SessionListUi> =
+    private val baseUi: kotlinx.coroutines.flow.Flow<Pair<SessionListUi, Int>> =
         combine(coreData, selected, vehicleFilter, filters) { core, selectedIds, filter, f ->
             val (allSessions, trips, vehicles) = core
 
@@ -100,8 +109,21 @@ class SessionListViewModel @Inject constructor(
                 selectedIds = cleanedSelection,
                 vehicleFilterId = effectiveVehicleFilter,
                 filters = f,
-            )
+            ) to allSessions.size
+        }
+
+    val state: StateFlow<SessionListUi> =
+        combine(
+            baseUi,
+            appPreferences.lastBackupAt,
+            backupNudgeDismissed,
+        ) { (ui, totalSessions), lastBackupAt, dismissed ->
+            ui.copy(backupNudge = computeBackupNudge(totalSessions, lastBackupAt, dismissed))
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SessionListUi())
+
+    fun dismissBackupNudge() {
+        backupNudgeDismissed.value = true
+    }
 
     fun setVehicleFilter(vehicleId: Long?) {
         vehicleFilter.value = vehicleId
@@ -149,6 +171,26 @@ class SessionListViewModel @Inject constructor(
 
     fun delete(session: ChargingSession) = viewModelScope.launch {
         sessionRepository.delete(session)
+    }
+}
+
+private fun computeBackupNudge(
+    totalSessions: Int,
+    lastBackupAt: Long?,
+    dismissed: Boolean,
+): BackupNudge {
+    if (dismissed) return BackupNudge(show = false)
+    if (lastBackupAt == null) {
+        // Don't nag empty installs; only nudge once the user has accumulated
+        // enough data to be worth backing up.
+        if (totalSessions < AppPreferences.BACKUP_NUDGE_MIN_SESSIONS) return BackupNudge(show = false)
+        return BackupNudge(show = true, daysSinceLastBackup = null)
+    }
+    val days = (System.currentTimeMillis() - lastBackupAt) / 86_400_000L
+    return if (days >= AppPreferences.BACKUP_NUDGE_THRESHOLD_DAYS) {
+        BackupNudge(show = true, daysSinceLastBackup = days)
+    } else {
+        BackupNudge(show = false)
     }
 }
 

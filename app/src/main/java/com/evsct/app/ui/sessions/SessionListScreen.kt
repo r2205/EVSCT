@@ -182,6 +182,13 @@ fun SessionListScreen(
                     onSelect = { id -> viewModel.setVehicleFilter(id) },
                 )
             }
+            if (state.backupNudge.show && !state.isSelectionMode) {
+                BackupNudgeBanner(
+                    nudge = state.backupNudge,
+                    onOpenSettings = onOpenSettings,
+                    onDismiss = { viewModel.dismissBackupNudge() },
+                )
+            }
             SummaryCard(state)
             if (state.sessions.isEmpty()) {
                 EmptyState(state.vehicleFilterId != null)
@@ -958,4 +965,63 @@ private fun endOfDay(epoch: Long): Long {
         set(java.util.Calendar.MILLISECOND, 999)
     }
     return cal.timeInMillis
+}
+
+@Composable
+private fun BackupNudgeBanner(
+    nudge: BackupNudge,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val daysText = nudge.daysSinceLastBackup?.let { d ->
+        when {
+            d < 1L -> "today"
+            d == 1L -> "1 day ago"
+            d < 365L -> "$d days ago"
+            else -> "over a year ago"
+        }
+    }
+    val message = if (daysText == null) {
+        "You haven't backed up yet — protect your sessions before they're lost."
+    } else {
+        "Last backup was $daysText. Time to refresh it."
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        ),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Default.CloudUpload,
+                    contentDescription = null,
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Back up your data?",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(message, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Not now") }
+                Spacer(Modifier.width(4.dp))
+                androidx.compose.material3.TextButton(onClick = onOpenSettings) {
+                    Text("Open Settings")
+                }
+            }
+        }
+    }
 }

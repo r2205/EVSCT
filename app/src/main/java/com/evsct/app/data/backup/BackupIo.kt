@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
 import com.evsct.app.data.db.EvsctDatabase
+import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
@@ -52,6 +53,7 @@ sealed interface BackupResult {
 class BackupIo @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: EvsctDatabase,
+    private val appPreferences: AppPreferences,
 ) {
 
     suspend fun export(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
@@ -93,6 +95,7 @@ class BackupIo @Inject constructor(
                     zip.closeEntry()
                 }
             }
+            appPreferences.recordBackup()
             BackupResult.ExportSuccess(sessions.size, trips.size, vehicles.size)
         } catch (e: Exception) {
             BackupResult.Failure(e.message ?: "Export failed")
