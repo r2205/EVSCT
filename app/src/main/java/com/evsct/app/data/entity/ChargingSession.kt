@@ -60,6 +60,11 @@ data class ChargingSession(
     val stationName: String? = null,
     val stallName: String? = null,
 
+    /** Geocoded coordinates for the map view. Populated from GPS autofill or
+     *  via reverse-geocode backfill of historical address strings. */
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+
     val tripId: Long? = null,
     val vehicleId: Long? = null,
     val notes: String? = null,

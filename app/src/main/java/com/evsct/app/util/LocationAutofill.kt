@@ -25,6 +25,8 @@ data class GeocodedLocation(
     val provinceState: String?,
     val address: String?,
     val countryCode: String?,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
 )
 
 sealed interface AutofillResult {
@@ -61,7 +63,42 @@ class LocationAutofill @Inject constructor(
             return@withContext AutofillResult.Failure(e.message ?: "Reverse geocoding failed")
         }
         val address = addresses.firstOrNull() ?: return@withContext AutofillResult.NoLocation
-        AutofillResult.Success(address.toGeocoded())
+        AutofillResult.Success(
+            address.toGeocoded().copy(
+                latitude = location.latitude,
+                longitude = location.longitude,
+            )
+        )
+    }
+
+    /**
+     * Reverse-geocode an address string (no GPS fix involved). Returns null
+     * when geocoding isn't available or no result is found. Used by the map
+     * screen to backfill historical sessions that have only a textual address.
+     */
+    suspend fun geocodeAddress(query: String): GeocodedLocation? = withContext(Dispatchers.IO) {
+        if (query.isBlank() || !Geocoder.isPresent()) return@withContext null
+        val geocoder = Geocoder(context, Locale.getDefault())
+        val result = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                suspendCancellableCoroutine { cont ->
+                    geocoder.getFromLocationName(query, 1) { addresses ->
+                        if (cont.isActive) cont.resume(addresses)
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                geocoder.getFromLocationName(query, 1) ?: emptyList()
+            }
+        } catch (_: IOException) {
+            null
+        } ?: return@withContext null
+
+        val match = result.firstOrNull() ?: return@withContext null
+        match.toGeocoded().copy(
+            latitude = match.latitude.takeIf { match.hasLatitude() },
+            longitude = match.longitude.takeIf { match.hasLongitude() },
+        )
     }
 
     private suspend fun getCurrentLocation(): Location? {

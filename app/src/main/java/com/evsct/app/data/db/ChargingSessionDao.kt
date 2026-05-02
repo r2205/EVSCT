@@ -49,6 +49,12 @@ interface ChargingSessionDao {
     @Query("UPDATE charging_sessions SET tripId = :tripId, updatedAt = :now WHERE id IN (:ids)")
     suspend fun assignTripToIds(ids: List<Long>, tripId: Long?, now: Long): Int
 
+    @Query(
+        "UPDATE charging_sessions SET latitude = :lat, longitude = :lng, updatedAt = :now " +
+            "WHERE id IN (:ids)"
+    )
+    suspend fun setCoordinatesForIds(ids: List<Long>, lat: Double, lng: Double, now: Long): Int
+
     @Query("DELETE FROM charging_sessions")
     suspend fun deleteAll()
 }

@@ -95,6 +95,8 @@ data class SessionEditUi(
     val vehicleId: Long? = null,
     val notes: String = "",
     val receiptImagePath: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val brandSuggestions: List<String> = emptyList(),
     val citySuggestions: List<String> = emptyList(),
     val recentStops: List<RecentStop> = emptyList(),
@@ -216,6 +218,8 @@ class SessionEditViewModel @Inject constructor(
                 vehicleId = s.vehicleId,
                 notes = s.notes.orEmpty(),
                 receiptImagePath = s.receiptImagePath,
+                latitude = s.latitude,
+                longitude = s.longitude,
             ))
         }
     }
@@ -405,6 +409,8 @@ class SessionEditViewModel @Inject constructor(
                 vehicleId = s.vehicleId,
                 notes = s.notes.takeIf { it.isNotBlank() },
                 receiptImagePath = s.receiptImagePath,
+                latitude = s.latitude,
+                longitude = s.longitude,
             )
             sessionRepository.upsert(session)
             onSaved()
@@ -431,6 +437,8 @@ class SessionEditViewModel @Inject constructor(
                             city = data.city ?: it.city,
                             province = data.provinceState ?: it.province,
                             address = data.address ?: it.address,
+                            latitude = data.latitude ?: it.latitude,
+                            longitude = data.longitude ?: it.longitude,
                         )
                     }
                     "Filled from current location."

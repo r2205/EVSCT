@@ -30,6 +30,7 @@ object AppModule {
                 EvsctDatabase.MIGRATION_1_2,
                 EvsctDatabase.MIGRATION_2_3,
                 EvsctDatabase.MIGRATION_3_4,
+                EvsctDatabase.MIGRATION_4_5,
             )
             .fallbackToDestructiveMigration()
             .build()

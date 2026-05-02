@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private const val SCHEMA_VERSION = 2
+private const val SCHEMA_VERSION = 3
 private const val BACKUP_JSON = "backup.json"
 private const val IMAGE_DIR_IN_ZIP = "vehicles/"
 private const val IMAGE_DIR_IN_FILES = "vehicles"
@@ -199,6 +199,8 @@ class BackupIo @Inject constructor(
                         vehicleId = raw.vehicleId?.let(vehicleIdMap::get),
                         notes = raw.notes,
                         receiptImagePath = raw.receiptFile?.let { installedReceipts[it] },
+                        latitude = raw.latitude,
+                        longitude = raw.longitude,
                         createdAt = raw.createdAt,
                         updatedAt = raw.updatedAt,
                     )
@@ -294,6 +296,8 @@ class BackupIo @Inject constructor(
         putOptString("notes", notes)
         // Strip the "receipts/" prefix; the directory is implicit in the zip.
         putOptString("receiptFile", receiptImagePath?.removePrefix("$RECEIPT_DIR_IN_FILES/"))
+        putOptDouble("latitude", latitude)
+        putOptDouble("longitude", longitude)
         put("createdAt", createdAt)
         put("updatedAt", updatedAt)
     }
@@ -395,6 +399,8 @@ class BackupIo @Inject constructor(
                     vehicleId = s.optLongOrNull("vehicleId"),
                     notes = s.optStringOrNull("notes"),
                     receiptFile = s.optStringOrNull("receiptFile"),
+                    latitude = s.optDoubleOrNull("latitude"),
+                    longitude = s.optDoubleOrNull("longitude"),
                     createdAt = s.optLong("createdAt", System.currentTimeMillis()),
                     updatedAt = s.optLong("updatedAt", System.currentTimeMillis()),
                 )
@@ -533,6 +539,8 @@ private data class RawSession(
     val vehicleId: Long?,
     val notes: String?,
     val receiptFile: String?,
+    val latitude: Double?,
+    val longitude: Double?,
     val createdAt: Long,
     val updatedAt: Long,
 )

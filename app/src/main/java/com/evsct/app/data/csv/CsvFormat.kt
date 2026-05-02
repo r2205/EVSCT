@@ -34,6 +34,8 @@ object CsvFormat {
         "trip_name",
         "vehicle_name",
         "notes",
+        "latitude",
+        "longitude",
     )
 
     private val isoDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getDefault() }
@@ -67,6 +69,8 @@ object CsvFormat {
             tripName,
             vehicleName,
             session.notes,
+            session.latitude?.toString(),
+            session.longitude?.toString(),
         )
     }
 
@@ -113,6 +117,8 @@ object CsvFormat {
             stationName = get("station_name"),
             stallName = get("stall_name"),
             notes = get("notes"),
+            latitude = get("latitude")?.toDoubleOrNull(),
+            longitude = get("longitude")?.toDoubleOrNull(),
         )
         return ParsedCsvRow(session, get("trip_name"), get("vehicle_name"))
     }

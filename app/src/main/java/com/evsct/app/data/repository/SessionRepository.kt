@@ -42,6 +42,11 @@ class SessionRepository @Inject constructor(
         dao.assignTripToIds(ids.toList(), tripId, System.currentTimeMillis())
     }
 
+    suspend fun setCoordinates(ids: Collection<Long>, lat: Double, lng: Double) {
+        if (ids.isEmpty()) return
+        dao.setCoordinatesForIds(ids.toList(), lat, lng, System.currentTimeMillis())
+    }
+
     suspend fun delete(session: ChargingSession) = dao.delete(session)
 
     suspend fun deleteAll() = dao.deleteAll()

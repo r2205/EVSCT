@@ -101,6 +101,26 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 
 The debug build installs as package `com.evsct.app.debug`.
 
+## Google Maps API key
+
+The Map screen uses the Google Maps SDK for Android. For native mobile use
+the Maps SDK is free, but you do need an API key tied to your app's package
+and signing certificate.
+
+1. In **Google Cloud Console**, create or pick a project, enable the
+   **Maps SDK for Android**, and **Credentials → Create credentials → API key**.
+2. Restrict the key by **Android apps**, adding both the debug and release
+   package + signing-certificate SHA-1 fingerprints. Get the debug fingerprint
+   with `keytool -list -v -keystore "%USERPROFILE%\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android`.
+3. Add a single line to **`local.properties`** at the repo root (this file is
+   already gitignored):
+   ```
+   MAPS_API_KEY=AIza…your-key…
+   ```
+4. Re-run **Build → Make Project**. Without the key set, the app builds and
+   runs but the Map screen renders a blank Google logo where the basemap
+   would be — that's the signal to set the key.
+
 ## Importing your existing xlsx log
 
 1. Drop `DC Fast Charging.xlsx` somewhere reachable on the phone (Drive,

@@ -1,9 +1,24 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+}
+
+// Pull the Maps API key out of local.properties (which is .gitignored), with
+// a graceful empty fallback so a fresh clone still builds even before the key
+// is set up. Without a real key the map screen will load but tiles will be
+// blank — that's intentional and signals "set MAPS_API_KEY in local.properties".
+val mapsApiKey: String = run {
+    val props = Properties()
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.inputStream().use { props.load(it) }
+    }
+    props.getProperty("MAPS_API_KEY", "")
 }
 
 android {
@@ -16,6 +31,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
     buildTypes {
@@ -91,4 +108,7 @@ dependencies {
     implementation(libs.apache.poi.ooxml)
 
     implementation(libs.coil.compose)
+
+    implementation(libs.play.services.maps)
+    implementation(libs.maps.compose)
 }
