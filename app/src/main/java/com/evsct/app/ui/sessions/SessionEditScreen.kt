@@ -33,7 +33,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -83,6 +85,7 @@ import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.util.Brands
 import com.evsct.app.util.DurationFormat
+import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Format
 import java.util.Calendar
 
@@ -115,11 +118,16 @@ fun SessionEditScreen(
         }
     }
 
-    val receiptPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+    val receiptPhotoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let { viewModel.pickReceipt(it) } }
 
+    val receiptPdfPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { viewModel.pickReceipt(it) } }
+
     var receiptToPreview by remember { mutableStateOf<String?>(null) }
+    var showReceiptChooser by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.locationMessage) {
         state.locationMessage?.let { msg ->
@@ -301,16 +309,17 @@ fun SessionEditScreen(
 
             SectionLabel("Receipt")
             ReceiptCard(
-                imagePath = state.receiptImagePath,
-                onPick = {
-                    receiptPicker.launch(
-                        androidx.activity.result.PickVisualMediaRequest(
-                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
-                        ),
-                    )
-                },
+                receiptPath = state.receiptImagePath,
+                onPick = { showReceiptChooser = true },
                 onClear = { viewModel.clearReceipt() },
-                onPreview = { receiptToPreview = state.receiptImagePath },
+                onPreview = {
+                    val path = state.receiptImagePath ?: return@ReceiptCard
+                    if (ReceiptImageStore.isPdf(path)) {
+                        openReceiptExternally(context, path)
+                    } else {
+                        receiptToPreview = path
+                    }
+                },
             )
 
             SectionLabel("Notes")
@@ -329,6 +338,24 @@ fun SessionEditScreen(
         ReceiptPreviewDialog(
             relativePath = path,
             onDismiss = { receiptToPreview = null },
+        )
+    }
+
+    if (showReceiptChooser) {
+        ReceiptKindChooser(
+            onPickPhoto = {
+                showReceiptChooser = false
+                receiptPhotoPicker.launch(
+                    androidx.activity.result.PickVisualMediaRequest(
+                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+                    ),
+                )
+            },
+            onPickPdf = {
+                showReceiptChooser = false
+                receiptPdfPicker.launch(arrayOf("application/pdf"))
+            },
+            onDismiss = { showReceiptChooser = false },
         )
     }
 
@@ -1048,17 +1075,18 @@ private fun TextFieldPlain(
 
 @Composable
 private fun ReceiptCard(
-    imagePath: String?,
+    receiptPath: String?,
     onPick: () -> Unit,
     onClear: () -> Unit,
     onPreview: () -> Unit,
 ) {
     val ctx = LocalContext.current
-    val file = imagePath?.let { File(ctx.filesDir, it) }
-    val hasImage = file != null && file.exists()
+    val file = receiptPath?.let { File(ctx.filesDir, it) }
+    val hasReceipt = file != null && file.exists()
+    val isPdf = ReceiptImageStore.isPdf(receiptPath)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            if (hasImage) {
+            if (hasReceipt) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1067,12 +1095,16 @@ private fun ReceiptCard(
                         .clickable(onClick = onPreview),
                     contentAlignment = Alignment.Center,
                 ) {
-                    AsyncImage(
-                        model = file,
-                        contentDescription = "Receipt photo",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxWidth().height(180.dp),
-                    )
+                    if (isPdf) {
+                        PdfThumbnail()
+                    } else {
+                        AsyncImage(
+                            model = file,
+                            contentDescription = "Receipt photo",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth().height(180.dp),
+                        )
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1107,12 +1139,12 @@ private fun ReceiptCard(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Attach a receipt photo",
+                            "Attach a receipt",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                         )
                         Text(
-                            "Useful for expense reports.",
+                            "Photo or PDF — useful for expense reports.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1121,6 +1153,125 @@ private fun ReceiptCard(
             }
         }
     }
+}
+
+@Composable
+private fun PdfThumbnail() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.errorContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.PictureAsPdf,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(40.dp),
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "PDF receipt",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            )
+            Text(
+                "Tap to open in your PDF viewer.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReceiptKindChooser(
+    onPickPhoto: () -> Unit,
+    onPickPdf: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            Text(
+                "Attach receipt as…",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+            ChooserRow(
+                icon = Icons.Default.Image,
+                title = "Photo",
+                subtitle = "Pick from your gallery or camera roll.",
+                onClick = onPickPhoto,
+            )
+            ChooserRow(
+                icon = Icons.Default.PictureAsPdf,
+                title = "PDF",
+                subtitle = "Pick a PDF file from your device.",
+                onClick = onPickPdf,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChooserRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun openReceiptExternally(context: android.content.Context, relativePath: String) {
+    val file = File(context.filesDir, relativePath)
+    if (!file.exists()) return
+    val authority = "${context.packageName}.fileprovider"
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, ReceiptImageStore.mimeType(relativePath))
+        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    val chooser = android.content.Intent.createChooser(intent, "Open receipt")
+    runCatching { context.startActivity(chooser) }
 }
 
 @Composable

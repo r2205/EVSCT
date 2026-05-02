@@ -11,9 +11,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Persists session receipt photos into the app's private files dir under
- * `receipts/<uuid>.jpg`. Mirrors VehicleImageStore so each image kind has its
- * own subdirectory and lifecycle.
+ * Persists session receipts (images or PDFs) into the app's private files dir
+ * under `receipts/<uuid>.<ext>`. The extension preserves whether the receipt
+ * is a picture (`.jpg`) or a PDF document (`.pdf`) so the UI knows whether to
+ * render an inline preview or hand off to an external viewer.
  */
 @Singleton
 class ReceiptImageStore @Inject constructor(
@@ -22,11 +23,13 @@ class ReceiptImageStore @Inject constructor(
     private val dir: File get() = File(context.filesDir, "receipts").apply { mkdirs() }
 
     suspend fun copyFromUri(source: Uri): String = withContext(Dispatchers.IO) {
-        val name = "${UUID.randomUUID()}.jpg"
+        val mime = context.contentResolver.getType(source)
+        val ext = if (mime == "application/pdf") "pdf" else "jpg"
+        val name = "${UUID.randomUUID()}.$ext"
         val target = File(dir, name)
         context.contentResolver.openInputStream(source)?.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Could not read image source")
+        } ?: error("Could not read receipt source")
         "receipts/$name"
     }
 
@@ -35,5 +38,13 @@ class ReceiptImageStore @Inject constructor(
 
     suspend fun delete(relativePath: String?) = withContext(Dispatchers.IO) {
         absoluteFile(relativePath)?.takeIf { it.exists() }?.delete()
+    }
+
+    companion object {
+        fun isPdf(relativePath: String?): Boolean =
+            relativePath?.endsWith(".pdf", ignoreCase = true) == true
+
+        fun mimeType(relativePath: String?): String =
+            if (isPdf(relativePath)) "application/pdf" else "image/jpeg"
     }
 }
