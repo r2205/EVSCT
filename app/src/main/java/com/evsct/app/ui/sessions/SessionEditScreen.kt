@@ -128,6 +128,7 @@ fun SessionEditScreen(
 
     var receiptToPreview by remember { mutableStateOf<String?>(null) }
     var showReceiptChooser by remember { mutableStateOf(false) }
+    var showReceiptRemoveConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.locationMessage) {
         state.locationMessage?.let { msg ->
@@ -311,7 +312,7 @@ fun SessionEditScreen(
             ReceiptCard(
                 receiptPath = state.receiptImagePath,
                 onPick = { showReceiptChooser = true },
-                onClear = { viewModel.clearReceipt() },
+                onClear = { showReceiptRemoveConfirm = true },
                 onPreview = {
                     val path = state.receiptImagePath ?: return@ReceiptCard
                     if (ReceiptImageStore.isPdf(path)) {
@@ -379,6 +380,30 @@ fun SessionEditScreen(
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showOdometerWarning = false }) {
                     Text("Add odometer")
+                }
+            },
+        )
+    }
+
+    if (showReceiptRemoveConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showReceiptRemoveConfirm = false },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            title = { Text("Remove receipt?") },
+            text = { Text("The attached file will be deleted from this session.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showReceiptRemoveConfirm = false
+                        viewModel.clearReceipt()
+                    },
+                ) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showReceiptRemoveConfirm = false }) {
+                    Text("Cancel")
                 }
             },
         )
