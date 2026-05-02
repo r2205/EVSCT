@@ -10,6 +10,7 @@ import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.util.BackupReminderNotifier
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
 import java.io.File
@@ -54,6 +55,7 @@ class BackupIo @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: EvsctDatabase,
     private val appPreferences: AppPreferences,
+    private val backupReminderNotifier: BackupReminderNotifier,
 ) {
 
     suspend fun export(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
@@ -96,6 +98,7 @@ class BackupIo @Inject constructor(
                 }
             }
             appPreferences.recordBackup()
+            backupReminderNotifier.cancel()
             BackupResult.ExportSuccess(sessions.size, trips.size, vehicles.size)
         } catch (e: Exception) {
             BackupResult.Failure(e.message ?: "Export failed")

@@ -6,6 +6,7 @@ import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.prefs.AppPreferences
+import com.evsct.app.data.prefs.BackupReminderSettings
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
@@ -116,9 +117,13 @@ class SessionListViewModel @Inject constructor(
         combine(
             baseUi,
             appPreferences.lastBackupAt,
+            appPreferences.reminderSettings,
             backupNudgeDismissed,
-        ) { (ui, totalSessions), lastBackupAt, dismissed ->
-            ui.copy(backupNudge = computeBackupNudge(totalSessions, lastBackupAt, dismissed))
+        ) { pair, lastBackupAt, reminder, dismissed ->
+            val (ui, totalSessions) = pair
+            ui.copy(
+                backupNudge = computeBackupNudge(totalSessions, lastBackupAt, reminder, dismissed),
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SessionListUi())
 
     fun dismissBackupNudge() {
@@ -177,9 +182,10 @@ class SessionListViewModel @Inject constructor(
 private fun computeBackupNudge(
     totalSessions: Int,
     lastBackupAt: Long?,
+    reminder: BackupReminderSettings,
     dismissed: Boolean,
 ): BackupNudge {
-    if (dismissed) return BackupNudge(show = false)
+    if (dismissed || !reminder.enabled) return BackupNudge(show = false)
     if (lastBackupAt == null) {
         // Don't nag empty installs; only nudge once the user has accumulated
         // enough data to be worth backing up.
@@ -187,7 +193,7 @@ private fun computeBackupNudge(
         return BackupNudge(show = true, daysSinceLastBackup = null)
     }
     val days = (System.currentTimeMillis() - lastBackupAt) / 86_400_000L
-    return if (days >= AppPreferences.BACKUP_NUDGE_THRESHOLD_DAYS) {
+    return if (days >= reminder.thresholdDays) {
         BackupNudge(show = true, daysSinceLastBackup = days)
     } else {
         BackupNudge(show = false)

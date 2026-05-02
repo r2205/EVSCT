@@ -1,21 +1,28 @@
 package com.evsct.app.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -26,22 +33,29 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.data.prefs.AppPreferences
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,7 +130,7 @@ fun SettingsScreen(
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                     )
-                    androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
+                    Spacer(Modifier.size(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "Vehicles",
@@ -169,6 +183,13 @@ fun SettingsScreen(
                     ) { Text("Restore from backup…") }
                 }
             }
+
+            BackupReminderCard(
+                reminder = state.reminder,
+                onToggleEnabled = viewModel::setReminderEnabled,
+                onChangeThreshold = viewModel::setReminderThresholdDays,
+                onToggleNotify = viewModel::setReminderNotifyEnabled,
+            )
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -285,5 +306,135 @@ fun SettingsScreen(
             text = { Text(msg) },
             confirmButton = { TextButton(onClick = { viewModel.clearMessage() }) { Text("OK") } },
         )
+    }
+}
+
+@Composable
+private fun BackupReminderCard(
+    reminder: com.evsct.app.data.prefs.BackupReminderSettings,
+    onToggleEnabled: (Boolean) -> Unit,
+    onChangeThreshold: (Long) -> Unit,
+    onToggleNotify: (Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+
+    // Track the field text separately so the user can clear / retype freely
+    // without us thrashing the saved value on every keystroke.
+    var thresholdText by remember(reminder.thresholdDays) {
+        mutableStateOf(reminder.thresholdDays.toString())
+    }
+
+    var pendingNotifyToggle by remember { mutableStateOf(false) }
+
+    val notifyPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (pendingNotifyToggle && granted) onToggleNotify(true)
+        pendingNotifyToggle = false
+    }
+
+    fun requestNotifyOn() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                onToggleNotify(true)
+            } else {
+                pendingNotifyToggle = true
+                notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } else {
+            onToggleNotify(true)
+        }
+    }
+
+    // If the user revokes the OS permission outside the app and comes back,
+    // turn the in-app notify toggle off so we don't lie about being on.
+    LaunchedEffect(reminder.notifyEnabled) {
+        if (reminder.notifyEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) onToggleNotify(false)
+        }
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.NotificationsActive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Backup reminder",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Nudge me when it's been a while since my last full backup.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = reminder.enabled,
+                    onCheckedChange = onToggleEnabled,
+                )
+            }
+
+            OutlinedTextField(
+                value = thresholdText,
+                onValueChange = { input ->
+                    val digits = input.filter { it.isDigit() }.take(3)
+                    thresholdText = digits
+                    digits.toLongOrNull()?.let { days ->
+                        if (days in AppPreferences.MIN_THRESHOLD_DAYS..AppPreferences.MAX_THRESHOLD_DAYS &&
+                            days != reminder.thresholdDays
+                        ) {
+                            onChangeThreshold(days)
+                        }
+                    }
+                },
+                label = { Text("Remind me after (days)") },
+                supportingText = {
+                    Text(
+                        "Between ${AppPreferences.MIN_THRESHOLD_DAYS} and " +
+                            "${AppPreferences.MAX_THRESHOLD_DAYS} days. Default: " +
+                            "${AppPreferences.DEFAULT_THRESHOLD_DAYS}.",
+                    )
+                },
+                singleLine = true,
+                enabled = reminder.enabled,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Also send Android notification",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        "Show the reminder in the notification shade, not just inside the app.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = reminder.notifyEnabled,
+                    enabled = reminder.enabled,
+                    onCheckedChange = { wantOn ->
+                        if (wantOn) requestNotifyOn() else onToggleNotify(false)
+                    },
+                )
+            }
+        }
     }
 }
