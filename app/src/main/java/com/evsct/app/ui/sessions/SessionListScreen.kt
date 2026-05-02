@@ -33,7 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Receipt
@@ -280,7 +280,7 @@ private fun SelectionTopBar(
                 Icon(Icons.Default.DoneAll, contentDescription = "Select all")
             }
             IconButton(onClick = onAssignTrip) {
-                Icon(Icons.Default.Label, contentDescription = "Assign trip")
+                Icon(Icons.AutoMirrored.Filled.Label, contentDescription = "Assign trip")
             }
         },
     )
