@@ -32,7 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.Format
+import com.evsct.app.util.Units
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +78,8 @@ fun TripDetailScreen(
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             state.stats?.let { st ->
+                val units = LocalUserUnits.current
+                val distUnit = Units.distanceUnit(units.useMiles)
                 Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
@@ -83,7 +87,7 @@ fun TripDetailScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Stat("Sessions", st.sessionCount.toString())
-                            Stat("Total cost", Format.money(st.totalCost))
+                            Stat("Total cost", Format.money(st.totalCost, units.defaultCurrency))
                             Stat("Energy", Format.kwh(st.totalEnergyKwh))
                         }
                         if (st.totalDistanceKm > 0) {
@@ -91,8 +95,11 @@ fun TripDetailScreen(
                                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Stat("Distance", Format.km(st.totalDistanceKm))
-                                Stat("Cost / km", Format.moneyRate(st.costPerKm, "km"))
+                                Stat("Distance", Format.distance(st.totalDistanceKm, units.useMiles))
+                                Stat(
+                                    "Cost / $distUnit",
+                                    Format.moneyRatePerDistance(st.costPerKm, units.useMiles),
+                                )
                                 Stat("Cost / kWh", Format.moneyRate(st.costPerKwh, "kWh"))
                             }
                         }

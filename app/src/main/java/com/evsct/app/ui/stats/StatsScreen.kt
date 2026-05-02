@@ -41,6 +41,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.theme.EvAccents
 import com.evsct.app.util.Format
 
@@ -95,11 +96,12 @@ fun StatsScreen(
                 return@Column
             }
 
+            val units = LocalUserUnits.current
             ChartCard("Cost by month") {
                 BarList(
                     items = state.monthlyCost,
                     labelWidth = 64.dp,
-                    formatValue = { Format.money(it) },
+                    formatValue = { Format.money(it, units.defaultCurrency) },
                 )
             }
 
@@ -116,7 +118,7 @@ fun StatsScreen(
                     BarList(
                         items = state.byBrandCost,
                         labelWidth = 130.dp,
-                        formatValue = { Format.money(it) },
+                        formatValue = { Format.money(it, units.defaultCurrency) },
                     )
                 }
             }
@@ -136,6 +138,7 @@ fun StatsScreen(
 
 @Composable
 private fun HeadlineCard(state: StatsUi) {
+    val units = LocalUserUnits.current
     Card(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         colors = CardDefaults.cardColors(
@@ -149,7 +152,7 @@ private fun HeadlineCard(state: StatsUi) {
                 horizontalArrangement = Arrangement.SpaceAround,
             ) {
                 Stat("Sessions", state.sessionCount.toString())
-                Stat("Total cost", Format.money(state.totalCost))
+                Stat("Total cost", Format.money(state.totalCost, units.defaultCurrency))
                 Stat("Energy", Format.kwh(state.totalEnergyKwh))
             }
             Spacer(Modifier.height(12.dp))

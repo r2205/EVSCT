@@ -23,11 +23,15 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -145,6 +149,13 @@ fun SettingsScreen(
                     Icon(Icons.Default.ChevronRight, contentDescription = null)
                 }
             }
+
+            UnitsCurrencyCard(
+                useMiles = state.units.useMiles,
+                defaultCurrency = state.units.defaultCurrency,
+                onUseMilesChange = viewModel::setUseMiles,
+                onDefaultCurrencyChange = viewModel::setDefaultCurrency,
+            )
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -435,6 +446,74 @@ private fun BackupReminderCard(
                     },
                 )
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UnitsCurrencyCard(
+    useMiles: Boolean,
+    defaultCurrency: String,
+    onUseMilesChange: (Boolean) -> Unit,
+    onDefaultCurrencyChange: (String) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Tune,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "Units & currency",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Display preferences. Existing data is stored once and " +
+                            "shown in your chosen units.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
+            Text("Distance", style = MaterialTheme.typography.labelLarge)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = !useMiles,
+                    onClick = { onUseMilesChange(false) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                ) { Text("Kilometres") }
+                SegmentedButton(
+                    selected = useMiles,
+                    onClick = { onUseMilesChange(true) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                ) { Text("Miles") }
+            }
+
+            Text("Default currency", style = MaterialTheme.typography.labelLarge)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                AppPreferences.SUPPORTED_CURRENCIES.forEachIndexed { index, code ->
+                    SegmentedButton(
+                        selected = defaultCurrency == code,
+                        onClick = { onDefaultCurrencyChange(code) },
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index = index,
+                            count = AppPreferences.SUPPORTED_CURRENCIES.size,
+                        ),
+                    ) { Text(code) }
+                }
+            }
+            Text(
+                "Each session keeps the currency it was saved with. The default " +
+                    "is used for new sessions and for totals on the dashboard.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

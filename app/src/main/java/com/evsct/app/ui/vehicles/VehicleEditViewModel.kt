@@ -5,9 +5,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.Units
 import com.evsct.app.util.VehicleImageStore
+import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +29,10 @@ data class VehicleEditUi(
     val model: String = "",
     val trim: String = "",
     val batteryKwh: String = "",
-    val rangeKm: String = "",
+    /** Range entered in the user's preferred distance unit. Stored canonical
+     *  km on save. */
+    val rangeText: String = "",
+    val useMiles: Boolean = false,
     val vin: String = "",
     val notes: String = "",
     val isDefault: Boolean = false,
@@ -37,6 +44,7 @@ class VehicleEditViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: VehicleRepository,
     private val imageStore: VehicleImageStore,
+    private val appPreferences: AppPreferences,
 ) : ViewModel() {
 
     private val vehicleId: Long = savedStateHandle.get<Long>(Routes.VEHICLE_EDIT_ARG) ?: -1L
@@ -46,9 +54,13 @@ class VehicleEditViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            val units = appPreferences.userUnits.first()
             if (vehicleId > 0) {
                 val v = repository.findById(vehicleId)
                 if (v != null) {
+                    val rangeText = v.nominalRangeKm?.let {
+                        Units.kmToDisplay(it.toDouble(), units.useMiles).roundToInt().toString()
+                    }.orEmpty()
                     _state.update {
                         it.copy(
                             isLoading = false,
@@ -59,7 +71,8 @@ class VehicleEditViewModel @Inject constructor(
                             model = v.model.orEmpty(),
                             trim = v.trim.orEmpty(),
                             batteryKwh = v.batteryCapacityKwh?.toString().orEmpty(),
-                            rangeKm = v.nominalRangeKm?.toString().orEmpty(),
+                            rangeText = rangeText,
+                            useMiles = units.useMiles,
                             vin = v.vin.orEmpty(),
                             notes = v.notes.orEmpty(),
                             isDefault = v.isDefault,
@@ -67,11 +80,18 @@ class VehicleEditViewModel @Inject constructor(
                         )
                     }
                 } else {
-                    _state.update { it.copy(isLoading = false, isNew = true) }
+                    _state.update { it.copy(isLoading = false, isNew = true, useMiles = units.useMiles) }
                 }
             } else {
                 val noDefaultExists = repository.findDefault() == null
-                _state.update { it.copy(isLoading = false, isNew = true, isDefault = noDefaultExists) }
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        isNew = true,
+                        isDefault = noDefaultExists,
+                        useMiles = units.useMiles,
+                    )
+                }
             }
         }
     }
@@ -112,7 +132,9 @@ class VehicleEditViewModel @Inject constructor(
                 model = s.model.takeIf { it.isNotBlank() },
                 trim = s.trim.takeIf { it.isNotBlank() },
                 batteryCapacityKwh = s.batteryKwh.toDoubleOrNull(),
-                nominalRangeKm = s.rangeKm.toIntOrNull(),
+                nominalRangeKm = s.rangeText.toDoubleOrNull()?.let {
+                    Units.displayToKm(it, s.useMiles).roundToInt()
+                },
                 vin = s.vin.takeIf { it.isNotBlank() },
                 notes = s.notes.takeIf { it.isNotBlank() },
                 imagePath = s.imagePath,

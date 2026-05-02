@@ -29,6 +29,21 @@ object Format {
         value?.let { "${'$'}${rate.format(it)}/$perUnit" } ?: "—"
 
     fun km(value: Double?): String = value?.let { "${km.format(it)} km" } ?: "—"
+
+    /** Distance display in user-preferred unit. [valueKm] is always stored km. */
+    fun distance(valueKm: Double?, useMiles: Boolean): String =
+        valueKm?.let {
+            val display = Units.kmToDisplay(it, useMiles)
+            "${km.format(display)} ${Units.distanceUnit(useMiles)}"
+        } ?: "—"
+
+    /** Cost-per-distance display, given $/km in storage units. */
+    fun moneyRatePerDistance(valuePerKm: Double?, useMiles: Boolean): String =
+        valuePerKm?.let {
+            val perDisplay = if (useMiles) it * 1.609344 else it
+            "${'$'}${rate.format(perDisplay)}/${Units.distanceUnit(useMiles)}"
+        } ?: "—"
+
     fun kwh(value: Double?): String = value?.let { "${kwh.format(it)} kWh" } ?: "—"
     fun kw(value: Double?): String = value?.let { "${km.format(it)} kW" } ?: "—"
     fun pct(value: Int?): String = value?.let { "$it%" } ?: "—"

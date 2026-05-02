@@ -168,10 +168,10 @@ fun VehicleEditScreen(
                     modifier = Modifier.weight(1f),
                 ) { v -> viewModel.update { it.copy(batteryKwh = v) } }
                 NumField(
-                    label = "Range (km)",
-                    value = state.rangeKm,
+                    label = "Range (${com.evsct.app.util.Units.distanceUnit(state.useMiles)})",
+                    value = state.rangeText,
                     modifier = Modifier.weight(1f),
-                ) { v -> viewModel.update { it.copy(rangeKm = v) } }
+                ) { v -> viewModel.update { it.copy(rangeText = v) } }
             }
 
             TextEntry(

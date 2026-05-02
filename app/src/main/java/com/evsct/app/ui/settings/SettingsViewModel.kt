@@ -11,6 +11,7 @@ import com.evsct.app.data.csv.XlsxImportResult
 import com.evsct.app.data.csv.XlsxImporter
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.BackupReminderSettings
+import com.evsct.app.data.prefs.UserUnits
 import com.evsct.app.util.BackupReminderNotifier
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -26,6 +27,7 @@ data class SettingsUi(
     val busy: Boolean = false,
     val message: String? = null,
     val reminder: BackupReminderSettings = BackupReminderSettings(),
+    val units: UserUnits = UserUnits(),
 )
 
 @HiltViewModel
@@ -40,9 +42,21 @@ class SettingsViewModel @Inject constructor(
     private val transient = MutableStateFlow(SettingsUi())
 
     val state: StateFlow<SettingsUi> =
-        combine(transient, appPreferences.reminderSettings) { ui, reminder ->
-            ui.copy(reminder = reminder)
+        combine(
+            transient,
+            appPreferences.reminderSettings,
+            appPreferences.userUnits,
+        ) { ui, reminder, units ->
+            ui.copy(reminder = reminder, units = units)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUi())
+
+    fun setUseMiles(useMiles: Boolean) = viewModelScope.launch {
+        appPreferences.setUseMiles(useMiles)
+    }
+
+    fun setDefaultCurrency(currency: String) = viewModelScope.launch {
+        appPreferences.setDefaultCurrency(currency)
+    }
 
     fun setReminderEnabled(enabled: Boolean) = viewModelScope.launch {
         appPreferences.setReminderEnabled(enabled)

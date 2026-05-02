@@ -203,7 +203,7 @@ fun SessionEditScreen(
 
             SectionLabel("Session")
             NumberField(
-                label = "Odometer (km)",
+                label = "Odometer (${com.evsct.app.util.Units.distanceUnit(state.useMiles)})",
                 value = state.odometerText,
                 isError = HintField.ODOMETER in warnedFields,
             ) { v -> viewModel.update { it.copy(odometerText = v) } }
@@ -217,6 +217,10 @@ fun SessionEditScreen(
                 value = state.costText,
                 isError = HintField.COST in warnedFields,
             ) { v -> viewModel.update { it.copy(costText = v) } }
+            CurrencyChips(
+                selected = state.currency,
+                onSelect = { c -> viewModel.update { it.copy(currency = c) } },
+            )
             DurationField(
                 value = state.durationText,
                 isError = HintField.DURATION in warnedFields,
@@ -542,6 +546,22 @@ private fun PricingModel.displayName(): String = when (this) {
     PricingModel.FLAT -> "Flat"
     PricingModel.FREE -> "Free"
     PricingModel.HYBRID -> "Hybrid"
+}
+
+@Composable
+private fun CurrencyChips(selected: String, onSelect: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        com.evsct.app.data.prefs.AppPreferences.SUPPORTED_CURRENCIES.forEach { code ->
+            FilterChip(
+                selected = selected == code,
+                onClick = { onSelect(code) },
+                label = { Text(code) },
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

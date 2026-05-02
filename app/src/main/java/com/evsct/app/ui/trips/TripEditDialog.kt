@@ -19,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.evsct.app.data.entity.Trip
+import com.evsct.app.ui.LocalUserUnits
+import com.evsct.app.util.Units
 
 /**
  * Shared dialog for creating or editing a trip. When [trip] is null the
@@ -30,9 +32,17 @@ fun TripEditDialog(
     onDismiss: () -> Unit,
     onSave: (Trip) -> Unit,
 ) {
+    val units = LocalUserUnits.current
+    val unitLabel = Units.distanceUnit(units.useMiles)
+
+    fun displayText(km: Double?): String = km?.let {
+        val display = Units.kmToDisplay(it, units.useMiles)
+        if (display % 1.0 == 0.0) display.toLong().toString() else "%.1f".format(display)
+    }.orEmpty()
+
     var name by remember { mutableStateOf(trip?.name.orEmpty()) }
-    var startKm by remember { mutableStateOf(trip?.startOdometerKm?.toString().orEmpty()) }
-    var endKm by remember { mutableStateOf(trip?.endOdometerKm?.toString().orEmpty()) }
+    var startText by remember { mutableStateOf(displayText(trip?.startOdometerKm)) }
+    var endText by remember { mutableStateOf(displayText(trip?.endOdometerKm)) }
     var notes by remember { mutableStateOf(trip?.notes.orEmpty()) }
 
     AlertDialog(
@@ -54,17 +64,17 @@ fun TripEditDialog(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
-                        value = startKm,
-                        onValueChange = { startKm = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                        label = { Text("Start km") },
+                        value = startText,
+                        onValueChange = { startText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = { Text("Start $unitLabel") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f),
                     )
                     OutlinedTextField(
-                        value = endKm,
-                        onValueChange = { endKm = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                        label = { Text("End km") },
+                        value = endText,
+                        onValueChange = { endText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = { Text("End $unitLabel") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f),
@@ -82,10 +92,16 @@ fun TripEditDialog(
             TextButton(
                 enabled = name.isNotBlank(),
                 onClick = {
+                    val startKm = startText.toDoubleOrNull()?.let {
+                        Units.displayToKm(it, units.useMiles)
+                    }
+                    val endKm = endText.toDoubleOrNull()?.let {
+                        Units.displayToKm(it, units.useMiles)
+                    }
                     val merged = (trip ?: Trip(name = name.trim())).copy(
                         name = name.trim(),
-                        startOdometerKm = startKm.toDoubleOrNull(),
-                        endOdometerKm = endKm.toDoubleOrNull(),
+                        startOdometerKm = startKm,
+                        endOdometerKm = endKm,
                         notes = notes.trim().takeIf { it.isNotEmpty() },
                     )
                     onSave(merged)

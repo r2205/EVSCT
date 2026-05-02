@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -15,6 +16,11 @@ data class BackupReminderSettings(
     val enabled: Boolean = true,
     val thresholdDays: Long = AppPreferences.DEFAULT_THRESHOLD_DAYS,
     val notifyEnabled: Boolean = false,
+)
+
+data class UserUnits(
+    val useMiles: Boolean = false,
+    val defaultCurrency: String = "CAD",
 )
 
 /**
@@ -31,6 +37,10 @@ class AppPreferences @Inject constructor(
         private val REMINDER_ENABLED = booleanPreferencesKey("backup_reminder_enabled")
         private val REMINDER_THRESHOLD_DAYS = longPreferencesKey("backup_reminder_threshold_days")
         private val REMINDER_NOTIFY = booleanPreferencesKey("backup_reminder_notify")
+        private val USE_MILES = booleanPreferencesKey("use_miles")
+        private val DEFAULT_CURRENCY = stringPreferencesKey("default_currency")
+
+        val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
 
         const val DEFAULT_THRESHOLD_DAYS: Long = 30
 
@@ -54,6 +64,15 @@ class AppPreferences @Inject constructor(
         )
     }
 
+    val userUnits: Flow<UserUnits> = dataStore.data.map { prefs ->
+        UserUnits(
+            useMiles = prefs[USE_MILES] ?: false,
+            defaultCurrency = prefs[DEFAULT_CURRENCY]
+                ?.takeIf { it in SUPPORTED_CURRENCIES }
+                ?: "CAD",
+        )
+    }
+
     suspend fun recordBackup(epochMillis: Long = System.currentTimeMillis()) {
         dataStore.edit { it[LAST_BACKUP_AT] = epochMillis }
     }
@@ -69,6 +88,15 @@ class AppPreferences @Inject constructor(
 
     suspend fun setReminderNotifyEnabled(notify: Boolean) {
         dataStore.edit { it[REMINDER_NOTIFY] = notify }
+    }
+
+    suspend fun setUseMiles(useMiles: Boolean) {
+        dataStore.edit { it[USE_MILES] = useMiles }
+    }
+
+    suspend fun setDefaultCurrency(currency: String) {
+        if (currency !in SUPPORTED_CURRENCIES) return
+        dataStore.edit { it[DEFAULT_CURRENCY] = currency }
     }
 
     suspend fun snapshot(): Snapshot {

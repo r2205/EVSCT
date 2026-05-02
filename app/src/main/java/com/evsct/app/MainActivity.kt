@@ -9,6 +9,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
+import com.evsct.app.ui.ProvideUserPrefs
 import com.evsct.app.ui.navigation.EvsctNavGraph
 import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.util.BackupReminderNotifier
@@ -26,9 +27,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             EvsctTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    val navController = rememberNavController()
-                    EvsctNavGraph(navController = navController)
+                ProvideUserPrefs {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        val navController = rememberNavController()
+                        EvsctNavGraph(navController = navController)
+                    }
                 }
             }
         }

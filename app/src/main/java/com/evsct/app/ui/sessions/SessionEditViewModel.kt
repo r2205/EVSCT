@@ -8,6 +8,8 @@ import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.data.prefs.AppPreferences
+import com.evsct.app.data.prefs.UserUnits
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
@@ -17,6 +19,8 @@ import com.evsct.app.util.AutofillResult
 import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.LocationAutofill
 import com.evsct.app.util.ReceiptImageStore
+import com.evsct.app.util.Units
+import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +75,9 @@ data class SessionEditUi(
     val energyText: String = "",
     val costText: String = "",
     val currency: String = "CAD",
+    /** Mirror of the user pref so the form can render the odometer label and
+     *  convert input to canonical km on save. */
+    val useMiles: Boolean = false,
     val postedEnergyPriceText: String = "",
     val postedTimeRateText: String = "",
     val postedMaxPowerText: String = "",
@@ -106,6 +113,7 @@ class SessionEditViewModel @Inject constructor(
     private val vehicleRepository: VehicleRepository,
     private val locationAutofill: LocationAutofill,
     private val receiptImageStore: ReceiptImageStore,
+    private val appPreferences: AppPreferences,
 ) : ViewModel() {
 
     /** Cached list of every session, used to derive validation hints (e.g.
@@ -147,25 +155,47 @@ class SessionEditViewModel @Inject constructor(
             vehicleRepository.observeAll().collect { _state.update { s -> s.copy(vehicles = it) } }
         }
         viewModelScope.launch {
+            // Capture the user's units once at load time so the odometer
+            // input/display stays in a single coordinate space for the lifetime
+            // of this edit session. Toggling the pref later won't surprise the
+            // user mid-edit.
+            val units = appPreferences.userUnits.first()
             if (sessionId > 0) {
                 val s = sessionRepository.findById(sessionId)
-                if (s != null) loadFrom(s) else _state.update { it.copy(isLoading = false, isNew = true) }
+                if (s != null) loadFrom(s, units)
+                else _state.update { it.copy(isLoading = false, isNew = true, useMiles = units.useMiles) }
             } else {
                 val initialVehicleId = preselectVehicleId
                     ?: vehicleRepository.findDefault()?.id
-                _state.update { it.copy(isLoading = false, isNew = true, vehicleId = initialVehicleId) }
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        isNew = true,
+                        vehicleId = initialVehicleId,
+                        currency = units.defaultCurrency,
+                        useMiles = units.useMiles,
+                    )
+                }
             }
         }
     }
 
-    private fun loadFrom(s: ChargingSession) {
+    private fun loadFrom(s: ChargingSession, units: UserUnits) {
+        val odoText = s.odometerKm?.let {
+            val display = Units.kmToDisplay(it, units.useMiles)
+            // Trim trailing .0 for whole numbers to match the rest of the app's
+            // text fields, otherwise leave one decimal of precision.
+            if (display % 1.0 == 0.0) display.toLong().toString()
+            else "%.1f".format(display)
+        }.orEmpty()
         _state.update { current ->
             withHints(current.copy(
                 isLoading = false,
                 isNew = false,
                 sessionStart = s.sessionStart,
                 durationText = DurationFormat.pretty(s.durationSeconds),
-                odometerText = s.odometerKm?.toString().orEmpty(),
+                odometerText = odoText,
+                useMiles = units.useMiles,
                 energyText = s.energyKwh?.toString().orEmpty(),
                 costText = s.totalCost?.toString().orEmpty(),
                 currency = s.currency,
@@ -213,12 +243,18 @@ class SessionEditViewModel @Inject constructor(
     ): List<ValidationHint> {
         val out = mutableListOf<ValidationHint>()
 
-        val odo = form.odometerText.toDoubleOrNull()
-        val prevOdo = previous?.odometerKm
-        if (odo != null && prevOdo != null && odo < prevOdo) {
+        // Odometer text is in the user's preferred unit, but stored values
+        // are km; normalize both to km before comparing.
+        val odoEntered = form.odometerText.toDoubleOrNull()
+        val odoKm = odoEntered?.let { Units.displayToKm(it, form.useMiles) }
+        val prevOdoKm = previous?.odometerKm
+        if (odoKm != null && prevOdoKm != null && odoKm < prevOdoKm) {
+            val unit = Units.distanceUnit(form.useMiles)
+            val prevDisplay = Units.kmToDisplay(prevOdoKm, form.useMiles)
             out += ValidationHint(
                 title = "Odometer went backward",
-                detail = "Previous session: ${"%,.0f".format(prevOdo)} km · Now: ${"%,.0f".format(odo)} km. Check for typos.",
+                detail = "Previous session: ${"%,.0f".format(prevDisplay)} $unit · " +
+                    "Now: ${"%,.0f".format(odoEntered)} $unit. Check for typos.",
                 fields = setOf(HintField.ODOMETER),
             )
         }
@@ -341,11 +377,14 @@ class SessionEditViewModel @Inject constructor(
     fun save(onSaved: () -> Unit) {
         viewModelScope.launch {
             val s = _state.value
+            val odometerKm = s.odometerText.toDoubleOrNull()?.let {
+                Units.displayToKm(it, s.useMiles)
+            }
             val session = ChargingSession(
                 id = if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
                 durationSeconds = DurationFormat.parse(s.durationText),
-                odometerKm = s.odometerText.toDoubleOrNull(),
+                odometerKm = odometerKm,
                 energyKwh = s.energyText.toDoubleOrNull(),
                 totalCost = s.costText.toDoubleOrNull(),
                 currency = s.currency.ifBlank { "CAD" },

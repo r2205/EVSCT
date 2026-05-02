@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.Format
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,13 +104,17 @@ fun TripListScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Medium,
                                 )
+                                val units = LocalUserUnits.current
                                 Text(
-                                    "${tws.sessionCount} sessions · ${Format.money(tws.totalCost)} · ${Format.kwh(tws.totalEnergyKwh)}",
+                                    "${tws.sessionCount} sessions · " +
+                                        "${Format.money(tws.totalCost, units.defaultCurrency)} · " +
+                                        Format.kwh(tws.totalEnergyKwh),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                                 if (tws.totalDistanceKm > 0) {
                                     Text(
-                                        "${Format.km(tws.totalDistanceKm)} · ${Format.moneyRate(tws.costPerKm, "km")}",
+                                        "${Format.distance(tws.totalDistanceKm, units.useMiles)} · " +
+                                            Format.moneyRatePerDistance(tws.costPerKm, units.useMiles),
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }

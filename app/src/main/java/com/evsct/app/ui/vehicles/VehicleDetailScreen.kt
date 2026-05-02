@@ -51,7 +51,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.Format
+import com.evsct.app.util.Units
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -205,7 +207,11 @@ private fun HeaderCard(vehicle: Vehicle) {
                     Text("$it kWh battery", style = MaterialTheme.typography.bodySmall)
                 }
                 vehicle.nominalRangeKm?.let {
-                    Text("$it km nominal range", style = MaterialTheme.typography.bodySmall)
+                    val units = LocalUserUnits.current
+                    Text(
+                        "${Format.distance(it.toDouble(), units.useMiles)} nominal range",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
@@ -243,6 +249,8 @@ private fun VehicleHero(imagePath: String?) {
 
 @Composable
 private fun LifetimeCard(state: VehicleDetailUi) {
+    val units = LocalUserUnits.current
+    val distUnit = Units.distanceUnit(units.useMiles)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -257,7 +265,7 @@ private fun LifetimeCard(state: VehicleDetailUi) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Stat("Sessions", state.sessionCount.toString())
-                Stat("Total cost", Format.money(state.totalCost))
+                Stat("Total cost", Format.money(state.totalCost, units.defaultCurrency))
                 Stat("Energy", Format.kwh(state.totalEnergyKwh))
             }
             Spacer(Modifier.height(12.dp))
@@ -265,8 +273,15 @@ private fun LifetimeCard(state: VehicleDetailUi) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Stat("Distance", if (state.totalDistanceKm > 0) Format.km(state.totalDistanceKm) else "—")
-                Stat("Cost / km", Format.moneyRate(state.costPerKm, "km"))
+                Stat(
+                    "Distance",
+                    if (state.totalDistanceKm > 0)
+                        Format.distance(state.totalDistanceKm, units.useMiles) else "—",
+                )
+                Stat(
+                    "Cost / $distUnit",
+                    Format.moneyRatePerDistance(state.costPerKm, units.useMiles),
+                )
                 Stat("Cost / kWh", Format.moneyRate(state.avgEffPricePerKwh, "kWh"))
             }
             Spacer(Modifier.height(12.dp))

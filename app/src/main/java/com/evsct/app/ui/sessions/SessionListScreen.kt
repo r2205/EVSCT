@@ -81,6 +81,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
+import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.theme.EvAccents
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
@@ -351,6 +352,7 @@ private fun TripPickerRow(label: String, emphasis: Boolean, onClick: () -> Unit)
 
 @Composable
 private fun SummaryCard(state: SessionListUi) {
+    val units = LocalUserUnits.current
     Card(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         colors = CardDefaults.cardColors(
@@ -364,7 +366,7 @@ private fun SummaryCard(state: SessionListUi) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Stat("Sessions", state.sessionCount.toString())
-            Stat("Total cost", Format.money(state.totalCost))
+            Stat("Total cost", Format.money(state.totalCost, units.defaultCurrency))
             Stat("Energy", Format.kwh(state.totalKwh))
         }
     }
