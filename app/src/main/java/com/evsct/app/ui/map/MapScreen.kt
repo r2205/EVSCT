@@ -81,10 +81,6 @@ fun MapScreen(
         }
     }
 
-    // Build the "shared / multi-trip" pin bitmap once. Compose remembers it
-    // across recompositions; building it on every render would be wasteful.
-    val sharedPinIcon = remember { sharedTripPinDescriptor() }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -125,6 +121,11 @@ fun MapScreen(
                     mapToolbarEnabled = true,
                 ),
             ) {
+                // BitmapDescriptorFactory only works once the Maps SDK is
+                // initialized — which happens when GoogleMap is composed.
+                // Building the shared-pin icon inside this content lambda
+                // guarantees the SDK is ready before we touch the factory.
+                val sharedPinIcon = remember { sharedTripPinDescriptor() }
                 state.stops.forEach { stop ->
                     Marker(
                         state = MarkerState(position = LatLng(stop.latitude, stop.longitude)),
