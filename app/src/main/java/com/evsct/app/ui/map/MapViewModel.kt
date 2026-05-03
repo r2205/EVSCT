@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** A distinct charging stop aggregated across sessions that share an address. */
@@ -33,15 +34,32 @@ data class MapStop(
 )
 
 sealed interface PinKind {
-    /** Stop where every located visit was un-tripped. */
+    /** Stop where every visible visit was un-tripped. */
     data object Untripped : PinKind
 
-    /** Stop where every located visit belongs to the same trip. */
+    /** Stop where every visible visit belongs to the same trip. */
     data class SingleTrip(val tripPinColorKey: String?) : PinKind
 
-    /** Stop visited across two or more distinct trips. */
+    /** Stop visited across two or more distinct trips (in the visible set). */
     data object Shared : PinKind
 }
+
+/**
+ * Filter row shown in the map's filter sheet. Identifies a trip by id, or
+ * the special "untripped" bucket when [tripId] is null.
+ */
+data class TripFilterOption(
+    val tripId: Long?,
+    val name: String,
+    val pinColorKey: String?,
+    val visible: Boolean,
+)
+
+data class MapFilters(
+    /** Trip IDs (and null = "untripped") whose pins are hidden. Empty = show all. */
+    val hiddenKeys: Set<Long?> = emptySet(),
+    val colorByTrip: Boolean = true,
+)
 
 data class MapUi(
     val stops: List<MapStop> = emptyList(),
@@ -50,6 +68,11 @@ data class MapUi(
     val backfillRunning: Boolean = false,
     val backfillCompleted: Boolean = false,
     val backfillFailed: Int = 0,
+    val tripOptions: List<TripFilterOption> = emptyList(),
+    val showUntrippedOption: Boolean = false,
+    val untrippedVisible: Boolean = true,
+    val colorByTrip: Boolean = true,
+    val anyFilterActive: Boolean = false,
 )
 
 @HiltViewModel
@@ -61,17 +84,37 @@ class MapViewModel @Inject constructor(
 
     private val backfillStatus = MutableStateFlow(BackfillState())
     private var backfillRequested = false
+    private val filters = MutableStateFlow(MapFilters())
 
     val state: StateFlow<MapUi> = combine(
         sessionRepository.observeAll(),
         tripRepository.observeAll(),
         backfillStatus,
-    ) { sessions, trips, status ->
+        filters,
+    ) { sessions, trips, status, f ->
         val tripColorById = trips.associate { it.id to it.pinColor }
         val groups = sessions.groupBy(::stopKey).filterKeys { it.isNotBlank() }
-        val stops = groups.mapNotNull { (key, group) -> buildStop(key, group, tripColorById) }
+
+        val stops = groups.mapNotNull { (key, group) -> buildStop(key, group, tripColorById, f) }
             .sortedByDescending { it.lastVisit }
         val unlocated = groups.values.count { group -> group.none { it.hasCoordinates() } }
+
+        // Build the trip filter rows, sorted by name. Skip trips that don't have
+        // any sessions (they'd be confusing to filter against).
+        val tripsWithSessions = trips.filter { trip ->
+            sessions.any { it.tripId == trip.id }
+        }.sortedBy { it.name.lowercase() }
+        val tripOptions = tripsWithSessions.map { trip ->
+            TripFilterOption(
+                tripId = trip.id,
+                name = trip.name,
+                pinColorKey = trip.pinColor,
+                visible = trip.id !in f.hiddenKeys,
+            )
+        }
+        val hasUntripped = sessions.any { it.tripId == null }
+        val untrippedVisible = null !in f.hiddenKeys
+
         MapUi(
             stops = stops,
             totalDistinct = groups.size,
@@ -79,8 +122,33 @@ class MapViewModel @Inject constructor(
             backfillRunning = status.running,
             backfillCompleted = status.completed,
             backfillFailed = status.failed,
+            tripOptions = tripOptions,
+            showUntrippedOption = hasUntripped,
+            untrippedVisible = untrippedVisible,
+            colorByTrip = f.colorByTrip,
+            anyFilterActive = f.hiddenKeys.isNotEmpty() || !f.colorByTrip,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapUi())
+
+    fun toggleTripVisibility(tripId: Long?) {
+        filters.update {
+            val nextHidden = if (tripId in it.hiddenKeys) it.hiddenKeys - tripId
+                             else it.hiddenKeys + tripId
+            it.copy(hiddenKeys = nextHidden)
+        }
+    }
+
+    fun showAllTrips() {
+        filters.update { it.copy(hiddenKeys = emptySet()) }
+    }
+
+    fun setColorByTrip(enabled: Boolean) {
+        filters.update { it.copy(colorByTrip = enabled) }
+    }
+
+    fun resetFilters() {
+        filters.value = MapFilters()
+    }
 
     /**
      * Geocode every distinct stop that has no coordinates yet. Runs once per
@@ -123,17 +191,24 @@ class MapViewModel @Inject constructor(
         key: String,
         group: List<ChargingSession>,
         tripColorById: Map<Long, String?>,
+        filters: MapFilters,
     ): MapStop? {
         val located = group.filter { it.hasCoordinates() }
         if (located.isEmpty()) return null
-        val avgLat = located.mapNotNull { it.latitude }.average()
-        val avgLng = located.mapNotNull { it.longitude }.average()
-        val newest = group.maxByOrNull { it.sessionStart } ?: return null
 
-        // Pin kind is derived from located sessions only, since those are the
-        // ones we can actually plot. A stop with one located trip-tagged
-        // session and several un-located ones still shows in that trip's color.
-        val tripIds = located.map { it.tripId }.distinct()
+        // Hide a stop entirely when none of its located visits map to a
+        // currently-visible trip (or untripped) bucket.
+        val visible = located.filter { it.tripId !in filters.hiddenKeys }
+        if (visible.isEmpty()) return null
+
+        val avgLat = visible.mapNotNull { it.latitude }.average()
+        val avgLng = visible.mapNotNull { it.longitude }.average()
+        val newest = visible.maxByOrNull { it.sessionStart } ?: return null
+
+        // Pin kind reflects the visible subset, so hiding one trip on a
+        // stop visited across two trips re-colors it to the remaining trip
+        // instead of staying gray-shared.
+        val tripIds = visible.map { it.tripId }.distinct()
         val pinKind = when {
             tripIds.size == 1 && tripIds.single() == null -> PinKind.Untripped
             tripIds.size == 1 -> PinKind.SingleTrip(tripColorById[tripIds.single()!!])
@@ -149,9 +224,9 @@ class MapViewModel @Inject constructor(
             stationName = newest.stationName,
             latitude = avgLat,
             longitude = avgLng,
-            visits = group.size,
-            lastVisit = group.maxOf { it.sessionStart },
-            sessionIds = group.map { it.id },
+            visits = visible.size,
+            lastVisit = visible.maxOf { it.sessionStart },
+            sessionIds = visible.map { it.id },
             pinKind = pinKind,
         )
     }

@@ -1,35 +1,51 @@
 package com.evsct.app.ui.map
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -58,6 +74,8 @@ fun MapScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.runBackfillIfNeeded() }
+
+    var showFilters by remember { mutableStateOf(false) }
 
     val cameraPositionState = rememberCameraPositionState {
         // Default view: roughly the centre of North America at a continent zoom.
@@ -101,10 +119,24 @@ fun MapScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showFilters = true }) {
+                        BadgedBox(
+                            badge = {
+                                if (state.anyFilterActive) {
+                                    Badge(containerColor = MaterialTheme.colorScheme.tertiary)
+                                }
+                            },
+                        ) {
+                            Icon(Icons.Default.FilterList, contentDescription = "Filter")
+                        }
                     }
                 },
             )
@@ -133,7 +165,7 @@ fun MapScreen(
                             ?: stop.stationName?.takeIf { it.isNotBlank() }
                             ?: "Charging stop",
                         snippet = snippetFor(stop),
-                        icon = iconFor(stop.pinKind, sharedPinIcon),
+                        icon = iconFor(stop.pinKind, sharedPinIcon, state.colorByTrip),
                     )
                 }
             }
@@ -143,13 +175,28 @@ fun MapScreen(
             }
             if (state.stops.isEmpty() && !state.backfillRunning) {
                 EmptyState(
-                    message = if (state.totalDistinct == 0)
-                        "No locations to map yet. Add a session with GPS autofill or a real address."
-                    else
-                        "Could not locate any stops. Check that addresses are filled in.",
+                    message = when {
+                        state.totalDistinct == 0 ->
+                            "No locations to map yet. Add a session with GPS autofill or a real address."
+                        state.anyFilterActive ->
+                            "Every stop is hidden by your current filter."
+                        else ->
+                            "Could not locate any stops. Check that addresses are filled in."
+                    },
                 )
             }
         }
+    }
+
+    if (showFilters) {
+        FilterSheet(
+            ui = state,
+            onToggleTrip = viewModel::toggleTripVisibility,
+            onShowAllTrips = viewModel::showAllTrips,
+            onSetColorByTrip = viewModel::setColorByTrip,
+            onResetAll = viewModel::resetFilters,
+            onDismiss = { showFilters = false },
+        )
     }
 }
 
@@ -226,13 +273,150 @@ private fun EmptyState(message: String) {
     }
 }
 
-private fun iconFor(kind: PinKind, sharedIcon: BitmapDescriptor): BitmapDescriptor? = when (kind) {
-    PinKind.Untripped -> null  // Default red marker.
-    is PinKind.SingleTrip -> {
-        val color = TripPinColor.fromKey(kind.tripPinColorKey)
-        if (color == null) null else BitmapDescriptorFactory.defaultMarker(color.mapsHue)
+private fun iconFor(
+    kind: PinKind,
+    sharedIcon: BitmapDescriptor,
+    colorByTrip: Boolean,
+): BitmapDescriptor? {
+    if (!colorByTrip) return null  // All-red mode: default marker for everything.
+    return when (kind) {
+        PinKind.Untripped -> null  // Default red marker.
+        is PinKind.SingleTrip -> {
+            val color = TripPinColor.fromKey(kind.tripPinColorKey)
+            if (color == null) null else BitmapDescriptorFactory.defaultMarker(color.mapsHue)
+        }
+        PinKind.Shared -> sharedIcon
     }
-    PinKind.Shared -> sharedIcon
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterSheet(
+    ui: MapUi,
+    onToggleTrip: (Long?) -> Unit,
+    onShowAllTrips: () -> Unit,
+    onSetColorByTrip: (Boolean) -> Unit,
+    onResetAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Filter map",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                if (ui.anyFilterActive) {
+                    TextButton(onClick = onResetAll) { Text("Reset") }
+                }
+            }
+
+            // --- Color toggle ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Color pins by trip",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        "Off shows every pin in red instead.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = ui.colorByTrip,
+                    onCheckedChange = onSetColorByTrip,
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // --- Trip visibility list ---
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Show pins from",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                if (ui.tripOptions.any { !it.visible } || !ui.untrippedVisible) {
+                    TextButton(onClick = onShowAllTrips) { Text("Show all") }
+                }
+            }
+
+            if (ui.tripOptions.isEmpty() && !ui.showUntrippedOption) {
+                Text(
+                    "No trips to filter.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                )
+            } else {
+                ui.tripOptions.forEach { option ->
+                    TripFilterRow(
+                        label = option.name,
+                        swatch = TripPinColor.fromKey(option.pinColorKey)?.swatch,
+                        checked = option.visible,
+                        onToggle = { onToggleTrip(option.tripId) },
+                    )
+                }
+                if (ui.showUntrippedOption) {
+                    TripFilterRow(
+                        label = "Untripped sessions",
+                        swatch = null,  // Renders as the default-red dot.
+                        checked = ui.untrippedVisible,
+                        onToggle = { onToggleTrip(null) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TripFilterRow(
+    label: String,
+    swatch: Color?,
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(swatch ?: Color(0xFFE53935)),  // Untripped == red.
+        )
+        Spacer(Modifier.width(16.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        Checkbox(checked = checked, onCheckedChange = { onToggle() })
+    }
 }
 
 /**
