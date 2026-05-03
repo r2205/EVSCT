@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.repository.SessionRepository
+import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.util.LocationAutofill
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -28,7 +29,19 @@ data class MapStop(
     val visits: Int,
     val lastVisit: Long,
     val sessionIds: List<Long>,
+    val pinKind: PinKind,
 )
+
+sealed interface PinKind {
+    /** Stop where every located visit was un-tripped. */
+    data object Untripped : PinKind
+
+    /** Stop where every located visit belongs to the same trip. */
+    data class SingleTrip(val tripPinColorKey: String?) : PinKind
+
+    /** Stop visited across two or more distinct trips. */
+    data object Shared : PinKind
+}
 
 data class MapUi(
     val stops: List<MapStop> = emptyList(),
@@ -42,6 +55,7 @@ data class MapUi(
 @HiltViewModel
 class MapViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
+    private val tripRepository: TripRepository,
     private val locationAutofill: LocationAutofill,
 ) : ViewModel() {
 
@@ -50,10 +64,12 @@ class MapViewModel @Inject constructor(
 
     val state: StateFlow<MapUi> = combine(
         sessionRepository.observeAll(),
+        tripRepository.observeAll(),
         backfillStatus,
-    ) { sessions, status ->
+    ) { sessions, trips, status ->
+        val tripColorById = trips.associate { it.id to it.pinColor }
         val groups = sessions.groupBy(::stopKey).filterKeys { it.isNotBlank() }
-        val stops = groups.mapNotNull { (key, group) -> buildStop(key, group) }
+        val stops = groups.mapNotNull { (key, group) -> buildStop(key, group, tripColorById) }
             .sortedByDescending { it.lastVisit }
         val unlocated = groups.values.count { group -> group.none { it.hasCoordinates() } }
         MapUi(
@@ -103,12 +119,27 @@ class MapViewModel @Inject constructor(
         }
     }
 
-    private fun buildStop(key: String, group: List<ChargingSession>): MapStop? {
+    private fun buildStop(
+        key: String,
+        group: List<ChargingSession>,
+        tripColorById: Map<Long, String?>,
+    ): MapStop? {
         val located = group.filter { it.hasCoordinates() }
         if (located.isEmpty()) return null
         val avgLat = located.mapNotNull { it.latitude }.average()
         val avgLng = located.mapNotNull { it.longitude }.average()
         val newest = group.maxByOrNull { it.sessionStart } ?: return null
+
+        // Pin kind is derived from located sessions only, since those are the
+        // ones we can actually plot. A stop with one located trip-tagged
+        // session and several un-located ones still shows in that trip's color.
+        val tripIds = located.map { it.tripId }.distinct()
+        val pinKind = when {
+            tripIds.size == 1 && tripIds.single() == null -> PinKind.Untripped
+            tripIds.size == 1 -> PinKind.SingleTrip(tripColorById[tripIds.single()!!])
+            else -> PinKind.Shared
+        }
+
         return MapStop(
             key = key,
             brand = newest.brand,
@@ -121,6 +152,7 @@ class MapViewModel @Inject constructor(
             visits = group.size,
             lastVisit = group.maxOf { it.sessionStart },
             sessionIds = group.map { it.id },
+            pinKind = pinKind,
         )
     }
 

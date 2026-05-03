@@ -17,6 +17,9 @@ data class Trip(
     val startOdometerKm: Double? = null,
     val endOdometerKm: Double? = null,
     val notes: String? = null,
+    /** Palette key used to color this trip's pins on the map. Null = unset
+     *  (auto-assigned on insert by [com.evsct.app.data.repository.TripRepository]). */
+    val pinColor: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 )
 

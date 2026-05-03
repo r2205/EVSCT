@@ -3,10 +3,12 @@ package com.evsct.app.data.repository
 import com.evsct.app.data.db.TripDao
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.TripWithStats
+import com.evsct.app.ui.map.TripPinColor
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 
 @Singleton
 class TripRepository @Inject constructor(
@@ -33,7 +35,13 @@ class TripRepository @Inject constructor(
 
     suspend fun upsert(trip: Trip): Long =
         if (trip.id == 0L) {
-            tripDao.insert(trip)
+            // Auto-pick a map-pin color for new trips so each one stands out
+            // on the map without making the user choose every time.
+            val withColor = if (trip.pinColor == null) {
+                val used = tripDao.observeAll().first().map { it.pinColor }
+                trip.copy(pinColor = TripPinColor.nextDefault(used).name)
+            } else trip
+            tripDao.insert(withColor)
         } else {
             // Avoid REPLACE-on-conflict: it would delete the existing row first,
             // which fires ON DELETE SET NULL on charging_sessions.tripId and

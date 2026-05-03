@@ -26,6 +26,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +34,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
@@ -74,6 +80,10 @@ fun MapScreen(
             cameraPositionState.position = CameraPosition.fromLatLngZoom(bounds.center, 6f)
         }
     }
+
+    // Build the "shared / multi-trip" pin bitmap once. Compose remembers it
+    // across recompositions; building it on every render would be wasteful.
+    val sharedPinIcon = remember { sharedTripPinDescriptor() }
 
     Scaffold(
         topBar = {
@@ -122,6 +132,7 @@ fun MapScreen(
                             ?: stop.stationName?.takeIf { it.isNotBlank() }
                             ?: "Charging stop",
                         snippet = snippetFor(stop),
+                        icon = iconFor(stop.pinKind, sharedPinIcon),
                     )
                 }
             }
@@ -212,4 +223,36 @@ private fun EmptyState(message: String) {
             )
         }
     }
+}
+
+private fun iconFor(kind: PinKind, sharedIcon: BitmapDescriptor): BitmapDescriptor? = when (kind) {
+    PinKind.Untripped -> null  // Default red marker.
+    is PinKind.SingleTrip -> {
+        val color = TripPinColor.fromKey(kind.tripPinColorKey)
+        if (color == null) null else BitmapDescriptorFactory.defaultMarker(color.mapsHue)
+    }
+    PinKind.Shared -> sharedIcon
+}
+
+/**
+ * A small gray pin used for stops that have been visited across multiple
+ * trips. Built once and reused since BitmapDescriptors are expensive to
+ * create per-frame.
+ */
+private fun sharedTripPinDescriptor(): BitmapDescriptor {
+    val sizePx = 64
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val cx = sizePx / 2f
+    val cy = sizePx / 2f
+    val radius = sizePx / 2.4f
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF6E6E6E.toInt() }
+    canvas.drawCircle(cx, cy, radius, fill)
+    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFFFFF.toInt()
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
+    canvas.drawCircle(cx, cy, radius, ring)
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
 }

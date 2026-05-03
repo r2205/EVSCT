@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private const val SCHEMA_VERSION = 3
+private const val SCHEMA_VERSION = 4
 private const val BACKUP_JSON = "backup.json"
 private const val IMAGE_DIR_IN_ZIP = "vehicles/"
 private const val IMAGE_DIR_IN_FILES = "vehicles"
@@ -167,6 +167,7 @@ class BackupIo @Inject constructor(
                             startOdometerKm = raw.startOdometerKm,
                             endOdometerKm = raw.endOdometerKm,
                             notes = raw.notes,
+                            pinColor = raw.pinColor,
                             createdAt = raw.createdAt,
                         )
                     )
@@ -267,6 +268,7 @@ class BackupIo @Inject constructor(
         putOptDouble("startOdometerKm", startOdometerKm)
         putOptDouble("endOdometerKm", endOdometerKm)
         putOptString("notes", notes)
+        putOptString("pinColor", pinColor)
         put("createdAt", createdAt)
     }
 
@@ -366,6 +368,7 @@ class BackupIo @Inject constructor(
                     startOdometerKm = t.optDoubleOrNull("startOdometerKm"),
                     endOdometerKm = t.optDoubleOrNull("endOdometerKm"),
                     notes = t.optStringOrNull("notes"),
+                    pinColor = t.optStringOrNull("pinColor"),
                     createdAt = t.optLong("createdAt", System.currentTimeMillis()),
                 )
             },
@@ -511,6 +514,7 @@ private data class RawTrip(
     val startOdometerKm: Double?,
     val endOdometerKm: Double?,
     val notes: String?,
+    val pinColor: String?,
     val createdAt: Long,
 )
 
