@@ -44,6 +44,12 @@ data class VehicleDetailUi(
      *  by trip or by the user-set "continues from previous" flag). Stored as
      *  km/kWh; the screen converts to mi/kWh when needed. */
     val avgKmPerKwh: Double? = null,
+    /** Sum of durationSeconds across this vehicle's sessions (null durations
+     *  contribute 0). */
+    val totalChargeSeconds: Long = 0L,
+    /** How many of this vehicle's sessions are missing a durationSeconds
+     *  value. When > 0 the total is a lower bound and the UI flags it. */
+    val sessionsWithoutDuration: Int = 0,
 )
 
 @HiltViewModel
@@ -120,6 +126,8 @@ class VehicleDetailViewModel @Inject constructor(
             mostUsedBrand = mostUsedBrand,
             lastChargedAt = sessions.maxOfOrNull { it.sessionStart },
             avgKmPerKwh = efficiency.avgKmPerKwh,
+            totalChargeSeconds = sessions.sumOf { it.durationSeconds ?: 0L },
+            sessionsWithoutDuration = sessions.count { it.durationSeconds == null },
         )
     }
 }

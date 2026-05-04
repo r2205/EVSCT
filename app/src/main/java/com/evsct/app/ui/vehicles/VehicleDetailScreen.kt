@@ -298,6 +298,30 @@ private fun LifetimeCard(state: VehicleDetailUi) {
                     Stat("Top brand", brand)
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val missing = state.sessionsWithoutDuration
+                val timeText = Format.duration(state.totalChargeSeconds) +
+                    if (missing > 0) "*" else ""
+                Stat("Charge time", timeText)
+                if (missing > 0) {
+                    val total = state.sessionCount
+                    Text(
+                        text = "* $missing of $total session" +
+                            (if (total == 1) "" else "s") +
+                            " missing duration",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 12.dp),
+                    )
+                }
+            }
         }
     }
 }
