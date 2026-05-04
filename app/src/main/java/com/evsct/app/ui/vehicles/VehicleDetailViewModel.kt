@@ -44,7 +44,6 @@ data class VehicleDetailUi(
      *  by trip or by the user-set "continues from previous" flag). Stored as
      *  km/kWh; the screen converts to mi/kWh when needed. */
     val avgKmPerKwh: Double? = null,
-    val measuredLegCount: Int = 0,
 )
 
 @HiltViewModel
@@ -121,7 +120,6 @@ class VehicleDetailViewModel @Inject constructor(
             mostUsedBrand = mostUsedBrand,
             lastChargedAt = sessions.maxOfOrNull { it.sessionStart },
             avgKmPerKwh = efficiency.avgKmPerKwh,
-            measuredLegCount = efficiency.legs.size,
         )
     }
 }

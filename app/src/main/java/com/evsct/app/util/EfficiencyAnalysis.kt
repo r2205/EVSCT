@@ -23,17 +23,7 @@ data class DrivingLeg(
     val kmPerKwh: Double,
 )
 
-/** Excluded pair plus a short reason — surfaces in the UI as "what's missing." */
-data class ExcludedPair(
-    val from: ChargingSession,
-    val to: ChargingSession,
-    val reason: String,
-)
-
-data class EfficiencyReport(
-    val legs: List<DrivingLeg>,
-    val excluded: List<ExcludedPair>,
-) {
+data class EfficiencyReport(val legs: List<DrivingLeg>) {
     val avgKmPerKwh: Double? = run {
         val totalKm = legs.sumOf { it.distanceKm }
         val totalKwh = legs.sumOf { it.energyUsedKwh }
@@ -50,53 +40,35 @@ object EfficiencyAnalysis {
      *   - either share a non-null trip OR `curr.continuesPrevious` is true,
      *   - both have an odometer reading,
      *   - prev has an end battery %, curr has a start battery %,
-     *   - the vehicle has a battery capacity.
+     *   - the vehicle has a battery capacity,
+     *   - and the battery actually dropped (positive energy used).
      */
     fun analyze(
         sessions: List<ChargingSession>,
         vehicle: Vehicle?,
     ): EfficiencyReport {
-        if (sessions.size < 2) return EfficiencyReport(emptyList(), emptyList())
+        if (sessions.size < 2) return EfficiencyReport(emptyList())
+        val capacity = vehicle?.batteryCapacityKwh
+        if (capacity == null || capacity <= 0) return EfficiencyReport(emptyList())
+
         val sorted = sessions.sortedBy { it.sessionStart }
-
         val legs = mutableListOf<DrivingLeg>()
-        val excluded = mutableListOf<ExcludedPair>()
-
         for (i in 1 until sorted.size) {
             val prev = sorted[i - 1]
             val curr = sorted[i]
             if (!isContinuous(prev, curr)) continue
 
-            val prevOdo = prev.odometerKm
-            val currOdo = curr.odometerKm
-            if (prevOdo == null || currOdo == null) {
-                excluded += ExcludedPair(prev, curr, "Add odometer on both sessions")
-                continue
-            }
+            val prevOdo = prev.odometerKm ?: continue
+            val currOdo = curr.odometerKm ?: continue
             val distance = currOdo - prevOdo
-            if (distance <= 0) {
-                excluded += ExcludedPair(prev, curr, "Odometer didn't increase")
-                continue
-            }
+            if (distance <= 0) continue
 
-            val capacity = vehicle?.batteryCapacityKwh
-            if (capacity == null || capacity <= 0) {
-                excluded += ExcludedPair(prev, curr, "Set the vehicle's battery capacity to compute")
-                continue
-            }
-            val endPct = prev.batteryEndPct
-            val startPct = curr.batteryStartPct
-            if (endPct == null || startPct == null) {
-                excluded += ExcludedPair(prev, curr, "Need end battery % on the prior session and start battery % on this one")
-                continue
-            }
+            val endPct = prev.batteryEndPct ?: continue
+            val startPct = curr.batteryStartPct ?: continue
             val delta = endPct - startPct
-            if (delta <= 0) {
-                excluded += ExcludedPair(prev, curr, "Battery didn't drop between sessions")
-                continue
-            }
-            val energy = delta * capacity / 100.0
+            if (delta <= 0) continue
 
+            val energy = delta * capacity / 100.0
             legs += DrivingLeg(
                 from = prev,
                 to = curr,
@@ -105,7 +77,7 @@ object EfficiencyAnalysis {
                 kmPerKwh = distance / energy,
             )
         }
-        return EfficiencyReport(legs, excluded)
+        return EfficiencyReport(legs)
     }
 
     private fun isContinuous(prev: ChargingSession, curr: ChargingSession): Boolean {

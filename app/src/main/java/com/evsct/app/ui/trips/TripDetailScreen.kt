@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -37,7 +39,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.DrivingLeg
-import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.Format
 import com.evsct.app.util.Units
 
@@ -115,15 +116,6 @@ fun TripDetailScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (state.legs.isNotEmpty() || state.excludedLegs.isNotEmpty()) {
-                    item {
-                        EfficiencyCard(
-                            legs = state.legs,
-                            excluded = state.excludedLegs,
-                            avgKmPerKwh = state.avgKmPerKwh,
-                        )
-                    }
-                }
                 items(state.sessions, key = { it.id }) { s ->
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { onEditSession(s.id) },
@@ -136,6 +128,14 @@ fun TripDetailScreen(
                             Text(Format.dateTime(s.sessionStart), style = MaterialTheme.typography.bodySmall)
                             Text("${Format.kwh(s.energyKwh)} · ${Format.duration(s.durationSeconds)}", style = MaterialTheme.typography.bodySmall)
                         }
+                    }
+                }
+                if (state.legs.isNotEmpty()) {
+                    item {
+                        EfficiencyCard(
+                            legs = state.legs,
+                            avgKmPerKwh = state.avgKmPerKwh,
+                        )
                     }
                 }
             }
@@ -167,48 +167,57 @@ private fun Stat(label: String, value: String) {
 @Composable
 private fun EfficiencyCard(
     legs: List<DrivingLeg>,
-    excluded: List<ExcludedPair>,
     avgKmPerKwh: Double?,
 ) {
     val units = LocalUserUnits.current
-    val distUnit = Units.distanceUnit(units.useMiles)
+    var expanded by remember { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "Driving efficiency",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Driving efficiency",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "${legs.size} measured leg" + if (legs.size == 1) "" else "s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     text = avgKmPerKwh?.let { formatKmPerKwh(it, units.useMiles) } ?: "—",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                )
             }
-            Text(
-                "Trip avg measured between consecutive stops.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            legs.forEach { leg ->
-                LegRow(leg, distUnit, units.useMiles)
-            }
-            excluded.forEach { ex ->
-                ExcludedRow(ex)
+            if (expanded) {
+                Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                    legs.forEach { leg ->
+                        LegRow(leg, units.useMiles)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun LegRow(leg: DrivingLeg, distUnit: String, useMiles: Boolean) {
+private fun LegRow(leg: DrivingLeg, useMiles: Boolean) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -228,22 +237,6 @@ private fun LegRow(leg: DrivingLeg, distUnit: String, useMiles: Boolean) {
         }
         Text(
             "${Format.distance(leg.distanceKm, useMiles)} · ${Format.kwh(leg.energyUsedKwh)} used",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun ExcludedRow(ex: ExcludedPair) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(
-            legLabel(ex.from) + " → " + legLabel(ex.to),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            ex.reason,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

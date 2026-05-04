@@ -13,7 +13,6 @@ import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.EfficiencyAnalysis
-import com.evsct.app.util.ExcludedPair
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,7 +28,6 @@ data class TripDetailUi(
     val sessions: List<ChargingSession> = emptyList(),
     val stats: TripWithStats? = null,
     val legs: List<DrivingLeg> = emptyList(),
-    val excludedLegs: List<ExcludedPair> = emptyList(),
     val avgKmPerKwh: Double? = null,
 )
 
@@ -62,14 +60,13 @@ class TripDetailViewModel @Inject constructor(
                     totalDistanceKm = TripRepository.computeTripDistance(it, sessions),
                 )
             }
-            val analysis = analyzeLegs(sessions, vehicles)
+            val (legs, avg) = analyzeLegs(sessions, vehicles)
             TripDetailUi(
                 trip = trip,
                 sessions = sessions,
                 stats = stats,
-                legs = analysis.first,
-                excludedLegs = analysis.second,
-                avgKmPerKwh = analysis.third,
+                legs = legs,
+                avgKmPerKwh = avg,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUi())
     }
@@ -80,21 +77,17 @@ class TripDetailViewModel @Inject constructor(
     private fun analyzeLegs(
         sessions: List<ChargingSession>,
         vehicles: List<Vehicle>,
-    ): Triple<List<DrivingLeg>, List<ExcludedPair>, Double?> {
+    ): Pair<List<DrivingLeg>, Double?> {
         val byVehicle = sessions.groupBy { it.vehicleId }
         val allLegs = mutableListOf<DrivingLeg>()
-        val allExcluded = mutableListOf<ExcludedPair>()
         for ((vehicleId, group) in byVehicle) {
             val v = vehicles.firstOrNull { it.id == vehicleId }
-            val report = EfficiencyAnalysis.analyze(group, v)
-            allLegs += report.legs
-            allExcluded += report.excluded
+            allLegs += EfficiencyAnalysis.analyze(group, v).legs
         }
         val totalKm = allLegs.sumOf { it.distanceKm }
         val totalKwh = allLegs.sumOf { it.energyUsedKwh }
         val avg = if (totalKm > 0 && totalKwh > 0) totalKm / totalKwh else null
-        // Render legs in the same chronological order the user reads sessions.
-        return Triple(allLegs.sortedBy { it.to.sessionStart }, allExcluded.sortedBy { it.to.sessionStart }, avg)
+        return allLegs.sortedBy { it.to.sessionStart } to avg
     }
 
     fun updateTrip(trip: Trip) = viewModelScope.launch {
