@@ -4,8 +4,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,8 +34,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.LocalUserUnits
+import com.evsct.app.util.DrivingLeg
+import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.Format
+import com.evsct.app.util.LegMode
 import com.evsct.app.util.Units
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,6 +116,15 @@ fun TripDetailScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (state.legs.isNotEmpty() || state.excludedLegs.isNotEmpty()) {
+                    item {
+                        EfficiencyCard(
+                            legs = state.legs,
+                            excluded = state.excludedLegs,
+                            avgKmPerKwh = state.avgKmPerKwh,
+                        )
+                    }
+                }
                 items(state.sessions, key = { it.id }) { s ->
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { onEditSession(s.id) },
@@ -148,4 +163,102 @@ private fun Stat(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(label, style = MaterialTheme.typography.labelSmall)
     }
+}
+
+@Composable
+private fun EfficiencyCard(
+    legs: List<DrivingLeg>,
+    excluded: List<ExcludedPair>,
+    avgKmPerKwh: Double?,
+) {
+    val units = LocalUserUnits.current
+    val distUnit = Units.distanceUnit(units.useMiles)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Driving efficiency",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = avgKmPerKwh?.let { formatKmPerKwh(it, units.useMiles) } ?: "—",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                "Trip avg measured between consecutive stops.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            legs.forEach { leg ->
+                LegRow(leg, distUnit, units.useMiles)
+            }
+            excluded.forEach { ex ->
+                ExcludedRow(ex)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegRow(leg: DrivingLeg, distUnit: String, useMiles: Boolean) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                legLabel(leg.from) + " → " + legLabel(leg.to),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                formatKmPerKwh(leg.kmPerKwh, useMiles),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        val tag = if (leg.mode == LegMode.PRECISE_SOC) "battery %" else "kWh delivered"
+        Text(
+            "${Format.distance(leg.distanceKm, useMiles)} · ${Format.kwh(leg.energyUsedKwh)} ($tag)",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ExcludedRow(ex: ExcludedPair) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            legLabel(ex.from) + " → " + legLabel(ex.to),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            ex.reason,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun legLabel(s: ChargingSession): String =
+    s.locationCity?.takeIf { it.isNotBlank() }
+        ?: s.brand?.takeIf { it.isNotBlank() }
+        ?: Format.date(s.sessionStart)
+
+private fun formatKmPerKwh(value: Double, useMiles: Boolean): String {
+    val display = Units.kmToDisplay(value, useMiles)
+    val unit = Units.distanceUnit(useMiles)
+    return "%.2f $unit/kWh".format(display)
 }

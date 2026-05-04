@@ -71,6 +71,12 @@ data class ChargingSession(
     /** Optional path under filesDir to an attached receipt image. */
     val receiptImagePath: String? = null,
 
+    /** True when the user attests that no untracked charging happened between
+     *  this session and the immediately preceding one (for the same vehicle).
+     *  Within a trip, adjacent sessions are already treated as continuous; this
+     *  flag is the escape hatch for cross-trip or untripped chains. */
+    val continuesPrevious: Boolean = false,
+
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

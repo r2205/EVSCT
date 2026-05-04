@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private const val SCHEMA_VERSION = 4
+private const val SCHEMA_VERSION = 5
 private const val BACKUP_JSON = "backup.json"
 private const val IMAGE_DIR_IN_ZIP = "vehicles/"
 private const val IMAGE_DIR_IN_FILES = "vehicles"
@@ -202,6 +202,7 @@ class BackupIo @Inject constructor(
                         receiptImagePath = raw.receiptFile?.let { installedReceipts[it] },
                         latitude = raw.latitude,
                         longitude = raw.longitude,
+                        continuesPrevious = raw.continuesPrevious,
                         createdAt = raw.createdAt,
                         updatedAt = raw.updatedAt,
                     )
@@ -300,6 +301,7 @@ class BackupIo @Inject constructor(
         putOptString("receiptFile", receiptImagePath?.removePrefix("$RECEIPT_DIR_IN_FILES/"))
         putOptDouble("latitude", latitude)
         putOptDouble("longitude", longitude)
+        put("continuesPrevious", continuesPrevious)
         put("createdAt", createdAt)
         put("updatedAt", updatedAt)
     }
@@ -404,6 +406,7 @@ class BackupIo @Inject constructor(
                     receiptFile = s.optStringOrNull("receiptFile"),
                     latitude = s.optDoubleOrNull("latitude"),
                     longitude = s.optDoubleOrNull("longitude"),
+                    continuesPrevious = s.optBoolean("continuesPrevious", false),
                     createdAt = s.optLong("createdAt", System.currentTimeMillis()),
                     updatedAt = s.optLong("updatedAt", System.currentTimeMillis()),
                 )
@@ -545,6 +548,7 @@ private data class RawSession(
     val receiptFile: String?,
     val latitude: Double?,
     val longitude: Double?,
+    val continuesPrevious: Boolean,
     val createdAt: Long,
     val updatedAt: Long,
 )

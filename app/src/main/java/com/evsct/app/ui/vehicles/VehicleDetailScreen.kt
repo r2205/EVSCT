@@ -290,9 +290,25 @@ private fun LifetimeCard(state: VehicleDetailUi) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Stat("Avg power", Format.kw(state.avgPowerKw))
+                Stat(
+                    "Efficiency",
+                    state.avgKmPerKwh?.let { value ->
+                        val display = Units.kmToDisplay(value, units.useMiles)
+                        "%.2f $distUnit/kWh".format(display)
+                    } ?: "—",
+                )
                 state.mostUsedBrand?.let { (brand, _) ->
                     Stat("Top brand", brand)
                 }
+            }
+            if (state.measuredLegCount > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Across ${state.measuredLegCount} measured leg" +
+                        if (state.measuredLegCount == 1) "" else "s",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

@@ -41,6 +41,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -311,6 +312,10 @@ fun SessionEditScreen(
 
             SectionLabel("Trip")
             TripPicker(state) { id -> viewModel.update { it.copy(tripId = id) } }
+            ContinuesPreviousToggle(
+                checked = state.continuesPrevious,
+                onCheckedChange = { v -> viewModel.update { it.copy(continuesPrevious = v) } },
+            )
 
             SectionLabel("Receipt")
             ReceiptCard(
@@ -774,6 +779,29 @@ private fun TripPicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
                 colors = if (state.tripId == trip.id) AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                 ) else AssistChipDefaults.assistChipColors(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContinuesPreviousToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Spacer(Modifier.width(4.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Continues from previous session", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "Tick if no untracked charging happened since your last logged session " +
+                    "(extends km/kWh stats across trips).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

@@ -9,6 +9,7 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.Derived
+import com.evsct.app.util.EfficiencyAnalysis
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +40,11 @@ data class VehicleDetailUi(
     val mostExpensivePriceSession: VehicleHighlight? = null,
     val mostUsedBrand: Pair<String, Int>? = null,
     val lastChargedAt: Long? = null,
+    /** Distance per energy across measurable legs (same vehicle, consecutive
+     *  by trip or by the user-set "continues from previous" flag). Stored as
+     *  km/kWh; the screen converts to mi/kWh when needed. */
+    val avgKmPerKwh: Double? = null,
+    val measuredLegCount: Int = 0,
 )
 
 @HiltViewModel
@@ -97,6 +103,8 @@ class VehicleDetailViewModel @Inject constructor(
             .maxByOrNull { it.value }
             ?.toPair()
 
+        val efficiency = EfficiencyAnalysis.analyze(sessions, vehicle)
+
         return VehicleDetailUi(
             vehicle = vehicle,
             sessions = sessions,
@@ -112,6 +120,8 @@ class VehicleDetailViewModel @Inject constructor(
             mostExpensivePriceSession = priceHighlights.maxByOrNull { it.value },
             mostUsedBrand = mostUsedBrand,
             lastChargedAt = sessions.maxOfOrNull { it.sessionStart },
+            avgKmPerKwh = efficiency.avgKmPerKwh,
+            measuredLegCount = efficiency.legs.size,
         )
     }
 }
