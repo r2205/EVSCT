@@ -28,6 +28,12 @@ data class TripDetailUi(
     val trip: Trip? = null,
     val sessions: List<ChargingSession> = emptyList(),
     val stats: TripWithStats? = null,
+    /** Sum of [ChargingSession.durationSeconds] across the trip's sessions
+     *  (null durations contribute 0). */
+    val totalChargeSeconds: Long = 0L,
+    /** How many sessions in the trip have a null durationSeconds. When > 0
+     *  the total is a lower bound and the UI flags it. */
+    val sessionsWithoutDuration: Int = 0,
     val legs: List<DrivingLeg> = emptyList(),
     val excludedLegs: List<ExcludedPair> = emptyList(),
     val avgKmPerKwh: Double? = null,
@@ -63,10 +69,14 @@ class TripDetailViewModel @Inject constructor(
                 )
             }
             val analysis = analyzeLegs(sessions, vehicles)
+            val totalChargeSeconds = sessions.sumOf { it.durationSeconds ?: 0L }
+            val sessionsWithoutDuration = sessions.count { it.durationSeconds == null }
             TripDetailUi(
                 trip = trip,
                 sessions = sessions,
                 stats = stats,
+                totalChargeSeconds = totalChargeSeconds,
+                sessionsWithoutDuration = sessionsWithoutDuration,
                 legs = analysis.legs,
                 excludedLegs = analysis.excluded,
                 avgKmPerKwh = analysis.avgKmPerKwh,

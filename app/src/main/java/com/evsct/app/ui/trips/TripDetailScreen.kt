@@ -98,6 +98,29 @@ fun TripDetailScreen(
                             Stat("Total cost", Format.money(st.totalCost, units.defaultCurrency))
                             Stat("Energy", Format.kwh(st.totalEnergyKwh))
                         }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val missing = state.sessionsWithoutDuration
+                            val timeText = Format.duration(state.totalChargeSeconds) +
+                                if (missing > 0) "*" else ""
+                            Stat("Charge time", timeText)
+                            if (missing > 0) {
+                                val sCount = st.sessionCount
+                                Text(
+                                    text = "* $missing of $sCount session" +
+                                        (if (sCount == 1) "" else "s") +
+                                        " missing duration",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 12.dp),
+                                )
+                            }
+                        }
                         if (st.totalDistanceKm > 0) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
