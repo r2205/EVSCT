@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.DrivingLeg
+import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.Format
 import com.evsct.app.util.Units
 
@@ -131,10 +132,11 @@ fun TripDetailScreen(
                         }
                     }
                 }
-                if (state.legs.isNotEmpty()) {
+                if (state.legs.isNotEmpty() || state.excludedLegs.isNotEmpty()) {
                     item {
                         EfficiencyCard(
                             legs = state.legs,
+                            excluded = state.excludedLegs,
                             avgKmPerKwh = state.avgKmPerKwh,
                         )
                     }
@@ -168,6 +170,7 @@ private fun Stat(label: String, value: String) {
 @Composable
 private fun EfficiencyCard(
     legs: List<DrivingLeg>,
+    excluded: List<ExcludedPair>,
     avgKmPerKwh: Double?,
 ) {
     val units = LocalUserUnits.current
@@ -190,7 +193,7 @@ private fun EfficiencyCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "${legs.size} measured leg" + if (legs.size == 1) "" else "s",
+                        legCountCaption(legs.size, excluded.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -211,10 +214,36 @@ private fun EfficiencyCard(
                     legs.forEach { leg ->
                         LegRow(leg, units.useMiles)
                     }
+                    excluded.forEach { ex ->
+                        ExcludedRow(ex)
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ExcludedRow(ex: ExcludedPair) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            legLabel(ex.from) + " → " + legLabel(ex.to),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            ex.reason,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun legCountCaption(measured: Int, unmeasurable: Int): String {
+    val parts = mutableListOf<String>()
+    if (measured > 0) parts += "$measured measured"
+    if (unmeasurable > 0) parts += "$unmeasurable unmeasurable"
+    return parts.joinToString(" · ")
 }
 
 @Composable
