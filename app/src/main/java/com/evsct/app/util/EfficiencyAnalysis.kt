@@ -9,6 +9,11 @@ import com.evsct.app.data.entity.Vehicle
  * "Consecutive" means the user can attest that no untracked charging happened
  * between [from] and [to] — either because both share a trip, or because [to]
  * has its [ChargingSession.continuesPrevious] flag set.
+ *
+ * Drive energy is always computed from the SoC delta and the vehicle's battery
+ * capacity:  energy_used = (batteryEndPct[from] − batteryStartPct[to]) × capacity / 100.
+ * That's the only way to get a real number; charging targets vary trip-to-trip
+ * so kWh delivered isn't a reliable proxy.
  */
 data class DrivingLeg(
     val from: ChargingSession,
@@ -16,19 +21,9 @@ data class DrivingLeg(
     val distanceKm: Double,
     val energyUsedKwh: Double,
     val kmPerKwh: Double,
-    val mode: LegMode,
 )
 
-enum class LegMode {
-    /** Energy was derived from the SoC delta and the vehicle's battery capacity. */
-    PRECISE_SOC,
-
-    /** Energy was approximated as kWh delivered at the prior session, assuming
-     *  similar arrival vs. departure SoC at each end. */
-    ENERGY_PROXY,
-}
-
-/** Excluded pair plus a short reason — useful for "Add odometer to compute" hints. */
+/** Excluded pair plus a short reason — surfaces in the UI as "what's missing." */
 data class ExcludedPair(
     val from: ChargingSession,
     val to: ChargingSession,
@@ -51,9 +46,11 @@ object EfficiencyAnalysis {
     /**
      * Pair adjacent sessions (sorted by sessionStart) into legs. A pair
      * (prev, curr) becomes a leg when:
-     *   - both are for [vehicle] (already filtered by caller),
+     *   - both are for [vehicle] (caller groups by vehicle),
+     *   - either share a non-null trip OR `curr.continuesPrevious` is true,
      *   - both have an odometer reading,
-     *   - and either share a non-null trip OR `curr.continuesPrevious` is true.
+     *   - prev has an end battery %, curr has a start battery %,
+     *   - the vehicle has a battery capacity.
      */
     fun analyze(
         sessions: List<ChargingSession>,
@@ -82,17 +79,23 @@ object EfficiencyAnalysis {
                 continue
             }
 
-            val precise = preciseEnergyUsedKwh(prev, curr, vehicle)
-            val (energy, mode) = when {
-                precise != null && precise > 0 ->
-                    precise to LegMode.PRECISE_SOC
-                prev.energyKwh != null && prev.energyKwh > 0 ->
-                    prev.energyKwh to LegMode.ENERGY_PROXY
-                else -> {
-                    excluded += ExcludedPair(prev, curr, "Need battery % on both, or kWh on the prior session")
-                    continue
-                }
+            val capacity = vehicle?.batteryCapacityKwh
+            if (capacity == null || capacity <= 0) {
+                excluded += ExcludedPair(prev, curr, "Set the vehicle's battery capacity to compute")
+                continue
             }
+            val endPct = prev.batteryEndPct
+            val startPct = curr.batteryStartPct
+            if (endPct == null || startPct == null) {
+                excluded += ExcludedPair(prev, curr, "Need end battery % on the prior session and start battery % on this one")
+                continue
+            }
+            val delta = endPct - startPct
+            if (delta <= 0) {
+                excluded += ExcludedPair(prev, curr, "Battery didn't drop between sessions")
+                continue
+            }
+            val energy = delta * capacity / 100.0
 
             legs += DrivingLeg(
                 from = prev,
@@ -100,7 +103,6 @@ object EfficiencyAnalysis {
                 distanceKm = distance,
                 energyUsedKwh = energy,
                 kmPerKwh = distance / energy,
-                mode = mode,
             )
         }
         return EfficiencyReport(legs, excluded)
@@ -109,20 +111,5 @@ object EfficiencyAnalysis {
     private fun isContinuous(prev: ChargingSession, curr: ChargingSession): Boolean {
         val sameTrip = prev.tripId != null && prev.tripId == curr.tripId
         return sameTrip || curr.continuesPrevious
-    }
-
-    /** Energy depleted between [prev] (end SoC) and [curr] (start SoC). Null
-     *  when battery readings or capacity aren't available. */
-    private fun preciseEnergyUsedKwh(
-        prev: ChargingSession,
-        curr: ChargingSession,
-        vehicle: Vehicle?,
-    ): Double? {
-        val capacity = vehicle?.batteryCapacityKwh ?: return null
-        val endPct = prev.batteryEndPct ?: return null
-        val startPct = curr.batteryStartPct ?: return null
-        val delta = endPct - startPct
-        if (delta <= 0) return null
-        return delta * capacity / 100.0
     }
 }

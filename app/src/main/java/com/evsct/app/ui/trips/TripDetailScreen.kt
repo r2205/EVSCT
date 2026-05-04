@@ -39,7 +39,6 @@ import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.Format
-import com.evsct.app.util.LegMode
 import com.evsct.app.util.Units
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -227,9 +226,8 @@ private fun LegRow(leg: DrivingLeg, distUnit: String, useMiles: Boolean) {
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        val tag = if (leg.mode == LegMode.PRECISE_SOC) "battery %" else "kWh delivered"
         Text(
-            "${Format.distance(leg.distanceKm, useMiles)} · ${Format.kwh(leg.energyUsedKwh)} ($tag)",
+            "${Format.distance(leg.distanceKm, useMiles)} · ${Format.kwh(leg.energyUsedKwh)} used",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
