@@ -755,7 +755,9 @@ private fun BrandRow(label: String, isCurrent: Boolean, onClick: () -> Unit) {
 @Composable
 private fun TripPicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         AssistChip(
