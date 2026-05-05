@@ -157,6 +157,13 @@ class SessionEditViewModel @Inject constructor(
     private var originalOdometerKm: Double? = null
     private var originalOdometerText: String = ""
 
+    /** Geocode query (address, city, province) at load time. When the user
+     *  edits the address fields the stored lat/lng become stale — the pin on
+     *  the map would otherwise stay at the old location. save() compares
+     *  this to the current form's query and clears coords + kicks off a
+     *  fresh geocode when they diverge. */
+    private var originalGeocodeQuery: String? = null
+
     init {
         viewModelScope.launch {
             sessionRepository.observeBrands().collect { brands ->
@@ -221,6 +228,12 @@ class SessionEditViewModel @Inject constructor(
         }.orEmpty()
         originalOdometerKm = s.odometerKm
         originalOdometerText = odoText
+        originalGeocodeQuery = geocodeQueryFor(
+            address = s.locationAddress,
+            stationName = s.stationName,
+            city = s.locationCity,
+            province = s.locationProvince,
+        )
         _state.update { current ->
             withHints(current.copy(
                 isLoading = false,
@@ -418,10 +431,37 @@ class SessionEditViewModel @Inject constructor(
         if (form.odometerText == originalOdometerText) originalOdometerKm
         else form.odometerText.toDoubleOrNull()?.let { Units.displayToKm(it, form.useMiles) }
 
+    /** Build the same ", "-joined address query the map screen uses for its
+     *  reverse-geocode backfill, so the two stay consistent. */
+    private fun geocodeQueryFor(
+        address: String?,
+        stationName: String?,
+        city: String?,
+        province: String?,
+    ): String? = listOfNotNull(
+        address?.takeIf { it.isNotBlank() } ?: stationName?.takeIf { it.isNotBlank() },
+        city?.takeIf { it.isNotBlank() },
+        province?.takeIf { it.isNotBlank() },
+    ).joinToString(", ").takeIf { it.isNotBlank() }
+
     fun save(onSaved: () -> Unit) {
         viewModelScope.launch {
             val s = _state.value
             val odometerKm = currentOdometerKm(s)
+            val newQuery = geocodeQueryFor(
+                address = s.address.takeIf { it.isNotBlank() },
+                stationName = s.stationName.takeIf { it.isNotBlank() },
+                city = s.city.takeIf { it.isNotBlank() },
+                province = s.province.takeIf { it.isNotBlank() },
+            )
+            val addressChanged = newQuery != originalGeocodeQuery
+            // When the user edited the address, the stored coords are stale.
+            // Save with null lat/lng — the next map open will pick them up via
+            // the existing reverse-geocode backfill, and we also try to
+            // re-geocode below so the pin updates without needing a fresh
+            // map visit.
+            val saveLat = if (addressChanged) null else s.latitude
+            val saveLng = if (addressChanged) null else s.longitude
             val session = ChargingSession(
                 id = if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
@@ -448,14 +488,28 @@ class SessionEditViewModel @Inject constructor(
                 vehicleId = s.vehicleId,
                 notes = s.notes.takeIf { it.isNotBlank() },
                 receiptImagePath = s.receiptImagePath,
-                latitude = s.latitude,
-                longitude = s.longitude,
+                latitude = saveLat,
+                longitude = saveLng,
             )
-            sessionRepository.upsert(session)
+            val savedId = sessionRepository.upsert(session)
             // Now that the database row is committed, drop any speculative
             // copies plus the original (if it was replaced or cleared).
             reconcileReceiptFiles(finalPath = session.receiptImagePath)
             onSaved()
+
+            // Re-geocode in the background when the user changed the
+            // address. The navigation has already happened — we just patch
+            // the row's coordinates if Geocoder returns a hit. If it
+            // doesn't, lat/lng stay null and the map's backfill will retry
+            // on next visit.
+            if (addressChanged && newQuery != null) {
+                val located = locationAutofill.geocodeAddress(newQuery)
+                val lat = located?.latitude
+                val lng = located?.longitude
+                if (lat != null && lng != null) {
+                    sessionRepository.setCoordinates(listOf(savedId), lat, lng)
+                }
+            }
         }
     }
 
