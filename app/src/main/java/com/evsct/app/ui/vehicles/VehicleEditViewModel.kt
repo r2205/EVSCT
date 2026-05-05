@@ -39,6 +39,9 @@ data class VehicleEditUi(
     val notes: String = "",
     val isDefault: Boolean = false,
     val imagePath: String? = null,
+    /** One-shot snackbar text — e.g., when the OS hands back a picker URI we
+     *  can't read. Cleared by the screen after display. */
+    val transientMessage: String? = null,
 )
 
 @HiltViewModel
@@ -114,11 +117,18 @@ class VehicleEditViewModel @Inject constructor(
         viewModelScope.launch {
             // Defer deletion of the previous file until save() commits. If the
             // user backs out the database row keeps referencing the original.
-            val path = imageStore.copyFromUri(uri)
+            val path = try {
+                imageStore.copyFromUri(uri)
+            } catch (e: Exception) {
+                _state.update { it.copy(transientMessage = "Could not attach photo. Try again or pick a different file.") }
+                return@launch
+            }
             touchedImagePaths += path
             _state.update { it.copy(imagePath = path) }
         }
     }
+
+    fun clearTransientMessage() = _state.update { it.copy(transientMessage = null) }
 
     fun clearImage() {
         _state.update { it.copy(imagePath = null) }

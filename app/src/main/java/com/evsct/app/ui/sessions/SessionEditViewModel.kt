@@ -106,7 +106,7 @@ data class SessionEditUi(
     val trips: List<Trip> = emptyList(),
     val vehicles: List<Vehicle> = emptyList(),
     val isFetchingLocation: Boolean = false,
-    val locationMessage: String? = null,
+    val transientMessage: String? = null,
     val hints: List<ValidationHint> = emptyList(),
 )
 
@@ -368,7 +368,15 @@ class SessionEditViewModel @Inject constructor(
             // Copy the new file to disk and track it. Don't delete anything
             // yet — the previous path stays valid until save() commits, so
             // backing out without saving leaves the database row intact.
-            val path = receiptImageStore.copyFromUri(uri)
+            val path = try {
+                receiptImageStore.copyFromUri(uri)
+            } catch (e: Exception) {
+                // Picker URIs can become invalid between selection and read
+                // (cloud storage hand-off, permission revoke, etc.). Surface
+                // a snackbar instead of letting the throw kill the screen.
+                _state.update { it.copy(transientMessage = "Could not attach receipt. Try again or pick a different file.") }
+                return@launch
+            }
             touchedReceiptPaths += path
             _state.update { it.copy(receiptImagePath = path) }
         }
@@ -524,7 +532,7 @@ class SessionEditViewModel @Inject constructor(
 
     fun autofillFromLocation() {
         viewModelScope.launch {
-            _state.update { it.copy(isFetchingLocation = true, locationMessage = null) }
+            _state.update { it.copy(isFetchingLocation = true, transientMessage = null) }
             val message = when (val result = locationAutofill.fetch()) {
                 AutofillResult.MissingPermission ->
                     "Location permission is required to use this feature."
@@ -549,11 +557,11 @@ class SessionEditViewModel @Inject constructor(
                     "Filled from current location."
                 }
             }
-            _state.update { it.copy(isFetchingLocation = false, locationMessage = message) }
+            _state.update { it.copy(isFetchingLocation = false, transientMessage = message) }
         }
     }
 
-    fun clearLocationMessage() = _state.update { it.copy(locationMessage = null) }
+    fun clearTransientMessage() = _state.update { it.copy(transientMessage = null) }
 
     fun deleteAndExit(onDeleted: () -> Unit) {
         viewModelScope.launch {

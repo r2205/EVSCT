@@ -114,7 +114,7 @@ fun SessionEditScreen(
             viewModel.autofillFromLocation()
         } else {
             viewModel.update {
-                it.copy(locationMessage = "Location permission denied.")
+                it.copy(transientMessage = "Location permission denied.")
             }
         }
     }
@@ -131,10 +131,10 @@ fun SessionEditScreen(
     var showReceiptChooser by remember { mutableStateOf(false) }
     var showReceiptRemoveConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.locationMessage) {
-        state.locationMessage?.let { msg ->
+    LaunchedEffect(state.transientMessage) {
+        state.transientMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
-            viewModel.clearLocationMessage()
+            viewModel.clearTransientMessage()
         }
     }
 

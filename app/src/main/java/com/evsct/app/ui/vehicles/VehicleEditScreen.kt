@@ -32,11 +32,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,8 +70,16 @@ fun VehicleEditScreen(
     ) { uri -> uri?.let { viewModel.pickImage(it) } }
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(state.transientMessage) {
+        state.transientMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearTransientMessage()
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
