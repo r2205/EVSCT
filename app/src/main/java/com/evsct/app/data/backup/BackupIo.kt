@@ -435,7 +435,12 @@ class BackupIo @Inject constructor(
         val targetDir = File(context.filesDir, IMAGE_DIR_IN_FILES).apply { mkdirs() }
         val map = mutableMapOf<String, String>()
         vehicles.forEach { v ->
-            val name = v.imageFile ?: return@forEach
+            // Trust the basename only — guard against zip-slip via JSON-supplied
+            // paths like "../../databases/evsct.db". extractInto already writes
+            // every entry under its basename, so this stays compatible with
+            // legitimate backups.
+            val name = File(v.imageFile ?: return@forEach).name
+            if (name.isBlank()) return@forEach
             val src = File(tempImageDir, name)
             if (!src.exists()) return@forEach
             val dest = File(targetDir, name)
@@ -456,7 +461,8 @@ class BackupIo @Inject constructor(
         val targetDir = File(context.filesDir, RECEIPT_DIR_IN_FILES).apply { mkdirs() }
         val map = mutableMapOf<String, String>()
         sessions.forEach { s ->
-            val name = s.receiptFile ?: return@forEach
+            val name = File(s.receiptFile ?: return@forEach).name
+            if (name.isBlank()) return@forEach
             val src = File(tempReceiptDir, name)
             if (!src.exists()) return@forEach
             val dest = File(targetDir, name)
