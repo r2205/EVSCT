@@ -115,11 +115,17 @@ class BackupIo @Inject constructor(
             val payload = parsePayload(backupJson)
                 ?: return@withContext BackupResult.Failure("Backup is malformed or unsupported.")
 
-            // Move images from the temp extraction into the app's filesDir
-            // before the DB swap so the new image paths are valid by the time
-            // the new vehicle rows are inserted.
-            val installedImages = installImages(tempDir, payload.vehicles)
-            val installedReceipts = installReceipts(tempDir, payload.sessions)
+            // Plan the relative paths the DB rows will reference, but DON'T
+            // touch filesDir yet. If the transaction below throws, the user's
+            // existing photos and receipts must stay untouched — copying
+            // them in first risks clobbering an existing UUID-collision file
+            // that the failed transaction will never get to reference.
+            val plannedImages: Map<String, String> = payload.vehicles
+                .mapNotNull { v -> v.imageFile?.let(::sanitizedBasename) }
+                .associateWith { name -> "$IMAGE_DIR_IN_FILES/$name" }
+            val plannedReceipts: Map<String, String> = payload.sessions
+                .mapNotNull { s -> s.receiptFile?.let(::sanitizedBasename) }
+                .associateWith { name -> "$RECEIPT_DIR_IN_FILES/$name" }
 
             val sessionDao = database.sessionDao()
             val tripDao = database.tripDao()
@@ -148,7 +154,7 @@ class BackupIo @Inject constructor(
                             nominalRangeKm = raw.nominalRangeKm,
                             vin = raw.vin,
                             notes = raw.notes,
-                            imagePath = raw.imageFile?.let { installedImages[it] },
+                            imagePath = raw.imageFile?.let(::sanitizedBasename)?.let { plannedImages[it] },
                             isDefault = raw.isDefault,
                             createdAt = raw.createdAt,
                             updatedAt = raw.updatedAt,
@@ -199,7 +205,7 @@ class BackupIo @Inject constructor(
                         tripId = raw.tripId?.let(tripIdMap::get),
                         vehicleId = raw.vehicleId?.let(vehicleIdMap::get),
                         notes = raw.notes,
-                        receiptImagePath = raw.receiptFile?.let { installedReceipts[it] },
+                        receiptImagePath = raw.receiptFile?.let(::sanitizedBasename)?.let { plannedReceipts[it] },
                         latitude = raw.latitude,
                         longitude = raw.longitude,
                         continuesPrevious = raw.continuesPrevious,
@@ -210,11 +216,17 @@ class BackupIo @Inject constructor(
                 sessionDao.insertAll(sessionEntities)
             }
 
+            // Transaction committed — now (and only now) mutate filesDir.
+            // A copy failure here just leaves an individual image missing;
+            // the database is already internally consistent.
+            installFiles(File(tempDir, IMAGE_DIR_IN_FILES), IMAGE_DIR_IN_FILES, plannedImages.keys)
+            installFiles(File(tempDir, RECEIPT_DIR_IN_FILES), RECEIPT_DIR_IN_FILES, plannedReceipts.keys)
+
             // Best-effort: drop any image files in filesDir that weren't
             // referenced by the restored set. Old pre-restore images are now
             // orphaned and safe to remove.
-            cleanOrphans(IMAGE_DIR_IN_FILES, installedImages.values.toSet())
-            cleanOrphans(RECEIPT_DIR_IN_FILES, installedReceipts.values.toSet())
+            cleanOrphans(IMAGE_DIR_IN_FILES, plannedImages.values.toSet())
+            cleanOrphans(RECEIPT_DIR_IN_FILES, plannedReceipts.values.toSet())
 
             // The restored data already lives in a backup file the user
             // pointed us at, so treat this moment as a fresh successful
@@ -438,52 +450,24 @@ class BackupIo @Inject constructor(
         out.outputStream().use { os -> zip.copyTo(os) }
     }
 
-    private fun installImages(tempDir: File, vehicles: List<RawVehicle>): Map<String, String> {
-        val tempImageDir = File(tempDir, IMAGE_DIR_IN_FILES)
-        val targetDir = File(context.filesDir, IMAGE_DIR_IN_FILES).apply { mkdirs() }
-        val map = mutableMapOf<String, String>()
-        vehicles.forEach { v ->
-            // Trust the basename only — guard against zip-slip via JSON-supplied
-            // paths like "../../databases/evsct.db". extractInto already writes
-            // every entry under its basename, so this stays compatible with
-            // legitimate backups.
-            val name = File(v.imageFile ?: return@forEach).name
-            if (name.isBlank()) return@forEach
-            val src = File(tempImageDir, name)
+    /** Copy each [name] from [tempSubdir] into filesDir/[targetSubdir]/.
+     *  Called only after the DB transaction commits, so a partial failure
+     *  here at worst leaves a single image missing. */
+    private fun installFiles(tempSubdir: File, targetSubdir: String, names: Set<String>) {
+        if (names.isEmpty()) return
+        val targetDir = File(context.filesDir, targetSubdir).apply { mkdirs() }
+        names.forEach { name ->
+            val src = File(tempSubdir, name)
             if (!src.exists()) return@forEach
             val dest = File(targetDir, name)
             try {
                 src.inputStream().use { input ->
                     dest.outputStream().use { output -> input.copyTo(output) }
                 }
-                map[name] = "$IMAGE_DIR_IN_FILES/$name"
             } catch (_: IOException) {
-                // Skip silently – vehicle just won't have an image after restore.
+                // Skip silently – row just won't have a media file after restore.
             }
         }
-        return map
-    }
-
-    private fun installReceipts(tempDir: File, sessions: List<RawSession>): Map<String, String> {
-        val tempReceiptDir = File(tempDir, RECEIPT_DIR_IN_FILES)
-        val targetDir = File(context.filesDir, RECEIPT_DIR_IN_FILES).apply { mkdirs() }
-        val map = mutableMapOf<String, String>()
-        sessions.forEach { s ->
-            val name = File(s.receiptFile ?: return@forEach).name
-            if (name.isBlank()) return@forEach
-            val src = File(tempReceiptDir, name)
-            if (!src.exists()) return@forEach
-            val dest = File(targetDir, name)
-            try {
-                src.inputStream().use { input ->
-                    dest.outputStream().use { output -> input.copyTo(output) }
-                }
-                map[name] = "$RECEIPT_DIR_IN_FILES/$name"
-            } catch (_: IOException) {
-                // Skip silently – session just won't have a receipt after restore.
-            }
-        }
-        return map
     }
 
     private fun cleanOrphans(subdir: String, referencedPaths: Set<String>) {
@@ -497,6 +481,12 @@ class BackupIo @Inject constructor(
         }
     }
 }
+
+/** Strip any path components from a JSON-supplied filename and return the
+ *  basename. Returns null if the result is blank. Same defense extractInto
+ *  applies to zip entry names — guards against zip-slip via the JSON. */
+private fun sanitizedBasename(raw: String): String? =
+    File(raw).name.takeIf { it.isNotBlank() }
 
 /* --- raw payload + JSON helpers --- */
 
