@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
+    <!-- Cloud auto-backup (Google Drive, 25MB limit) preserves the database
+         and DataStore prefs only — media files are covered by the in-app
+         manual zip export. -->
     <cloud-backup>
         <include domain="database" path="evsct.db" />
-        <include domain="sharedpref" path="evsct_prefs.xml" />
+        <include domain="file" path="datastore/" />
     </cloud-backup>
+    <!-- Device-to-device transfer has no size limit, so carry everything
+         (vehicle profile photos and session receipt files included). -->
     <device-transfer>
         <include domain="database" path="evsct.db" />
-        <include domain="sharedpref" path="evsct_prefs.xml" />
+        <include domain="file" path="datastore/" />
+        <include domain="file" path="vehicles/" />
+        <include domain="file" path="receipts/" />
     </device-transfer>
 </data-extraction-rules>

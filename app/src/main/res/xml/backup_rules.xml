@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <include domain="database" path="evsct.db" />
-    <include domain="sharedpref" path="evsct_prefs.xml" />
+    <!-- Jetpack DataStore Preferences is a Proto file under filesDir/datastore/,
+         not a SharedPreferences XML. -->
+    <include domain="file" path="datastore/" />
 </full-backup-content>
