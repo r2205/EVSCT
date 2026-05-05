@@ -83,10 +83,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.ui.LocalUserUnits
+import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.theme.EvAccents
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
-import com.evsct.app.util.Money
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -372,7 +372,7 @@ private fun SummaryCard(state: SessionListUi) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Stat("Sessions", state.sessionCount.toString())
-            Stat("Total cost", Money.format(state.totalCostByCurrency))
+            MoneyStat("Total cost", state.totalCostByCurrency)
             Stat("Energy", Format.kwh(state.totalKwh))
         }
     }

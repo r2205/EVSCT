@@ -52,8 +52,8 @@ import coil.compose.AsyncImage
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.LocalUserUnits
+import com.evsct.app.ui.MoneyStat
 import com.evsct.app.util.Format
-import com.evsct.app.util.Money
 import com.evsct.app.util.Units
 import java.io.File
 
@@ -266,7 +266,7 @@ private fun LifetimeCard(state: VehicleDetailUi) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Stat("Sessions", state.sessionCount.toString())
-                Stat("Total cost", Money.format(state.totalCostByCurrency))
+                MoneyStat("Total cost", state.totalCostByCurrency)
                 Stat("Energy", Format.kwh(state.totalEnergyKwh))
             }
             Spacer(Modifier.height(12.dp))

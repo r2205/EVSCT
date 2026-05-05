@@ -39,10 +39,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.LocalUserUnits
+import com.evsct.app.ui.MoneyStat
 import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.Format
-import com.evsct.app.util.Money
 import com.evsct.app.util.Units
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,7 +96,7 @@ fun TripDetailScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Stat("Sessions", st.sessionCount.toString())
-                            Stat("Total cost", Money.format(st.totalCostByCurrency))
+                            MoneyStat("Total cost", st.totalCostByCurrency)
                             Stat("Energy", Format.kwh(st.totalEnergyKwh))
                         }
                         Row(
