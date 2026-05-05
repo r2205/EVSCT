@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -82,8 +83,15 @@ fun MapScreen(
         position = CameraPosition.fromLatLngZoom(LatLng(45.0, -98.0), 3f)
     }
 
-    // Once stops arrive, frame the camera around them.
+    // Auto-frame on the first non-empty stops emission only. After that the
+    // camera is the user's — toggling a trip filter, finishing a backfill,
+    // or adding a session would otherwise yank the view away from wherever
+    // the user just panned to. rememberSaveable preserves the "framed"
+    // state across rotation but drops it when the screen is left and
+    // reopened, so a fresh visit re-frames.
+    var hasFramedCamera by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.stops) {
+        if (hasFramedCamera) return@LaunchedEffect
         val pins = state.stops
         if (pins.isEmpty()) return@LaunchedEffect
         if (pins.size == 1) {
@@ -97,6 +105,7 @@ fun MapScreen(
             }.build()
             cameraPositionState.position = CameraPosition.fromLatLngZoom(bounds.center, 6f)
         }
+        hasFramedCamera = true
     }
 
     Scaffold(
