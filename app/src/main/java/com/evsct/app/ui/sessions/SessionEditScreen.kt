@@ -190,6 +190,9 @@ fun SessionEditScreen(
                 context = context,
             )
 
+            SectionLabel("Vehicle")
+            VehiclePicker(state) { id -> viewModel.update { it.copy(vehicleId = id) } }
+
             ChargingTypeRow(state.chargingType) { type ->
                 viewModel.update { it.copy(chargingType = type) }
             }
@@ -306,9 +309,6 @@ fun SessionEditScreen(
             TextFieldPlain("Station / stall name", state.stationName) { v ->
                 viewModel.update { it.copy(stationName = v) }
             }
-
-            SectionLabel("Vehicle")
-            VehiclePicker(state) { id -> viewModel.update { it.copy(vehicleId = id) } }
 
             SectionLabel("Trip")
             TripPicker(state) { id -> viewModel.update { it.copy(tripId = id) } }
