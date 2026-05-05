@@ -31,7 +31,23 @@ interface ChargingSessionDao {
     )
     fun observeBrands(): Flow<List<String>>
 
-    @Query("SELECT DISTINCT locationCity || ', ' || locationProvince AS city FROM charging_sessions WHERE locationCity IS NOT NULL ORDER BY city COLLATE NOCASE")
+    // SQLite's `<text> || NULL` evaluates to NULL, so a naive
+    // `locationCity || ', ' || locationProvince` would silently drop every
+    // session with a city set but a null/blank province. The CASE expression
+    // emits "City, Prov" when province is present and just "City" otherwise.
+    @Query(
+        """
+        SELECT DISTINCT
+            CASE
+                WHEN locationProvince IS NULL OR TRIM(locationProvince) = ''
+                    THEN TRIM(locationCity)
+                ELSE TRIM(locationCity) || ', ' || TRIM(locationProvince)
+            END AS city
+        FROM charging_sessions
+        WHERE locationCity IS NOT NULL AND TRIM(locationCity) != ''
+        ORDER BY city COLLATE NOCASE
+        """
+    )
     fun observeCities(): Flow<List<String>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
