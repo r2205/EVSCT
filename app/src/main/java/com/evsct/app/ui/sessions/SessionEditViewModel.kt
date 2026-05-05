@@ -148,6 +148,15 @@ class SessionEditViewModel @Inject constructor(
      *  whether to roll back speculative file copies. */
     @Volatile private var receiptCleanupHandled = false
 
+    /** The session's stored odometer in km at load time, plus the formatted
+     *  display text we put into the form. Used by save() and the validation
+     *  hints to short-circuit the lossy display→km round-trip when the user
+     *  hasn't actually edited the field. In miles mode 100 km → "62.1" mi →
+     *  99.94 km, which would silently rewrite the value on any no-op save
+     *  and falsely trigger the "odometer went backward" hint by ~0.1 km. */
+    private var originalOdometerKm: Double? = null
+    private var originalOdometerText: String = ""
+
     init {
         viewModelScope.launch {
             sessionRepository.observeBrands().collect { brands ->
@@ -210,6 +219,8 @@ class SessionEditViewModel @Inject constructor(
             if (display % 1.0 == 0.0) display.toLong().toString()
             else "%.1f".format(display)
         }.orEmpty()
+        originalOdometerKm = s.odometerKm
+        originalOdometerText = odoText
         _state.update { current ->
             withHints(current.copy(
                 isLoading = false,
@@ -271,7 +282,7 @@ class SessionEditViewModel @Inject constructor(
         // Odometer text is in the user's preferred unit, but stored values
         // are km; normalize both to km before comparing.
         val odoEntered = form.odometerText.toDoubleOrNull()
-        val odoKm = odoEntered?.let { Units.displayToKm(it, form.useMiles) }
+        val odoKm = currentOdometerKm(form)
         val prevOdoKm = previous?.odometerKm
         if (odoKm != null && prevOdoKm != null && odoKm < prevOdoKm) {
             val unit = Units.distanceUnit(form.useMiles)
@@ -399,12 +410,18 @@ class SessionEditViewModel @Inject constructor(
             s.locationCity?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
         ).joinToString("|")
 
+    /** Resolve the current odometer reading in km. When the user hasn't
+     *  edited the displayed text, return the loaded km verbatim — converting
+     *  display→km lossily would silently rewrite the stored value (and skew
+     *  efficiency calcs that depend on prev/curr odometer differences). */
+    private fun currentOdometerKm(form: SessionEditUi): Double? =
+        if (form.odometerText == originalOdometerText) originalOdometerKm
+        else form.odometerText.toDoubleOrNull()?.let { Units.displayToKm(it, form.useMiles) }
+
     fun save(onSaved: () -> Unit) {
         viewModelScope.launch {
             val s = _state.value
-            val odometerKm = s.odometerText.toDoubleOrNull()?.let {
-                Units.displayToKm(it, s.useMiles)
-            }
+            val odometerKm = currentOdometerKm(s)
             val session = ChargingSession(
                 id = if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
