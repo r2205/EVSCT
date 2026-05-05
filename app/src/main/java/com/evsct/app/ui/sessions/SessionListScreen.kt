@@ -876,7 +876,7 @@ private fun FilterSheet(
             onDismissRequest = { showFromPicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    dateFrom = pickerState.selectedDateMillis?.let { startOfDay(it) }
+                    dateFrom = pickerState.selectedDateMillis?.let { pickedDayStart(it) }
                     showFromPicker = false
                 }) { Text("OK") }
             },
@@ -893,7 +893,7 @@ private fun FilterSheet(
             onDismissRequest = { showToPicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    dateTo = pickerState.selectedDateMillis?.let { endOfDay(it) }
+                    dateTo = pickerState.selectedDateMillis?.let { pickedDayEnd(it) }
                     showToPicker = false
                 }) { Text("OK") }
             },
@@ -954,26 +954,27 @@ private fun matchesPreset(from: Long?, to: Long?, preset: DatePreset): Boolean {
     return kotlin.math.abs(from - pf) < 60_000L && kotlin.math.abs(to - pt) < 60_000L
 }
 
-private fun startOfDay(epoch: Long): Long {
-    val cal = java.util.Calendar.getInstance().apply {
-        timeInMillis = epoch
-        set(java.util.Calendar.HOUR_OF_DAY, 0)
-        set(java.util.Calendar.MINUTE, 0)
-        set(java.util.Calendar.SECOND, 0)
-        set(java.util.Calendar.MILLISECOND, 0)
-    }
-    return cal.timeInMillis
+/**
+ * Convert a Material3 DatePicker's [DatePickerState.selectedDateMillis]
+ * (which is the UTC midnight of the day the user picked) into the local-TZ
+ * start of that calendar day. Without this conversion, users west of UTC
+ * end up with a filter that starts on the previous day.
+ */
+private fun pickedDayStart(pickerUtcMillis: Long): Long {
+    val date = java.time.Instant.ofEpochMilli(pickerUtcMillis)
+        .atZone(java.time.ZoneOffset.UTC).toLocalDate()
+    return date.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
 }
 
-private fun endOfDay(epoch: Long): Long {
-    val cal = java.util.Calendar.getInstance().apply {
-        timeInMillis = epoch
-        set(java.util.Calendar.HOUR_OF_DAY, 23)
-        set(java.util.Calendar.MINUTE, 59)
-        set(java.util.Calendar.SECOND, 59)
-        set(java.util.Calendar.MILLISECOND, 999)
-    }
-    return cal.timeInMillis
+/** Companion to [pickedDayStart] returning the last millisecond of the
+ *  picked day in the local timezone. */
+private fun pickedDayEnd(pickerUtcMillis: Long): Long {
+    val date = java.time.Instant.ofEpochMilli(pickerUtcMillis)
+        .atZone(java.time.ZoneOffset.UTC).toLocalDate()
+    val nextDayStart = date.plusDays(1)
+        .atStartOfDay(java.time.ZoneId.systemDefault())
+        .toInstant().toEpochMilli()
+    return nextDayStart - 1
 }
 
 @Composable
