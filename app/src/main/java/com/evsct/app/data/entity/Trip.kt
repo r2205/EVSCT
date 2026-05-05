@@ -2,6 +2,7 @@ package com.evsct.app.data.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.evsct.app.util.CurrencyTotals
 
 @Entity(tableName = "trips")
 data class Trip(
@@ -26,10 +27,22 @@ data class Trip(
 data class TripWithStats(
     val trip: Trip,
     val sessionCount: Int,
-    val totalCost: Double,
+    /** Costs grouped by per-session currency. Renderers should show the
+     *  multi-currency breakdown when mixed and suppress derived rates. */
+    val totalCostByCurrency: CurrencyTotals,
     val totalEnergyKwh: Double,
     val totalDistanceKm: Double,
 ) {
-    val costPerKm: Double? get() = if (totalDistanceKm > 0) totalCost / totalDistanceKm else null
-    val costPerKwh: Double? get() = if (totalEnergyKwh > 0) totalCost / totalEnergyKwh else null
+    /** Cost per km. Only meaningful when sessions share a single currency;
+     *  null when mixed (or when distance is zero). */
+    val costPerKm: Double? get() {
+        val total = totalCostByCurrency.singleTotal ?: return null
+        return if (totalDistanceKm > 0) total / totalDistanceKm else null
+    }
+
+    /** Cost per kWh. Same rule as costPerKm — single-currency only. */
+    val costPerKwh: Double? get() {
+        val total = totalCostByCurrency.singleTotal ?: return null
+        return if (totalEnergyKwh > 0) total / totalEnergyKwh else null
+    }
 }

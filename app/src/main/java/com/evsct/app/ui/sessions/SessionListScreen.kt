@@ -86,6 +86,7 @@ import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.theme.EvAccents
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
+import com.evsct.app.util.Money
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -371,7 +372,7 @@ private fun SummaryCard(state: SessionListUi) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Stat("Sessions", state.sessionCount.toString())
-            Stat("Total cost", Format.money(state.totalCost, units.defaultCurrency))
+            Stat("Total cost", Money.format(state.totalCostByCurrency))
             Stat("Energy", Format.kwh(state.totalKwh))
         }
     }

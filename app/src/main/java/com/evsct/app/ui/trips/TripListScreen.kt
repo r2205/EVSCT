@@ -39,6 +39,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.Format
+import com.evsct.app.util.Money
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,7 +108,7 @@ fun TripListScreen(
                                 val units = LocalUserUnits.current
                                 Text(
                                     "${tws.sessionCount} sessions · " +
-                                        "${Format.money(tws.totalCost, units.defaultCurrency)} · " +
+                                        "${Money.format(tws.totalCostByCurrency)} · " +
                                         Format.kwh(tws.totalEnergyKwh),
                                     style = MaterialTheme.typography.bodySmall,
                                 )

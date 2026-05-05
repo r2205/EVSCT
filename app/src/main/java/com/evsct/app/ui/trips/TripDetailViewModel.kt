@@ -11,6 +11,7 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.EfficiencyAnalysis
 import com.evsct.app.util.ExcludedPair
@@ -63,7 +64,7 @@ class TripDetailViewModel @Inject constructor(
                 TripWithStats(
                     trip = it,
                     sessionCount = sessions.size,
-                    totalCost = sessions.sumOf { s -> s.totalCost ?: 0.0 },
+                    totalCostByCurrency = CurrencyTotals.from(sessions),
                     totalEnergyKwh = sessions.sumOf { s -> s.energyKwh ?: 0.0 },
                     totalDistanceKm = TripRepository.computeTripDistance(it, sessions),
                 )

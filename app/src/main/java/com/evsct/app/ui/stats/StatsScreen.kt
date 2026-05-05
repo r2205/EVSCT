@@ -101,7 +101,7 @@ fun StatsScreen(
                 BarList(
                     items = state.monthlyCost,
                     labelWidth = 64.dp,
-                    formatValue = { Format.money(it, units.defaultCurrency) },
+                    formatValue = { Format.money(it, state.costCurrency) },
                 )
             }
 
@@ -118,7 +118,7 @@ fun StatsScreen(
                     BarList(
                         items = state.byBrandCost,
                         labelWidth = 130.dp,
-                        formatValue = { Format.money(it, units.defaultCurrency) },
+                        formatValue = { Format.money(it, state.costCurrency) },
                     )
                 }
             }
@@ -152,7 +152,7 @@ private fun HeadlineCard(state: StatsUi) {
                 horizontalArrangement = Arrangement.SpaceAround,
             ) {
                 Stat("Sessions", state.sessionCount.toString())
-                Stat("Total cost", Format.money(state.totalCost, units.defaultCurrency))
+                Stat("Total cost", Format.money(state.totalCost, state.costCurrency))
                 Stat("Energy", Format.kwh(state.totalEnergyKwh))
             }
             Spacer(Modifier.height(12.dp))
@@ -162,6 +162,16 @@ private fun HeadlineCard(state: StatsUi) {
             ) {
                 Stat("Avg eff. $/kWh", Format.moneyRate(state.avgEffPricePerKwh, "kWh"))
                 Stat("Avg power", Format.kw(state.avgPowerKw))
+            }
+            if (state.excludedByCurrency > 0) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Cost totals are in ${state.costCurrency}. " +
+                        "${state.excludedByCurrency} session" +
+                        (if (state.excludedByCurrency == 1) "" else "s") +
+                        " in another currency excluded.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
             }
         }
     }

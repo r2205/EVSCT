@@ -4,6 +4,7 @@ import com.evsct.app.data.db.TripDao
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.TripWithStats
 import com.evsct.app.ui.map.TripPinColor
+import com.evsct.app.util.CurrencyTotals
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -24,7 +25,7 @@ class TripRepository @Inject constructor(
                 TripWithStats(
                     trip = trip,
                     sessionCount = tripSessions.size,
-                    totalCost = tripSessions.sumOf { it.totalCost ?: 0.0 },
+                    totalCostByCurrency = CurrencyTotals.from(tripSessions),
                     totalEnergyKwh = tripSessions.sumOf { it.energyKwh ?: 0.0 },
                     totalDistanceKm = computeTripDistance(trip, tripSessions),
                 )

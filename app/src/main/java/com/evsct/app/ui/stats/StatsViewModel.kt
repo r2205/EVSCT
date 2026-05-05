@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.VehicleRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,15 +25,22 @@ data class StatsUi(
     val vehicles: List<Vehicle> = emptyList(),
     val vehicleFilterId: Long? = null,
     val sessionCount: Int = 0,
+    /** Cost-based aggregates are filtered to the user's default currency,
+     *  since adding CAD + USD into one chart bar produces a meaningless
+     *  number. The currency tag tells the UI what to label totals with. */
+    val costCurrency: String = "CAD",
     val totalCost: Double = 0.0,
+    /** How many sessions were excluded from cost aggregates because their
+     *  currency didn't match [costCurrency]. UI flags this when > 0. */
+    val excludedByCurrency: Int = 0,
     val totalEnergyKwh: Double = 0.0,
     val avgEffPricePerKwh: Double? = null,
     val avgPowerKw: Double? = null,
-    /** Last 12 months, oldest first; (label, $ spent). */
+    /** Last 12 months, oldest first; (label, $ spent in [costCurrency]). */
     val monthlyCost: List<Pair<String, Double>> = emptyList(),
-    /** Last 12 months, oldest first; (label, kWh). */
+    /** Last 12 months, oldest first; (label, kWh) — across all currencies. */
     val monthlyEnergy: List<Pair<String, Double>> = emptyList(),
-    /** Top brands by $ spent, descending. */
+    /** Top brands by $ spent in [costCurrency], descending. */
     val byBrandCost: List<Pair<String, Double>> = emptyList(),
     /** Sessions per charging type, in enum order. */
     val byType: Map<ChargingType, Int> = emptyMap(),
@@ -42,6 +50,7 @@ data class StatsUi(
 class StatsViewModel @Inject constructor(
     sessionRepository: SessionRepository,
     vehicleRepository: VehicleRepository,
+    appPreferences: AppPreferences,
 ) : ViewModel() {
 
     private val vehicleFilter = MutableStateFlow<Long?>(null)
@@ -50,23 +59,32 @@ class StatsViewModel @Inject constructor(
         sessionRepository.observeAll(),
         vehicleRepository.observeAll(),
         vehicleFilter,
-    ) { allSessions, vehicles, filter ->
+        appPreferences.userUnits,
+    ) { allSessions, vehicles, filter, units ->
         val effectiveFilter = filter?.takeIf { id -> vehicles.any { it.id == id } }
         val sessions = if (effectiveFilter == null) allSessions
         else allSessions.filter { it.vehicleId == effectiveFilter }
+
+        // Cost aggregates only see sessions in the user's default currency.
+        // Energy/duration/count aggregates stay across all sessions.
+        val costCurrency = units.defaultCurrency
+        val costSessions = sessions.filter { it.currency == costCurrency }
+        val excluded = sessions.count { (it.totalCost ?: 0.0) != 0.0 && it.currency != costCurrency }
 
         StatsUi(
             isLoading = false,
             vehicles = vehicles,
             vehicleFilterId = effectiveFilter,
             sessionCount = sessions.size,
-            totalCost = sessions.sumOf { it.totalCost ?: 0.0 },
+            costCurrency = costCurrency,
+            totalCost = costSessions.sumOf { it.totalCost ?: 0.0 },
+            excludedByCurrency = excluded,
             totalEnergyKwh = sessions.sumOf { it.energyKwh ?: 0.0 },
-            avgEffPricePerKwh = computeAvgEffPrice(sessions),
+            avgEffPricePerKwh = computeAvgEffPrice(costSessions),
             avgPowerKw = computeAvgPower(sessions),
-            monthlyCost = monthlySeries(sessions) { it.totalCost ?: 0.0 },
+            monthlyCost = monthlySeries(costSessions) { it.totalCost ?: 0.0 },
             monthlyEnergy = monthlySeries(sessions) { it.energyKwh ?: 0.0 },
-            byBrandCost = brandCostSeries(sessions),
+            byBrandCost = brandCostSeries(costSessions),
             byType = sessions.groupingBy { it.chargingType }.eachCount(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())

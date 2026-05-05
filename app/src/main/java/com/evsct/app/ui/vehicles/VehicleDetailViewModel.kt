@@ -8,6 +8,7 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.Derived
 import com.evsct.app.util.EfficiencyAnalysis
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,11 +30,16 @@ data class VehicleDetailUi(
     val vehicle: Vehicle? = null,
     val sessions: List<ChargingSession> = emptyList(),
     val sessionCount: Int = 0,
-    val totalCost: Double = 0.0,
+    /** Costs grouped by per-session currency. Mixed currencies render as a
+     *  breakdown ("$245 CAD · $89 USD") and suppress derived rates. */
+    val totalCostByCurrency: CurrencyTotals = CurrencyTotals(emptyMap()),
     val totalEnergyKwh: Double = 0.0,
     val totalDistanceKm: Double = 0.0,
+    /** Avg effective $/kWh across the vehicle's lifetime — only meaningful
+     *  when every session shares one currency. Null when mixed. */
     val avgEffPricePerKwh: Double? = null,
     val avgPowerKw: Double? = null,
+    /** Cost per km — same single-currency rule as [avgEffPricePerKwh]. */
     val costPerKm: Double? = null,
     val fastestSession: VehicleHighlight? = null,
     val cheapestPriceSession: VehicleHighlight? = null,
@@ -83,21 +89,30 @@ class VehicleDetailViewModel @Inject constructor(
     private fun buildUi(vehicle: Vehicle?, sessions: List<ChargingSession>): VehicleDetailUi {
         if (vehicle == null) return VehicleDetailUi()
 
-        val totalCost = sessions.sumOf { it.totalCost ?: 0.0 }
+        val totals = CurrencyTotals.from(sessions)
         val totalKwh = sessions.sumOf { it.energyKwh ?: 0.0 }
         val odometers = sessions.mapNotNull { it.odometerKm }
         val totalDistance = if (odometers.size < 2) 0.0 else odometers.max() - odometers.min()
 
-        val avgEff = if (totalKwh > 0) totalCost / totalKwh else null
+        // Derived rates only compose when every session shares a currency.
+        // When mixed, a "$/kWh" or "$/km" number has no single unit.
+        val singleTotal = totals.singleTotal
+        val avgEff = if (singleTotal != null && totalKwh > 0) singleTotal / totalKwh else null
         val totalHours = sessions.sumOf { (it.durationSeconds ?: 0L) / 3600.0 }
         val avgPower = if (totalHours > 0) totalKwh / totalHours else null
-        val costPerKm = if (totalDistance > 0) totalCost / totalDistance else null
+        val costPerKm = if (singleTotal != null && totalDistance > 0) singleTotal / totalDistance else null
 
         val fastest = sessions
             .mapNotNull { s -> Derived.effectiveAvgPowerKw(s)?.let { VehicleHighlight(s, it) } }
             .maxByOrNull { it.value }
 
+        // Rank the cheapest/most-expensive $/kWh within a single currency only,
+        // since "$0.30/kWh USD" vs "$0.32/kWh CAD" can't be ranked by face value.
+        // Pick the dominant currency (the one with the largest total spend) so
+        // road-trip outliers don't take over the highlight cards.
+        val dominantCurrency = totals.byCurrency.entries.maxByOrNull { it.value }?.key
         val priceHighlights = sessions
+            .filter { it.currency == dominantCurrency }
             .mapNotNull { s -> Derived.effectiveEnergyPricePerKwh(s)?.let { VehicleHighlight(s, it) } }
             .filter { it.value > 0 }
 
@@ -114,7 +129,7 @@ class VehicleDetailViewModel @Inject constructor(
             vehicle = vehicle,
             sessions = sessions,
             sessionCount = sessions.size,
-            totalCost = totalCost,
+            totalCostByCurrency = totals,
             totalEnergyKwh = totalKwh,
             totalDistanceKm = totalDistance,
             avgEffPricePerKwh = avgEff,

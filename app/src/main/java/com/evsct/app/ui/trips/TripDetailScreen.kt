@@ -42,6 +42,7 @@ import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.Format
+import com.evsct.app.util.Money
 import com.evsct.app.util.Units
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,7 +96,7 @@ fun TripDetailScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Stat("Sessions", st.sessionCount.toString())
-                            Stat("Total cost", Format.money(st.totalCost, units.defaultCurrency))
+                            Stat("Total cost", Money.format(st.totalCostByCurrency))
                             Stat("Energy", Format.kwh(st.totalEnergyKwh))
                         }
                         Row(

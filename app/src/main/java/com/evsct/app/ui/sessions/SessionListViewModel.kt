@@ -10,6 +10,7 @@ import com.evsct.app.data.prefs.BackupReminderSettings
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
+import com.evsct.app.util.CurrencyTotals
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +43,7 @@ data class SessionListUi(
     val brandsInUse: List<String> = emptyList(),
     val tripNamesById: Map<Long, String> = emptyMap(),
     val vehicleNamesById: Map<Long, String> = emptyMap(),
-    val totalCost: Double = 0.0,
+    val totalCostByCurrency: CurrencyTotals = CurrencyTotals(emptyMap()),
     val totalKwh: Double = 0.0,
     val sessionCount: Int = 0,
     val selectedIds: Set<Long> = emptySet(),
@@ -104,7 +105,7 @@ class SessionListViewModel @Inject constructor(
                 brandsInUse = brandsInUse,
                 tripNamesById = trips.associate { it.id to it.name },
                 vehicleNamesById = vehicles.associate { it.id to it.name },
-                totalCost = sessions.sumOf { it.totalCost ?: 0.0 },
+                totalCostByCurrency = CurrencyTotals.from(sessions),
                 totalKwh = sessions.sumOf { it.energyKwh ?: 0.0 },
                 sessionCount = sessions.size,
                 selectedIds = cleanedSelection,
