@@ -14,9 +14,20 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import javax.inject.Qualifier
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 private val Context.evsctDataStore: DataStore<Preferences> by preferencesDataStore("evsct_prefs")
+
+/** Application-scoped coroutine scope for fire-and-forget work that must
+ *  outlive a ViewModel's lifecycle (e.g., orphaned-file cleanup after the
+ *  user navigates back without saving). */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class AppScope
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -51,4 +62,10 @@ object AppModule {
     fun providePreferencesDataStore(
         @ApplicationContext context: Context,
     ): DataStore<Preferences> = context.evsctDataStore
+
+    @Provides
+    @Singleton
+    @AppScope
+    fun provideAppScope(): CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }

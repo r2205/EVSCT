@@ -14,12 +14,14 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import android.net.Uri
+import com.evsct.app.di.AppScope
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.AutofillResult
 import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.LocationAutofill
 import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Units
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -117,6 +119,7 @@ class SessionEditViewModel @Inject constructor(
     private val locationAutofill: LocationAutofill,
     private val receiptImageStore: ReceiptImageStore,
     private val appPreferences: AppPreferences,
+    @AppScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     /** Cached list of every session, used to derive validation hints (e.g.
@@ -130,6 +133,20 @@ class SessionEditViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(SessionEditUi())
     val state: StateFlow<SessionEditUi> = _state.asStateFlow()
+
+    /** Path the database currently references at load time. Stays alive on
+     *  disk until either save() commits a different value or the user trashes
+     *  the session. */
+    private var originalReceiptPath: String? = null
+
+    /** Every receipt file we've copied to disk during this edit session.
+     *  Includes the original (if any) so cleanup logic can iterate one set. */
+    private val touchedReceiptPaths = mutableSetOf<String>()
+
+    /** Becomes true once save() or deleteAndExit() has fully reconciled the
+     *  filesystem with the form state. onCleared() uses this to decide
+     *  whether to roll back speculative file copies. */
+    @Volatile private var receiptCleanupHandled = false
 
     init {
         viewModelScope.launch {
@@ -184,6 +201,8 @@ class SessionEditViewModel @Inject constructor(
     }
 
     private fun loadFrom(s: ChargingSession, units: UserUnits) {
+        originalReceiptPath = s.receiptImagePath
+        s.receiptImagePath?.let { touchedReceiptPaths += it }
         val odoText = s.odometerKm?.let {
             val display = Units.kmToDisplay(it, units.useMiles)
             // Trim trailing .0 for whole numbers to match the rest of the app's
@@ -322,19 +341,19 @@ class SessionEditViewModel @Inject constructor(
 
     fun pickReceipt(uri: Uri) {
         viewModelScope.launch {
-            val previous = _state.value.receiptImagePath
+            // Copy the new file to disk and track it. Don't delete anything
+            // yet — the previous path stays valid until save() commits, so
+            // backing out without saving leaves the database row intact.
             val path = receiptImageStore.copyFromUri(uri)
+            touchedReceiptPaths += path
             _state.update { it.copy(receiptImagePath = path) }
-            if (previous != null) receiptImageStore.delete(previous)
         }
     }
 
     fun clearReceipt() {
-        viewModelScope.launch {
-            val previous = _state.value.receiptImagePath
-            _state.update { it.copy(receiptImagePath = null) }
-            if (previous != null) receiptImageStore.delete(previous)
-        }
+        // Pure form-state change — no disk I/O. The actual file deletion
+        // happens after save() persists the null path.
+        _state.update { it.copy(receiptImagePath = null) }
     }
 
     fun applyStop(stop: RecentStop) = _state.update { current ->
@@ -416,8 +435,20 @@ class SessionEditViewModel @Inject constructor(
                 longitude = s.longitude,
             )
             sessionRepository.upsert(session)
+            // Now that the database row is committed, drop any speculative
+            // copies plus the original (if it was replaced or cleared).
+            reconcileReceiptFiles(finalPath = session.receiptImagePath)
             onSaved()
         }
+    }
+
+    /** Delete every receipt file we touched during this edit session except
+     *  the one [finalPath] now points at. Called from save() (after upsert
+     *  commits) and deleteAndExit() (which clears the row entirely). */
+    private suspend fun reconcileReceiptFiles(finalPath: String?) {
+        receiptCleanupHandled = true
+        val toDelete = touchedReceiptPaths.filter { it != finalPath }
+        toDelete.forEach { receiptImageStore.delete(it) }
     }
 
     fun autofillFromLocation() {
@@ -458,11 +489,28 @@ class SessionEditViewModel @Inject constructor(
             if (sessionId > 0) {
                 sessionRepository.findById(sessionId)?.let {
                     sessionRepository.delete(it)
-                    receiptImageStore.delete(it.receiptImagePath)
                 }
             }
+            // No row left, so the final path is null — drop every file we
+            // touched (original + speculative copies).
+            reconcileReceiptFiles(finalPath = null)
             onDeleted()
         }
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        // If save()/deleteAndExit() already reconciled, nothing to do.
+        if (receiptCleanupHandled) return
+        // The user backed out without saving. The database row (if any) still
+        // references originalReceiptPath, so leave that file alone — but any
+        // speculative copies we wrote during this edit are unreferenced and
+        // safe to drop. Use the app-scoped scope since viewModelScope is
+        // already cancelled at this point.
+        val orphans = touchedReceiptPaths.filter { it != originalReceiptPath }
+        if (orphans.isEmpty()) return
+        appScope.launch {
+            orphans.forEach { receiptImageStore.delete(it) }
+        }
+    }
 }
