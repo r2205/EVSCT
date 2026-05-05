@@ -216,6 +216,14 @@ class BackupIo @Inject constructor(
             cleanOrphans(IMAGE_DIR_IN_FILES, installedImages.values.toSet())
             cleanOrphans(RECEIPT_DIR_IN_FILES, installedReceipts.values.toSet())
 
+            // The restored data already lives in a backup file the user
+            // pointed us at, so treat this moment as a fresh successful
+            // backup — otherwise the reminder banner/notification fires
+            // immediately after restore against a stale (or null)
+            // lastBackupAt timestamp.
+            appPreferences.recordBackup()
+            backupReminderNotifier.cancel()
+
             BackupResult.RestoreSuccess(
                 sessions = payload.sessions.size,
                 trips = payload.trips.size,
