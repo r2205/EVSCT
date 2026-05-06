@@ -19,12 +19,32 @@ import kotlinx.coroutines.withContext
 
 /** Minimal RFC-4180-ish CSV writer/reader. Handles quoting of fields containing comma, quote, or newline. */
 object Csv {
+    /** Leading characters that some spreadsheet apps treat as the start of a
+     *  formula. A field beginning with one of these — exported by EVSCT and
+     *  reopened in Excel/Sheets/Numbers — could execute attacker-controlled
+     *  formulas (e.g., a notes field starting with `=cmd|...`). */
+    private val FORMULA_TRIGGERS = setOf('=', '+', '-', '@', '\t', '\r')
+
     fun encodeField(value: String?): String {
         if (value == null) return ""
-        val needsQuote = value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
-        val escaped = value.replace("\"", "\"\"")
+        // Defuse formula injection by prefixing dangerous leading chars with
+        // a single quote — spreadsheet apps strip that prefix and treat the
+        // rest as literal text. decodeField mirrors this on import so EVSCT
+        // round-trips the user's original value losslessly.
+        val sanitized = if (value.isNotEmpty() && value[0] in FORMULA_TRIGGERS) "'$value" else value
+        val needsQuote = sanitized.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
+        val escaped = sanitized.replace("\"", "\"\"")
         return if (needsQuote) "\"$escaped\"" else escaped
     }
+
+    /** Reverse of the [encodeField] formula-injection prefix: strip a leading
+     *  `'` only when it sits in front of a known formula trigger. A user's
+     *  legitimate `'Tesla` brand stays intact (the second char isn't a
+     *  trigger). */
+    private fun decodeField(value: String): String =
+        if (value.length >= 2 && value[0] == '\'' && value[1] in FORMULA_TRIGGERS)
+            value.substring(1)
+        else value
 
     fun encodeRow(fields: List<String?>): String =
         fields.joinToString(",") { encodeField(it) }
@@ -45,12 +65,12 @@ object Csv {
                     else -> cur.append(c)
                 }
                 c == '"' -> inQuotes = true
-                c == ',' -> { out += cur.toString(); cur.clear() }
+                c == ',' -> { out += decodeField(cur.toString()); cur.clear() }
                 else -> cur.append(c)
             }
             i++
         }
-        out += cur.toString()
+        out += decodeField(cur.toString())
         return out
     }
 
