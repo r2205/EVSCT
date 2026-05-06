@@ -42,7 +42,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -60,14 +59,11 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.clustering.ClusterItem
-import com.google.maps.android.clustering.algo.NonHierarchicalDistanceBasedAlgorithm
-import com.google.maps.android.clustering.view.DefaultClusterRenderer
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.clustering.Clustering
-import com.google.maps.android.compose.clustering.rememberClusterManager
 import com.google.maps.android.compose.rememberCameraPositionState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -190,36 +186,14 @@ fun MapScreen(
                 // when stops are close enough at the current zoom; tapping
                 // a cluster animates a zoom-in. Individual pins keep
                 // their trip-color tint via the Compose icon below.
-                // Cluster nearby stops at low zoom so 30+ chargers in one
-                // city don't overlap into a blob, but tune the defaults
-                // down so a road trip's 5–6 stops along a highway stay
-                // visible as individual pins. The renderer's
-                // minClusterSize bumps from 4 → 6 so a small group
-                // doesn't fold into a "5" badge; the algorithm's
-                // maxDistance drops from 100 → 60px so pins need to be
-                // tighter on screen before they merge.
-                val clusterManager = rememberClusterManager<ChargingStopClusterItem>()
-                SideEffect {
-                    if (clusterManager != null) {
-                        clusterManager.algorithm =
-                            NonHierarchicalDistanceBasedAlgorithm<ChargingStopClusterItem>()
-                                .apply { maxDistanceBetweenClusteredItems = 60 }
-                        @Suppress("UNCHECKED_CAST")
-                        (clusterManager.renderer as? DefaultClusterRenderer<ChargingStopClusterItem>)
-                            ?.minClusterSize = 6
-                    }
-                }
-                if (clusterManager != null) {
-                    Clustering(
-                        items = state.stops.map { ChargingStopClusterItem(it) },
-                        clusterManager = clusterManager,
-                        onClusterClick = { false /* false → SDK default zoom-in */ },
-                        onClusterItemClick = { false /* false → SDK shows info window */ },
-                        clusterItemContent = { item ->
-                            ChargingStopPin(item.stop.pinKind, state.colorByTrip)
-                        },
-                    )
-                }
+                Clustering(
+                    items = state.stops.map { ChargingStopClusterItem(it) },
+                    onClusterClick = { false /* false → SDK default zoom-in */ },
+                    onClusterItemClick = { false /* false → SDK shows info window */ },
+                    clusterItemContent = { item ->
+                        ChargingStopPin(item.stop.pinKind, state.colorByTrip)
+                    },
+                )
             }
 
             if (state.backfillRunning) {
