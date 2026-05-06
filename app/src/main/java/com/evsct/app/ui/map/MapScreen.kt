@@ -229,20 +229,17 @@ fun MapScreen(
                     clusterRenderer.value = renderer
                 }
             }
-            // Push items into the manager whenever the visible stops change.
-            // The manager handles add/remove + reclustering internally.
-            LaunchedEffect(state.stops, clusterManager.value) {
+            // Push items into the manager whenever the visible stops or the
+            // colorByTrip toggle changes. The renderer caches markers and
+            // only consults onBeforeClusterItemRendered on first creation —
+            // so a colorByTrip flip needs a full clearItems/addItems pass
+            // to force the icon to repaint, not just cluster().
+            LaunchedEffect(state.stops, state.colorByTrip, clusterManager.value) {
                 val mgr = clusterManager.value ?: return@LaunchedEffect
+                clusterRenderer.value?.colorByTrip = state.colorByTrip
                 mgr.clearItems()
                 mgr.addItems(state.stops.map { ChargingStopClusterItem(it) })
                 mgr.cluster()
-            }
-            // The renderer captures colorByTrip in its closure for icon
-            // resolution; mutate it and force a recluster on toggle.
-            LaunchedEffect(state.colorByTrip, clusterRenderer.value) {
-                val renderer = clusterRenderer.value ?: return@LaunchedEffect
-                renderer.colorByTrip = state.colorByTrip
-                clusterManager.value?.cluster()
             }
 
             if (state.backfillRunning) {
