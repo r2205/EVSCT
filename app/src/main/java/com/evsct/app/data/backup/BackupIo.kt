@@ -362,8 +362,17 @@ class BackupIo @Inject constructor(
         val schemaVersion = json.optInt("schemaVersion", -1)
         if (schemaVersion <= 0 || schemaVersion > SCHEMA_VERSION) return null
 
+        // Every legitimate backup contains all three arrays (even if empty).
+        // Reject payloads that are missing any of them — restore() would
+        // otherwise call deleteAll() on every table and then insert zero rows
+        // from a "{ \"schemaVersion\": 5 }" payload, silently wiping the
+        // user's database.
+        val vehiclesArr = json.optJSONArray("vehicles") ?: return null
+        val tripsArr = json.optJSONArray("trips") ?: return null
+        val sessionsArr = json.optJSONArray("sessions") ?: return null
+
         return BackupPayload(
-            vehicles = json.optJSONArray("vehicles").orEmpty().mapObjects { v ->
+            vehicles = vehiclesArr.mapObjects { v ->
                 RawVehicle(
                     id = v.getLong("id"),
                     name = v.getString("name"),
@@ -381,7 +390,7 @@ class BackupIo @Inject constructor(
                     updatedAt = v.optLong("updatedAt", System.currentTimeMillis()),
                 )
             },
-            trips = json.optJSONArray("trips").orEmpty().mapObjects { t ->
+            trips = tripsArr.mapObjects { t ->
                 RawTrip(
                     id = t.getLong("id"),
                     name = t.getString("name"),
@@ -394,7 +403,7 @@ class BackupIo @Inject constructor(
                     createdAt = t.optLong("createdAt", System.currentTimeMillis()),
                 )
             },
-            sessions = json.optJSONArray("sessions").orEmpty().mapObjects { s ->
+            sessions = sessionsArr.mapObjects { s ->
                 RawSession(
                     id = s.getLong("id"),
                     sessionStart = s.getLong("sessionStart"),
@@ -577,8 +586,6 @@ private fun JSONObject.optLongOrNull(key: String): Long? =
 
 private fun JSONObject.optDoubleOrNull(key: String): Double? =
     if (isNull(key) || !has(key)) null else optDouble(key).takeIf { !it.isNaN() }
-
-private fun JSONArray?.orEmpty(): JSONArray = this ?: JSONArray()
 
 private inline fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =
     (0 until length()).map { transform(getJSONObject(it)) }
