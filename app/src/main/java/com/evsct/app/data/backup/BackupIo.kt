@@ -13,8 +13,11 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.util.BackupReminderNotifier
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -33,6 +36,14 @@ private const val IMAGE_DIR_IN_ZIP = "vehicles/"
 private const val IMAGE_DIR_IN_FILES = "vehicles"
 private const val RECEIPT_DIR_IN_ZIP = "receipts/"
 private const val RECEIPT_DIR_IN_FILES = "receipts"
+
+// Decompression caps. A real backup of a heavy user is comfortably under
+// these — they exist to short-circuit zip-bombs that decompress a few KB
+// of input into gigabytes of output.
+private const val MAX_JSON_BYTES: Long = 10L * 1024 * 1024
+private const val MAX_ENTRY_BYTES: Long = 25L * 1024 * 1024
+private const val MAX_TOTAL_BYTES: Long = 100L * 1024 * 1024
+private const val MAX_BACKUP_ENTRIES: Int = 5_000
 
 sealed interface BackupResult {
     data class ExportSuccess(val sessions: Int, val trips: Int, val vehicles: Int) : BackupResult
@@ -330,6 +341,8 @@ class BackupIo @Inject constructor(
 
     private fun readZipToTemp(uri: Uri, tempDir: File): JSONObject? {
         var json: JSONObject? = null
+        var totalBytes = 0L
+        var entryCount = 0
         context.contentResolver.openInputStream(uri).use { stream ->
             requireNotNull(stream) { "Could not open backup file." }
             ZipInputStream(BufferedInputStream(stream)).use { zip ->
@@ -339,17 +352,24 @@ class BackupIo @Inject constructor(
                         zip.closeEntry()
                         continue
                     }
-                    when {
+                    if (++entryCount > MAX_BACKUP_ENTRIES) {
+                        throw IOException("Backup contains too many entries (>$MAX_BACKUP_ENTRIES).")
+                    }
+                    val written: Long = when {
                         entry.name == BACKUP_JSON -> {
-                            val bytes = zip.readBytes()
+                            val bytes = zip.readBytesBounded(MAX_JSON_BYTES)
                             json = JSONObject(String(bytes, Charsets.UTF_8))
+                            bytes.size.toLong()
                         }
-                        entry.name.startsWith(IMAGE_DIR_IN_ZIP) -> {
+                        entry.name.startsWith(IMAGE_DIR_IN_ZIP) ->
                             extractInto(zip, entry.name, IMAGE_DIR_IN_ZIP, File(tempDir, IMAGE_DIR_IN_FILES))
-                        }
-                        entry.name.startsWith(RECEIPT_DIR_IN_ZIP) -> {
+                        entry.name.startsWith(RECEIPT_DIR_IN_ZIP) ->
                             extractInto(zip, entry.name, RECEIPT_DIR_IN_ZIP, File(tempDir, RECEIPT_DIR_IN_FILES))
-                        }
+                        else -> 0L
+                    }
+                    totalBytes += written
+                    if (totalBytes > MAX_TOTAL_BYTES) {
+                        throw IOException("Backup exceeds the $MAX_TOTAL_BYTES byte total decompression cap.")
                     }
                     zip.closeEntry()
                 }
@@ -443,20 +463,47 @@ class BackupIo @Inject constructor(
         )
     }
 
-    /** Copies extracted images into filesDir/vehicles/, returns map<imageFile -> imagePath>. */
+    /** Extract one zip entry to [targetDir] under its basename, returning the
+     *  bytes written. Caps the per-entry size; throws if exceeded so the
+     *  outer transaction never sees a partial bomb. */
     private fun extractInto(
         zip: ZipInputStream,
         entryName: String,
         prefix: String,
         targetDir: File,
-    ) {
+    ): Long {
         targetDir.mkdirs()
         val rel = entryName.removePrefix(prefix)
         // Guard against zip-slip — keep only the basename.
         val safeName = File(rel).name
-        if (safeName.isBlank()) return
+        if (safeName.isBlank()) return 0L
         val out = File(targetDir, safeName)
-        out.outputStream().use { os -> zip.copyTo(os) }
+        return out.outputStream().use { os -> zip.copyBoundedTo(os, MAX_ENTRY_BYTES) }
+    }
+
+    /** Copy [this] into [out] until EOF or [limit] bytes, whichever comes
+     *  first. Throws when [limit] is exceeded so a single zip-bomb entry
+     *  can't OOM the process or fill cacheDir. */
+    private fun InputStream.copyBoundedTo(out: OutputStream, limit: Long): Long {
+        val buf = ByteArray(8 * 1024)
+        var total = 0L
+        while (true) {
+            val n = read(buf)
+            if (n < 0) break
+            total += n
+            if (total > limit) {
+                throw IOException("Zip entry exceeds the $limit byte size cap.")
+            }
+            out.write(buf, 0, n)
+        }
+        return total
+    }
+
+    /** Read [this] fully into a ByteArray, but no more than [limit] bytes. */
+    private fun InputStream.readBytesBounded(limit: Long): ByteArray {
+        val buf = ByteArrayOutputStream()
+        copyBoundedTo(buf, limit)
+        return buf.toByteArray()
     }
 
     /** Copy each [name] from [tempSubdir] into filesDir/[targetSubdir]/.

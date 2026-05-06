@@ -14,6 +14,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.poi.openxml4j.util.ZipSecureFile
 import org.apache.poi.ss.usermodel.Cell
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.DateUtil
@@ -21,6 +22,12 @@ import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 
 data class XlsxImportResult(val imported: Int, val skipped: Int, val errors: List<String>)
+
+// Decompression caps for the legacy XLSX importer. A real charging-log
+// sheet is comfortably under these — they exist to short-circuit
+// zip/OOXML bombs that decompress a few KB of input into gigabytes.
+private const val MAX_XLSX_ENTRIES = 2_000
+private const val MAX_XLSX_ENTRY_BYTES: Long = 50L * 1024 * 1024
 
 /**
  * Imports the legacy "DC Fast Charging.xlsx" sheet with the column layout the user has been
@@ -34,6 +41,15 @@ class XlsxImporter @Inject constructor(
 ) {
 
     suspend fun import(uri: Uri): XlsxImportResult = withContext(Dispatchers.IO) {
+        // POI hardening against malicious XLSX (zip-bomb / OOXML-bomb) —
+        // these are static so we set them before every import. Defaults in
+        // POI 5.x are reasonable for compression-ratio but the per-entry
+        // size cap is effectively unbounded out of the box.
+        ZipSecureFile.setMinInflateRatio(0.01)
+        ZipSecureFile.setMaxFileCount(MAX_XLSX_ENTRIES)
+        ZipSecureFile.setMaxEntrySize(MAX_XLSX_ENTRY_BYTES)
+        ZipSecureFile.setMaxTextSize(MAX_XLSX_ENTRY_BYTES)
+
         val errors = mutableListOf<String>()
         var imported = 0
         var skipped = 0
