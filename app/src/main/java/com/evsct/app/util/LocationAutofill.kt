@@ -135,27 +135,38 @@ class LocationAutofill @Inject constructor(
     ): Location? = suspendCancellableCoroutine { cont ->
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // CancellationSignal lets us tell the system to stop the fix
+                // when the coroutine is cancelled (e.g., screen rotated while
+                // a GPS fix was pending). Otherwise the GPS chip stays warm
+                // until the OS times out on its own.
+                val cancellationSignal = android.os.CancellationSignal()
+                cont.invokeOnCancellation { cancellationSignal.cancel() }
                 @Suppress("MissingPermission")
-                lm.getCurrentLocation(provider, null, context.mainExecutor) { loc ->
+                lm.getCurrentLocation(provider, cancellationSignal, context.mainExecutor) { loc ->
                     if (cont.isActive) cont.resume(loc)
                 }
             } else {
+                // Hold a reference to the listener so we can detach it on
+                // cancellation — otherwise it stays subscribed and resumes a
+                // dead coroutine on the next location update, leaking the
+                // listener (and the captured continuation) until the process
+                // dies. minSdk 30 means this branch is currently unreachable
+                // but the defensive cleanup is cheap.
                 @Suppress("DEPRECATION", "MissingPermission")
-                lm.requestSingleUpdate(
-                    provider,
-                    object : android.location.LocationListener {
-                        override fun onLocationChanged(location: Location) {
-                            if (cont.isActive) cont.resume(location)
-                        }
-                        override fun onProviderEnabled(p0: String) {}
-                        override fun onProviderDisabled(p0: String) {
-                            if (cont.isActive) cont.resume(null)
-                        }
-                        @Deprecated("Required override")
-                        override fun onStatusChanged(p0: String?, p1: Int, p2: android.os.Bundle?) {}
-                    },
-                    context.mainLooper,
-                )
+                val listener = object : android.location.LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        if (cont.isActive) cont.resume(location)
+                    }
+                    override fun onProviderEnabled(p0: String) {}
+                    override fun onProviderDisabled(p0: String) {
+                        if (cont.isActive) cont.resume(null)
+                    }
+                    @Deprecated("Required override")
+                    override fun onStatusChanged(p0: String?, p1: Int, p2: android.os.Bundle?) {}
+                }
+                cont.invokeOnCancellation { lm.removeUpdates(listener) }
+                @Suppress("DEPRECATION", "MissingPermission")
+                lm.requestSingleUpdate(provider, listener, context.mainLooper)
             }
         } catch (e: SecurityException) {
             if (cont.isActive) cont.resume(null)
