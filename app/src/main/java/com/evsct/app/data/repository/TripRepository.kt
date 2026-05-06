@@ -53,6 +53,24 @@ class TripRepository @Inject constructor(
 
     suspend fun delete(trip: Trip) = tripDao.delete(trip)
 
+    /**
+     * Assign a default pin color to any trip whose [Trip.pinColor] is null.
+     * Trips created before the v6 schema migration kept null pinColor forever
+     * because [upsert] only auto-picks colors at insert time. Called once at
+     * app start; a no-op when nothing's missing.
+     */
+    suspend fun backfillMissingPinColors() {
+        val trips = tripDao.observeAll().first()
+        val missing = trips.filter { it.pinColor == null }
+        if (missing.isEmpty()) return
+        val used = trips.mapNotNull { it.pinColor }.toMutableList()
+        missing.forEach { trip ->
+            val color = TripPinColor.nextDefault(used).name
+            tripDao.update(trip.copy(pinColor = color))
+            used += color
+        }
+    }
+
     companion object {
         /**
          * If the user filled in both trip-level start and end odometer values,
