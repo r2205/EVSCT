@@ -121,11 +121,16 @@ class LocationAutofill @Inject constructor(
 
     private fun pickProvider(lm: LocationManager): String? {
         val providers = lm.getProviders(true)
+        // Don't fall through to providers.firstOrNull() — on some devices
+        // that's PASSIVE_PROVIDER, which only delivers updates when another
+        // app requests one. getCurrentLocation against PASSIVE just times
+        // out, so the user sees "Could not get a location fix" even though
+        // location is on. Better to return null and surface NoProvider.
         return when {
             LocationManager.FUSED_PROVIDER in providers -> LocationManager.FUSED_PROVIDER
             LocationManager.GPS_PROVIDER in providers -> LocationManager.GPS_PROVIDER
             LocationManager.NETWORK_PROVIDER in providers -> LocationManager.NETWORK_PROVIDER
-            else -> providers.firstOrNull()
+            else -> null
         }
     }
 
