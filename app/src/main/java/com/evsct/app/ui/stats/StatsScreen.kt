@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,16 +84,13 @@ fun StatsScreen(
             HeadlineCard(state)
 
             if (state.sessionCount == 0) {
-                Box(
+                com.evsct.app.ui.EmptyState(
+                    icon = Icons.Default.QueryStats,
+                    title = "No sessions yet",
+                    body = "Stats appear here once you've logged at least " +
+                        "one charging session.",
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "No sessions to summarize yet.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                )
                 return@Column
             }
 

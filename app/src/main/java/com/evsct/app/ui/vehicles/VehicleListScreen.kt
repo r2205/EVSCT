@@ -79,12 +79,13 @@ fun VehicleListScreen(
         },
     ) { padding ->
         if (vehicles.isEmpty()) {
-            Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "No vehicles yet. Tap + to add one.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
+            com.evsct.app.ui.EmptyState(
+                icon = Icons.Default.DirectionsCar,
+                title = "No vehicles yet",
+                body = "Add the EV(s) you charge so sessions can be tagged " +
+                    "and per-vehicle stats become meaningful.",
+                modifier = Modifier.padding(padding).fillMaxSize(),
+            )
         } else {
             LazyColumn(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),

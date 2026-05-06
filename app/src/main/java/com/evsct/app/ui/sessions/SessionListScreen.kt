@@ -199,7 +199,22 @@ fun SessionListScreen(
             }
             SummaryCard(state)
             if (state.sessions.isEmpty()) {
-                EmptyState(state.vehicleFilterId != null)
+                if (state.vehicleFilterId == null && state.vehicles.isEmpty()) {
+                    // First-launch path: no vehicles, no sessions. Saving a
+                    // session without a vehicle works but leaves it untagged
+                    // and skews per-vehicle stats, so route the user to set
+                    // up a vehicle first.
+                    com.evsct.app.ui.EmptyState(
+                        icon = Icons.Default.DirectionsCar,
+                        title = "Welcome to EVSCT",
+                        body = "Add a vehicle first so charging sessions can " +
+                            "be tagged to it for stats and efficiency tracking.",
+                        actionLabel = "Open Settings",
+                        onAction = onOpenSettings,
+                    )
+                } else {
+                    EmptyState(state.vehicleFilterId != null)
+                }
             } else {
                 LazyColumn(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(

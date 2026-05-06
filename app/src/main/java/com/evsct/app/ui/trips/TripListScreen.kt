@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -79,9 +80,13 @@ fun TripListScreen(
         },
     ) { padding ->
         if (trips.isEmpty()) {
-            Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No trips yet. Tap + to create one.")
-            }
+            com.evsct.app.ui.EmptyState(
+                icon = Icons.Default.Map,
+                title = "No trips yet",
+                body = "Trips group sessions for road-trip totals and " +
+                    "color-coded map pins. Tap + to create one.",
+                modifier = Modifier.padding(padding).fillMaxSize(),
+            )
         } else {
             LazyColumn(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
