@@ -38,6 +38,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.ImageZoomDialog
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.util.Format
@@ -223,17 +227,22 @@ private fun HeaderCard(vehicle: Vehicle) {
 private fun VehicleHero(imagePath: String?) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val file = imagePath?.let { File(ctx.filesDir, it) }
+    val hasImage = file != null && file.exists()
+    var showZoom by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .size(80.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            // Only enable tap-to-zoom when there's actually a photo;
+            // tapping the placeholder car icon would be confusing.
+            .let { if (hasImage) it.clickable { showZoom = true } else it },
         contentAlignment = Alignment.Center,
     ) {
-        if (file != null && file.exists()) {
+        if (hasImage) {
             AsyncImage(
                 model = file,
-                contentDescription = null,
+                contentDescription = "Vehicle photo (tap to zoom)",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -245,6 +254,14 @@ private fun VehicleHero(imagePath: String?) {
                 modifier = Modifier.size(40.dp),
             )
         }
+    }
+
+    if (showZoom && file != null) {
+        ImageZoomDialog(
+            model = file,
+            contentDescription = "Vehicle photo (full screen)",
+            onDismiss = { showZoom = false },
+        )
     }
 }
 
