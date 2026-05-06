@@ -212,10 +212,10 @@ fun MapScreen(
                 MapEffect(Unit) { map ->
                     val mgr = ClusterManager<ChargingStopClusterItem>(context, map)
                     mgr.algorithm = NonHierarchicalDistanceBasedAlgorithm<ChargingStopClusterItem>().apply {
-                        // 60px (down from 100): pins must be visually tighter
-                        // before they merge, so road-trip stops stay separate
-                        // along a highway at country zoom.
-                        maxDistanceBetweenClusteredItems = 60
+                        // 40px (down from 100 default): pins must be visually
+                        // very close before they merge, so road-trip stops
+                        // along a highway stay separate at country zoom.
+                        maxDistanceBetweenClusteredItems = 40
                     }
                     val renderer = ChargingStopClusterRenderer(context, map, mgr).apply {
                         // 6 (up from 4): a 5-stop trip leg renders as 5
