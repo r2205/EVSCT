@@ -50,6 +50,10 @@ class AppPreferences @Inject constructor(
         /** App-wide theme override: SYSTEM follows the OS dark-mode setting,
          *  LIGHT and DARK force the corresponding palette. */
         private val THEME_MODE = stringPreferencesKey("theme_mode")
+        /** Whether the map view clusters nearby pins. When false, every pin
+         *  renders individually regardless of zoom — useful when the user
+         *  wants full visibility of every visited stop. */
+        private val MAP_CLUSTERING_ENABLED = booleanPreferencesKey("map_clustering_enabled")
 
         val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
         val SUPPORTED_MAP_TYPES = listOf("NORMAL", "SATELLITE", "HYBRID", "TERRAIN")
@@ -141,6 +145,15 @@ class AppPreferences @Inject constructor(
     suspend fun setThemeMode(mode: String) {
         if (mode !in SUPPORTED_THEME_MODES) return
         dataStore.edit { it[THEME_MODE] = mode }
+    }
+
+    /** Whether the map clusters nearby pins. Defaults to true. */
+    val mapClusteringEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[MAP_CLUSTERING_ENABLED] ?: true
+    }
+
+    suspend fun setMapClusteringEnabled(enabled: Boolean) {
+        dataStore.edit { it[MAP_CLUSTERING_ENABLED] = enabled }
     }
 
     suspend fun snapshot(): Snapshot {

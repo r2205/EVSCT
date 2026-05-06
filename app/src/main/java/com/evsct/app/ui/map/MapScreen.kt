@@ -234,9 +234,16 @@ fun MapScreen(
             // only consults onBeforeClusterItemRendered on first creation —
             // so a colorByTrip flip needs a full clearItems/addItems pass
             // to force the icon to repaint, not just cluster().
-            LaunchedEffect(state.stops, state.colorByTrip, clusterManager.value) {
+            LaunchedEffect(
+                state.stops,
+                state.colorByTrip,
+                state.clusteringEnabled,
+                clusterManager.value,
+            ) {
                 val mgr = clusterManager.value ?: return@LaunchedEffect
-                clusterRenderer.value?.colorByTrip = state.colorByTrip
+                val renderer = clusterRenderer.value
+                renderer?.colorByTrip = state.colorByTrip
+                renderer?.clusteringEnabled = state.clusteringEnabled
                 mgr.clearItems()
                 mgr.addItems(state.stops.map { ChargingStopClusterItem(it) })
                 mgr.cluster()
@@ -266,6 +273,7 @@ fun MapScreen(
             onToggleTrip = viewModel::toggleTripVisibility,
             onShowAllTrips = viewModel::showAllTrips,
             onSetColorByTrip = viewModel::setColorByTrip,
+            onSetClusteringEnabled = viewModel::setClusteringEnabled,
             onResetAll = viewModel::resetFilters,
             onDismiss = { showFilters = false },
         )
@@ -409,6 +417,7 @@ private class ChargingStopClusterRenderer(
 ) : DefaultClusterRenderer<ChargingStopClusterItem>(context, map, clusterManager) {
 
     var colorByTrip: Boolean = true
+    var clusteringEnabled: Boolean = true
 
     private val sharedIcon: BitmapDescriptor by lazy { sharedTripPinDescriptor() }
 
@@ -422,6 +431,11 @@ private class ChargingStopClusterRenderer(
         item.title?.let { markerOptions.title(it) }
         item.snippet?.let { markerOptions.snippet(it) }
     }
+
+    override fun shouldRenderAsCluster(
+        cluster: com.google.maps.android.clustering.Cluster<ChargingStopClusterItem>,
+    ): Boolean =
+        clusteringEnabled && super.shouldRenderAsCluster(cluster)
 }
 
 /** Pick the SDK marker icon for a given pin kind. Returns null to fall
@@ -472,6 +486,7 @@ private fun FilterSheet(
     onToggleTrip: (Long?) -> Unit,
     onShowAllTrips: () -> Unit,
     onSetColorByTrip: (Boolean) -> Unit,
+    onSetClusteringEnabled: (Boolean) -> Unit,
     onResetAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -515,6 +530,31 @@ private fun FilterSheet(
                 Switch(
                     checked = ui.colorByTrip,
                     onCheckedChange = onSetColorByTrip,
+                )
+            }
+
+            // --- Clustering toggle ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Cluster nearby pins",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        "Off shows every pin individually regardless of zoom.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = ui.clusteringEnabled,
+                    onCheckedChange = onSetClusteringEnabled,
                 )
             }
 
