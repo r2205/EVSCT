@@ -39,6 +39,10 @@ class AppPreferences @Inject constructor(
         private val REMINDER_NOTIFY = booleanPreferencesKey("backup_reminder_notify")
         private val USE_MILES = booleanPreferencesKey("use_miles")
         private val DEFAULT_CURRENCY = stringPreferencesKey("default_currency")
+        /** Epoch millis of the last attempted map address-backfill geocode
+         *  pass. Used to throttle re-runs across process death so we don't
+         *  re-geocode the same unresolvable addresses every cold start. */
+        private val LAST_MAP_BACKFILL_AT = longPreferencesKey("last_map_backfill_at")
 
         val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
 
@@ -97,6 +101,15 @@ class AppPreferences @Inject constructor(
     suspend fun setDefaultCurrency(currency: String) {
         if (currency !in SUPPORTED_CURRENCIES) return
         dataStore.edit { it[DEFAULT_CURRENCY] = currency }
+    }
+
+    /** Most recent epoch millis the map screen attempted its address-backfill
+     *  geocode pass, regardless of how many addresses succeeded. */
+    suspend fun lastMapBackfillAt(): Long? =
+        dataStore.data.first()[LAST_MAP_BACKFILL_AT]?.takeIf { it > 0 }
+
+    suspend fun recordMapBackfillAttempt(epochMillis: Long = System.currentTimeMillis()) {
+        dataStore.edit { it[LAST_MAP_BACKFILL_AT] = epochMillis }
     }
 
     suspend fun snapshot(): Snapshot {

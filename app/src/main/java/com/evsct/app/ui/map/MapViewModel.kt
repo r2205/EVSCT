@@ -80,6 +80,7 @@ class MapViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
     private val locationAutofill: LocationAutofill,
+    private val appPreferences: com.evsct.app.data.prefs.AppPreferences,
 ) : ViewModel() {
 
     private val backfillStatus = MutableStateFlow(BackfillState())
@@ -170,6 +171,18 @@ class MapViewModel @Inject constructor(
                 backfillStatus.value = BackfillState(completed = true)
                 return@launch
             }
+            // Persisted throttle: addresses that didn't resolve last time
+            // (no network, ambiguous, etc.) would otherwise be retried on
+            // every cold start. Skip the pass entirely if we attempted one
+            // recently; the user can still force a retry by waiting it out
+            // or by editing the address (which clears that session's coords
+            // and re-geocodes immediately on save).
+            val lastAttempt = appPreferences.lastMapBackfillAt() ?: 0L
+            val sinceLast = System.currentTimeMillis() - lastAttempt
+            if (lastAttempt > 0 && sinceLast < BACKFILL_THROTTLE_MS) {
+                backfillStatus.value = BackfillState(completed = true)
+                return@launch
+            }
             backfillStatus.value = BackfillState(running = true)
             var failed = 0
             for ((_, group) in groups) {
@@ -183,6 +196,7 @@ class MapViewModel @Inject constructor(
                     failed += 1
                 }
             }
+            appPreferences.recordMapBackfillAttempt()
             backfillStatus.value = BackfillState(completed = true, failed = failed)
         }
     }
@@ -236,6 +250,14 @@ class MapViewModel @Inject constructor(
         val completed: Boolean = false,
         val failed: Int = 0,
     )
+
+    companion object {
+        /** Don't re-run the address geocode pass more than once per day —
+         *  long enough that process-death restarts share a single attempt,
+         *  short enough that the user gets a fresh shot if their network
+         *  was down or an address became resolvable. */
+        private const val BACKFILL_THROTTLE_MS = 24L * 60L * 60L * 1000L
+    }
 }
 
 private fun stopKey(s: ChargingSession): String = listOfNotNull(
