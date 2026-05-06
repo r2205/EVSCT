@@ -634,5 +634,13 @@ private fun JSONObject.optLongOrNull(key: String): Long? =
 private fun JSONObject.optDoubleOrNull(key: String): Double? =
     if (isNull(key) || !has(key)) null else optDouble(key).takeIf { !it.isNaN() }
 
-private inline fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =
-    (0 until length()).map { transform(getJSONObject(it)) }
+/** Map JSON objects to [T], silently skipping any row whose [transform] throws.
+ *  A single malformed row in a 100-session backup shouldn't fail the whole
+ *  restore — we'd rather drop the row and continue. (The destructive
+ *  deleteAll runs after parsePayload returns, so a parse-time throw inside
+ *  any non-skipping caller would still abort safely; this helper just
+ *  trades that abort for partial-success behavior.) */
+private inline fun <T : Any> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =
+    (0 until length()).mapNotNull { idx ->
+        runCatching { transform(getJSONObject(idx)) }.getOrNull()
+    }
