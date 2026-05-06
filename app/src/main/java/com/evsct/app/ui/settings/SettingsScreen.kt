@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -155,6 +156,11 @@ fun SettingsScreen(
                 defaultCurrency = state.units.defaultCurrency,
                 onUseMilesChange = viewModel::setUseMiles,
                 onDefaultCurrencyChange = viewModel::setDefaultCurrency,
+            )
+
+            ThemeCard(
+                themeMode = state.themeMode,
+                onThemeModeChange = viewModel::setThemeMode,
             )
 
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -514,6 +520,52 @@ private fun UnitsCurrencyCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ThemeCard(
+    themeMode: String,
+    onThemeModeChange: (String) -> Unit,
+) {
+    val options = listOf(
+        "SYSTEM" to "System",
+        "LIGHT" to "Light",
+        "DARK" to "Dark",
+    )
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Brightness6,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "Theme",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "System follows your phone's dark-mode setting; " +
+                            "Light and Dark force the corresponding palette.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                options.forEachIndexed { index, (key, label) ->
+                    SegmentedButton(
+                        selected = themeMode == key,
+                        onClick = { onThemeModeChange(key) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    ) { Text(label) }
+                }
+            }
         }
     }
 }

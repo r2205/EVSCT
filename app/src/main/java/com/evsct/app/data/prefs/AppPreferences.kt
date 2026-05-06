@@ -47,9 +47,13 @@ class AppPreferences @Inject constructor(
          *  HYBRID / TERRAIN). Stored as the [com.google.maps.android.compose.MapType]
          *  enum name. */
         private val MAP_TYPE = stringPreferencesKey("map_type")
+        /** App-wide theme override: SYSTEM follows the OS dark-mode setting,
+         *  LIGHT and DARK force the corresponding palette. */
+        private val THEME_MODE = stringPreferencesKey("theme_mode")
 
         val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
         val SUPPORTED_MAP_TYPES = listOf("NORMAL", "SATELLITE", "HYBRID", "TERRAIN")
+        val SUPPORTED_THEME_MODES = listOf("SYSTEM", "LIGHT", "DARK")
 
         const val DEFAULT_THRESHOLD_DAYS: Long = 30
 
@@ -127,6 +131,16 @@ class AppPreferences @Inject constructor(
     suspend fun setMapType(type: String) {
         if (type !in SUPPORTED_MAP_TYPES) return
         dataStore.edit { it[MAP_TYPE] = type }
+    }
+
+    /** Selected theme override. Defaults to SYSTEM (follow OS dark-mode). */
+    val themeMode: Flow<String> = dataStore.data.map { prefs ->
+        prefs[THEME_MODE]?.takeIf { it in SUPPORTED_THEME_MODES } ?: "SYSTEM"
+    }
+
+    suspend fun setThemeMode(mode: String) {
+        if (mode !in SUPPORTED_THEME_MODES) return
+        dataStore.edit { it[THEME_MODE] = mode }
     }
 
     suspend fun snapshot(): Snapshot {

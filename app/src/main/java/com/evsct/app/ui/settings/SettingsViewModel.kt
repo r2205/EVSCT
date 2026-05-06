@@ -28,6 +28,9 @@ data class SettingsUi(
     val message: String? = null,
     val reminder: BackupReminderSettings = BackupReminderSettings(),
     val units: UserUnits = UserUnits(),
+    /** Theme override (SYSTEM / LIGHT / DARK) — resolved at the activity
+     *  level so a change here applies app-wide on the next recomposition. */
+    val themeMode: String = "SYSTEM",
 )
 
 @HiltViewModel
@@ -46,8 +49,9 @@ class SettingsViewModel @Inject constructor(
             transient,
             appPreferences.reminderSettings,
             appPreferences.userUnits,
-        ) { ui, reminder, units ->
-            ui.copy(reminder = reminder, units = units)
+            appPreferences.themeMode,
+        ) { ui, reminder, units, themeMode ->
+            ui.copy(reminder = reminder, units = units, themeMode = themeMode)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUi())
 
     fun setUseMiles(useMiles: Boolean) = viewModelScope.launch {
@@ -56,6 +60,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setDefaultCurrency(currency: String) = viewModelScope.launch {
         appPreferences.setDefaultCurrency(currency)
+    }
+
+    fun setThemeMode(mode: String) = viewModelScope.launch {
+        appPreferences.setThemeMode(mode)
     }
 
     fun setReminderEnabled(enabled: Boolean) = viewModelScope.launch {
