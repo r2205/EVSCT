@@ -55,20 +55,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import com.google.android.gms.maps.model.BitmapDescriptor
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
+import com.google.maps.android.clustering.ClusterItem
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.clustering.Clustering
 import com.google.maps.android.compose.rememberCameraPositionState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -185,21 +180,20 @@ fun MapScreen(
                     mapToolbarEnabled = true,
                 ),
             ) {
-                // BitmapDescriptorFactory only works once the Maps SDK is
-                // initialized — which happens when GoogleMap is composed.
-                // Building the shared-pin icon inside this content lambda
-                // guarantees the SDK is ready before we touch the factory.
-                val sharedPinIcon = remember { sharedTripPinDescriptor() }
-                state.stops.forEach { stop ->
-                    Marker(
-                        state = MarkerState(position = LatLng(stop.latitude, stop.longitude)),
-                        title = stop.brand?.takeIf { it.isNotBlank() }
-                            ?: stop.stationName?.takeIf { it.isNotBlank() }
-                            ?: "Charging stop",
-                        snippet = snippetFor(stop),
-                        icon = iconFor(stop.pinKind, sharedPinIcon, state.colorByTrip),
-                    )
-                }
+                // Cluster nearby stops at low zoom so 30 chargers in one
+                // city don't overlap into a blob. The library's default
+                // cluster badge (a tinted circle with the count) appears
+                // when stops are close enough at the current zoom; tapping
+                // a cluster animates a zoom-in. Individual pins keep
+                // their trip-color tint via the Compose icon below.
+                Clustering(
+                    items = state.stops.map { ChargingStopClusterItem(it) },
+                    onClusterClick = { false /* false → SDK default zoom-in */ },
+                    onClusterItemClick = { false /* false → SDK shows info window */ },
+                    clusterItemContent = { item ->
+                        ChargingStopPin(item.stop.pinKind, state.colorByTrip)
+                    },
+                )
             }
 
             if (state.backfillRunning) {
@@ -345,20 +339,37 @@ private fun EmptyState(message: String) {
     }
 }
 
-private fun iconFor(
-    kind: PinKind,
-    sharedIcon: BitmapDescriptor,
-    colorByTrip: Boolean,
-): BitmapDescriptor? {
-    if (!colorByTrip) return null  // All-red mode: default marker for everything.
-    return when (kind) {
-        PinKind.Untripped -> null  // Default red marker.
-        is PinKind.SingleTrip -> {
-            val color = TripPinColor.fromKey(kind.tripPinColorKey)
-            if (color == null) null else BitmapDescriptorFactory.defaultMarker(color.mapsHue)
-        }
-        PinKind.Shared -> sharedIcon
+/** Cluster-item adapter so the maps-compose-utils Clustering composable can
+ *  read position / title / snippet from a [MapStop] without us hand-rolling
+ *  the lower-level ClusterManager API. */
+private class ChargingStopClusterItem(val stop: MapStop) : ClusterItem {
+    override fun getPosition(): LatLng = LatLng(stop.latitude, stop.longitude)
+    override fun getTitle(): String? = stop.brand?.takeIf { it.isNotBlank() }
+        ?: stop.stationName?.takeIf { it.isNotBlank() }
+        ?: "Charging stop"
+    override fun getSnippet(): String? = snippetFor(stop)
+    override fun getZIndex(): Float? = null
+}
+
+/** Compose-rendered pin used inside Clustering's clusterItemContent. The
+ *  library rasterises this composable into a marker icon, which lets us pick
+ *  up trip colors from the Compose palette instead of round-tripping through
+ *  BitmapDescriptorFactory.defaultMarker(hue). */
+@Composable
+private fun ChargingStopPin(kind: PinKind, colorByTrip: Boolean) {
+    val tint = when {
+        !colorByTrip -> Color(0xFFE53935)  // All-red mode mirrors the filter sheet.
+        kind is PinKind.SingleTrip -> TripPinColor.fromKey(kind.tripPinColorKey)?.swatch
+            ?: Color(0xFFE53935)
+        kind is PinKind.Shared -> Color(0xFF6E6E6E)  // Neutral gray for multi-trip stops.
+        else -> Color(0xFFE53935)  // Untripped.
     }
+    Icon(
+        imageVector = Icons.Default.Place,
+        contentDescription = null,
+        tint = tint,
+        modifier = Modifier.size(36.dp),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -491,25 +502,3 @@ private fun TripFilterRow(
     }
 }
 
-/**
- * A small gray pin used for stops that have been visited across multiple
- * trips. Built once and reused since BitmapDescriptors are expensive to
- * create per-frame.
- */
-private fun sharedTripPinDescriptor(): BitmapDescriptor {
-    val sizePx = 64
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val cx = sizePx / 2f
-    val cy = sizePx / 2f
-    val radius = sizePx / 2.4f
-    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF6E6E6E.toInt() }
-    canvas.drawCircle(cx, cy, radius, fill)
-    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFFFFF.toInt()
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-    }
-    canvas.drawCircle(cx, cy, radius, ring)
-    return BitmapDescriptorFactory.fromBitmap(bitmap)
-}
