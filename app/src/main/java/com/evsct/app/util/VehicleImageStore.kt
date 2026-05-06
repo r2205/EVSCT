@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
-import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
@@ -13,10 +12,11 @@ import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Vehicle profile photos are typically a few hundred KB. Reject anything
- *  much larger than a phone-camera JPEG to defuse a malicious app handing
- *  back a multi-GB "image" via SAF. */
-private const val MAX_VEHICLE_IMAGE_BYTES: Long = 10L * 1024 * 1024
+/** A picker-supplied vehicle photo larger than this is refused. Matches the
+ *  receipt cap so the limit is consistent across pickers — and high enough
+ *  that pre-existing larger photos restored from a backup can be re-picked
+ *  if the user wants to swap them. */
+private const val MAX_VEHICLE_IMAGE_BYTES: Long = 25L * 1024 * 1024
 
 /**
  * Persists vehicle profile images into the app's private files dir. Photo Picker
@@ -52,9 +52,7 @@ class VehicleImageStore @Inject constructor(
             val n = read(buf)
             if (n < 0) break
             total += n
-            if (total > limit) {
-                throw IOException("Image exceeds the $limit byte size cap.")
-            }
+            if (total > limit) throw FileTooLargeException(limit)
             out.write(buf, 0, n)
         }
     }

@@ -18,6 +18,12 @@ import kotlinx.coroutines.withContext
  *  the user's storage. A normal photo or PDF receipt sits well below. */
 private const val MAX_RECEIPT_BYTES: Long = 25L * 1024 * 1024
 
+/** Sentinel for a SAF-supplied file that exceeds an enforced size limit.
+ *  The VM layer catches this specifically so it can show a "too large"
+ *  snackbar instead of the generic "could not attach" fallback. */
+class FileTooLargeException(val limitBytes: Long) :
+    IOException("File exceeds $limitBytes byte size cap.")
+
 /**
  * Persists session receipts (images or PDFs) into the app's private files dir
  * under `receipts/<uuid>.<ext>`. The extension preserves whether the receipt
@@ -58,9 +64,7 @@ class ReceiptImageStore @Inject constructor(
             val n = read(buf)
             if (n < 0) break
             total += n
-            if (total > limit) {
-                throw IOException("Receipt exceeds the $limit byte size cap.")
-            }
+            if (total > limit) throw FileTooLargeException(limit)
             out.write(buf, 0, n)
         }
     }

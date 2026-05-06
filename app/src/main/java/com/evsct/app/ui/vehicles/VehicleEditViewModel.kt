@@ -119,6 +119,10 @@ class VehicleEditViewModel @Inject constructor(
             // user backs out the database row keeps referencing the original.
             val path = try {
                 imageStore.copyFromUri(uri)
+            } catch (e: com.evsct.app.util.FileTooLargeException) {
+                val mb = e.limitBytes / (1024 * 1024)
+                _state.update { it.copy(transientMessage = "Photo is too large (max ${mb} MB).") }
+                return@launch
             } catch (e: Exception) {
                 _state.update { it.copy(transientMessage = "Could not attach photo. Try again or pick a different file.") }
                 return@launch

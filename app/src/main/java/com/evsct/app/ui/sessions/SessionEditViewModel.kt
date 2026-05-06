@@ -370,6 +370,10 @@ class SessionEditViewModel @Inject constructor(
             // backing out without saving leaves the database row intact.
             val path = try {
                 receiptImageStore.copyFromUri(uri)
+            } catch (e: com.evsct.app.util.FileTooLargeException) {
+                val mb = e.limitBytes / (1024 * 1024)
+                _state.update { it.copy(transientMessage = "Receipt is too large (max ${mb} MB).") }
+                return@launch
             } catch (e: Exception) {
                 // Picker URIs can become invalid between selection and read
                 // (cloud storage hand-off, permission revoke, etc.). Surface
