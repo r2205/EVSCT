@@ -51,22 +51,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.clustering.ClusterItem
+import com.google.maps.android.clustering.ClusterManager
+import com.google.maps.android.clustering.algo.NonHierarchicalDistanceBasedAlgorithm
+import com.google.maps.android.clustering.view.DefaultClusterRenderer
 import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapEffect
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.clustering.Clustering
 import com.google.maps.android.compose.rememberCameraPositionState
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    com.google.maps.android.compose.MapsComposeExperimentalApi::class,
+)
 @Composable
 fun MapScreen(
     onBack: () -> Unit,
@@ -82,6 +91,18 @@ fun MapScreen(
     val cameraPositionState = rememberCameraPositionState {
         // Default view: roughly the centre of North America at a continent zoom.
         position = CameraPosition.fromLatLngZoom(LatLng(45.0, -98.0), 3f)
+    }
+
+    // The ClusterManager lives across recompositions; MapEffect(Unit) below
+    // wires it up exactly once when the GoogleMap is first ready. Items and
+    // the colorByTrip flag are pushed in via separate effects so changing
+    // them doesn't tear down the manager.
+    val context = LocalContext.current
+    val clusterManager = remember {
+        mutableStateOf<ClusterManager<ChargingStopClusterItem>?>(null)
+    }
+    val clusterRenderer = remember {
+        mutableStateOf<ChargingStopClusterRenderer?>(null)
     }
 
     // Auto-frame on the first non-empty stops emission only. After that the
@@ -180,20 +201,48 @@ fun MapScreen(
                     mapToolbarEnabled = true,
                 ),
             ) {
-                // Cluster nearby stops at low zoom so 30 chargers in one
-                // city don't overlap into a blob. The library's default
-                // cluster badge (a tinted circle with the count) appears
-                // when stops are close enough at the current zoom; tapping
-                // a cluster animates a zoom-in. Individual pins keep
-                // their trip-color tint via the Compose icon below.
-                Clustering(
-                    items = state.stops.map { ChargingStopClusterItem(it) },
-                    onClusterClick = { false /* false → SDK default zoom-in */ },
-                    onClusterItemClick = { false /* false → SDK shows info window */ },
-                    clusterItemContent = { item ->
-                        ChargingStopPin(item.stop.pinKind, state.colorByTrip)
-                    },
-                )
+                // Construct the ClusterManager + custom renderer once, the
+                // first time the GoogleMap is composed. We need MapEffect
+                // (rather than the maps-compose-utils Clustering composable)
+                // because the public Clustering(items, clusterManager)
+                // overload doesn't accept callbacks or content — and we
+                // want a custom DefaultClusterRenderer subclass to control
+                // both the algorithm's maxDistanceBetweenClusteredItems
+                // and the renderer's minClusterSize.
+                MapEffect(Unit) { map ->
+                    val mgr = ClusterManager<ChargingStopClusterItem>(context, map)
+                    mgr.algorithm = NonHierarchicalDistanceBasedAlgorithm<ChargingStopClusterItem>().apply {
+                        // 60px (down from 100): pins must be visually tighter
+                        // before they merge, so road-trip stops stay separate
+                        // along a highway at country zoom.
+                        maxDistanceBetweenClusteredItems = 60
+                    }
+                    val renderer = ChargingStopClusterRenderer(context, map, mgr).apply {
+                        // 6 (up from 4): a 5-stop trip leg renders as 5
+                        // individual pins instead of folding into a "5" badge.
+                        minClusterSize = 6
+                    }
+                    mgr.renderer = renderer
+                    map.setOnCameraIdleListener(mgr)
+                    map.setOnMarkerClickListener(mgr)
+                    clusterManager.value = mgr
+                    clusterRenderer.value = renderer
+                }
+            }
+            // Push items into the manager whenever the visible stops change.
+            // The manager handles add/remove + reclustering internally.
+            LaunchedEffect(state.stops, clusterManager.value) {
+                val mgr = clusterManager.value ?: return@LaunchedEffect
+                mgr.clearItems()
+                mgr.addItems(state.stops.map { ChargingStopClusterItem(it) })
+                mgr.cluster()
+            }
+            // The renderer captures colorByTrip in its closure for icon
+            // resolution; mutate it and force a recluster on toggle.
+            LaunchedEffect(state.colorByTrip, clusterRenderer.value) {
+                val renderer = clusterRenderer.value ?: return@LaunchedEffect
+                renderer.colorByTrip = state.colorByTrip
+                clusterManager.value?.cluster()
             }
 
             if (state.backfillRunning) {
@@ -339,9 +388,8 @@ private fun EmptyState(message: String) {
     }
 }
 
-/** Cluster-item adapter so the maps-compose-utils Clustering composable can
- *  read position / title / snippet from a [MapStop] without us hand-rolling
- *  the lower-level ClusterManager API. */
+/** Adapter so the underlying ClusterManager can read position / title /
+ *  snippet from a [MapStop]. */
 private class ChargingStopClusterItem(val stop: MapStop) : ClusterItem {
     override fun getPosition(): LatLng = LatLng(stop.latitude, stop.longitude)
     override fun getTitle(): String? = stop.brand?.takeIf { it.isNotBlank() }
@@ -351,25 +399,73 @@ private class ChargingStopClusterItem(val stop: MapStop) : ClusterItem {
     override fun getZIndex(): Float? = null
 }
 
-/** Compose-rendered pin used inside Clustering's clusterItemContent. The
- *  library rasterises this composable into a marker icon, which lets us pick
- *  up trip colors from the Compose palette instead of round-tripping through
- *  BitmapDescriptorFactory.defaultMarker(hue). */
-@Composable
-private fun ChargingStopPin(kind: PinKind, colorByTrip: Boolean) {
-    val tint = when {
-        !colorByTrip -> Color(0xFFE53935)  // All-red mode mirrors the filter sheet.
-        kind is PinKind.SingleTrip -> TripPinColor.fromKey(kind.tripPinColorKey)?.swatch
-            ?: Color(0xFFE53935)
-        kind is PinKind.Shared -> Color(0xFF6E6E6E)  // Neutral gray for multi-trip stops.
-        else -> Color(0xFFE53935)  // Untripped.
+/** Custom cluster renderer that paints individual pins with the SDK's
+ *  iconic colored markers (trip-colored when colorByTrip is on, the shared
+ *  gray bitmap for multi-trip stops, default red otherwise). The default
+ *  cluster-badge appearance is left intact — only the per-item icons are
+ *  overridden. [colorByTrip] is mutable so the screen can flip filter mode
+ *  without rebuilding the renderer. */
+private class ChargingStopClusterRenderer(
+    context: android.content.Context,
+    map: com.google.android.gms.maps.GoogleMap,
+    clusterManager: ClusterManager<ChargingStopClusterItem>,
+) : DefaultClusterRenderer<ChargingStopClusterItem>(context, map, clusterManager) {
+
+    var colorByTrip: Boolean = true
+
+    private val sharedIcon: BitmapDescriptor by lazy { sharedTripPinDescriptor() }
+
+    override fun onBeforeClusterItemRendered(
+        item: ChargingStopClusterItem,
+        markerOptions: com.google.android.gms.maps.model.MarkerOptions,
+    ) {
+        iconFor(item.stop.pinKind, sharedIcon, colorByTrip)?.let {
+            markerOptions.icon(it)
+        }
+        item.title?.let { markerOptions.title(it) }
+        item.snippet?.let { markerOptions.snippet(it) }
     }
-    Icon(
-        imageVector = Icons.Default.Place,
-        contentDescription = null,
-        tint = tint,
-        modifier = Modifier.size(36.dp),
-    )
+}
+
+/** Pick the SDK marker icon for a given pin kind. Returns null to fall
+ *  through to the default red marker (saves a per-frame BitmapDescriptor
+ *  for the common case). */
+private fun iconFor(
+    kind: PinKind,
+    sharedIcon: BitmapDescriptor,
+    colorByTrip: Boolean,
+): BitmapDescriptor? {
+    if (!colorByTrip) return null  // All-red mode: default marker for everything.
+    return when (kind) {
+        PinKind.Untripped -> null  // Default red marker.
+        is PinKind.SingleTrip -> {
+            val color = TripPinColor.fromKey(kind.tripPinColorKey)
+            if (color == null) null else BitmapDescriptorFactory.defaultMarker(color.mapsHue)
+        }
+        PinKind.Shared -> sharedIcon
+    }
+}
+
+/** A small gray pin used for stops visited across multiple trips. Built
+ *  once and reused since BitmapDescriptors are expensive to create. */
+private fun sharedTripPinDescriptor(): BitmapDescriptor {
+    val sizePx = 64
+    val bitmap = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    val cx = sizePx / 2f
+    val cy = sizePx / 2f
+    val radius = sizePx / 2.4f
+    val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF6E6E6E.toInt()
+    }
+    canvas.drawCircle(cx, cy, radius, fill)
+    val ring = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFFFFF.toInt()
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 5f
+    }
+    canvas.drawCircle(cx, cy, radius, ring)
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
