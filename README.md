@@ -1,5 +1,9 @@
 # EVSCT — EV Session & Charging Tracker
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![minSdk](https://img.shields.io/badge/minSdk-30-green.svg)](#)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF.svg?logo=kotlin&logoColor=white)](#)
+
 Personal Android app for logging EV charging sessions (DC fast on road trips,
 AC at home/hotels). Stores everything locally; nothing leaves the phone unless
 you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
@@ -201,3 +205,10 @@ PDFs) all come across.
 - DataStore Preferences for cross-screen settings (units, currency,
   backup reminder, last-backup timestamp)
 - AGP 8.13.2, minSdk 30, targetSdk 35
+
+## License
+
+Released under the [Apache License 2.0](LICENSE). Copyright © 2026 David Robson.
+
+This is a personal hobby project; bug reports and small fixes are welcome via
+GitHub issues, but I'm not actively soliciting feature contributions.
