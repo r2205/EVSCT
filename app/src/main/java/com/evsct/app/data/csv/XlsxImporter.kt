@@ -26,7 +26,7 @@ data class XlsxImportResult(val imported: Int, val skipped: Int, val errors: Lis
 // Decompression caps for the legacy XLSX importer. A real charging-log
 // sheet is comfortably under these — they exist to short-circuit
 // zip/OOXML bombs that decompress a few KB of input into gigabytes.
-private const val MAX_XLSX_ENTRIES = 2_000
+private const val MAX_XLSX_ENTRIES: Long = 2_000L
 private const val MAX_XLSX_ENTRY_BYTES: Long = 50L * 1024 * 1024
 
 /**
