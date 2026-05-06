@@ -16,13 +16,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -61,6 +65,7 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
@@ -77,6 +82,7 @@ fun MapScreen(
     LaunchedEffect(Unit) { viewModel.runBackfillIfNeeded() }
 
     var showFilters by remember { mutableStateOf(false) }
+    var showLayersMenu by remember { mutableStateOf(false) }
 
     val cameraPositionState = rememberCameraPositionState {
         // Default view: roughly the centre of North America at a continent zoom.
@@ -136,6 +142,20 @@ fun MapScreen(
                     }
                 },
                 actions = {
+                    Box {
+                        IconButton(onClick = { showLayersMenu = true }) {
+                            Icon(Icons.Default.Layers, contentDescription = "Map type")
+                        }
+                        MapTypeMenu(
+                            expanded = showLayersMenu,
+                            current = state.mapType,
+                            onSelect = { type ->
+                                viewModel.setMapType(type)
+                                showLayersMenu = false
+                            },
+                            onDismiss = { showLayersMenu = false },
+                        )
+                    }
                     IconButton(onClick = { showFilters = true }) {
                         BadgedBox(
                             badge = {
@@ -155,7 +175,10 @@ fun MapScreen(
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
-                properties = MapProperties(isMyLocationEnabled = false),
+                properties = MapProperties(
+                    isMyLocationEnabled = false,
+                    mapType = mapTypeOf(state.mapType),
+                ),
                 uiSettings = MapUiSettings(
                     zoomControlsEnabled = false,
                     compassEnabled = true,
@@ -230,6 +253,46 @@ private fun snippetFor(stop: MapStop): String {
     ).joinToString(" · ")
     val visits = "${stop.visits} visit" + if (stop.visits == 1) "" else "s"
     return if (parts.isBlank()) visits else "$parts · $visits"
+}
+
+/** Convert the persisted map-type string into the Maps Compose enum. Falls
+ *  back to NORMAL on anything unrecognised. */
+private fun mapTypeOf(value: String): MapType = when (value) {
+    "SATELLITE" -> MapType.SATELLITE
+    "HYBRID" -> MapType.HYBRID
+    "TERRAIN" -> MapType.TERRAIN
+    else -> MapType.NORMAL
+}
+
+private data class MapTypeOption(val key: String, val label: String)
+
+private val MAP_TYPE_OPTIONS = listOf(
+    MapTypeOption("NORMAL", "Default"),
+    MapTypeOption("SATELLITE", "Satellite"),
+    MapTypeOption("HYBRID", "Hybrid"),
+    MapTypeOption("TERRAIN", "Terrain"),
+)
+
+@Composable
+private fun MapTypeMenu(
+    expanded: Boolean,
+    current: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        MAP_TYPE_OPTIONS.forEach { option ->
+            DropdownMenuItem(
+                text = { Text(option.label) },
+                onClick = { onSelect(option.key) },
+                trailingIcon = {
+                    if (option.key == current) {
+                        Icon(Icons.Default.Check, contentDescription = "Selected")
+                    }
+                },
+            )
+        }
+    }
 }
 
 @Composable

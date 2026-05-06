@@ -73,6 +73,9 @@ data class MapUi(
     val untrippedVisible: Boolean = true,
     val colorByTrip: Boolean = true,
     val anyFilterActive: Boolean = false,
+    /** User's preferred Google Maps base layer (NORMAL / SATELLITE / HYBRID
+     *  / TERRAIN). The screen converts this to the Maps Compose enum. */
+    val mapType: String = "NORMAL",
 )
 
 @HiltViewModel
@@ -92,7 +95,8 @@ class MapViewModel @Inject constructor(
         tripRepository.observeAll(),
         backfillStatus,
         filters,
-    ) { sessions, trips, status, f ->
+        appPreferences.mapType,
+    ) { sessions, trips, status, f, mapType ->
         val tripColorById = trips.associate { it.id to it.pinColor }
         val groups = sessions.groupBy(::stopKey).filterKeys { it.isNotBlank() }
 
@@ -128,8 +132,13 @@ class MapViewModel @Inject constructor(
             untrippedVisible = untrippedVisible,
             colorByTrip = f.colorByTrip,
             anyFilterActive = f.hiddenKeys.isNotEmpty() || !f.colorByTrip,
+            mapType = mapType,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapUi())
+
+    fun setMapType(type: String) {
+        viewModelScope.launch { appPreferences.setMapType(type) }
+    }
 
     fun toggleTripVisibility(tripId: Long?) {
         filters.update {

@@ -43,8 +43,13 @@ class AppPreferences @Inject constructor(
          *  pass. Used to throttle re-runs across process death so we don't
          *  re-geocode the same unresolvable addresses every cold start. */
         private val LAST_MAP_BACKFILL_AT = longPreferencesKey("last_map_backfill_at")
+        /** User's preferred Google Maps base layer (NORMAL / SATELLITE /
+         *  HYBRID / TERRAIN). Stored as the [com.google.maps.android.compose.MapType]
+         *  enum name. */
+        private val MAP_TYPE = stringPreferencesKey("map_type")
 
         val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
+        val SUPPORTED_MAP_TYPES = listOf("NORMAL", "SATELLITE", "HYBRID", "TERRAIN")
 
         const val DEFAULT_THRESHOLD_DAYS: Long = 30
 
@@ -110,6 +115,18 @@ class AppPreferences @Inject constructor(
 
     suspend fun recordMapBackfillAttempt(epochMillis: Long = System.currentTimeMillis()) {
         dataStore.edit { it[LAST_MAP_BACKFILL_AT] = epochMillis }
+    }
+
+    /** Selected Google Maps base layer. Falls back to NORMAL on unset or
+     *  on any value the app doesn't recognise (e.g. older / forward-compat
+     *  install with a value the current build doesn't support). */
+    val mapType: Flow<String> = dataStore.data.map { prefs ->
+        prefs[MAP_TYPE]?.takeIf { it in SUPPORTED_MAP_TYPES } ?: "NORMAL"
+    }
+
+    suspend fun setMapType(type: String) {
+        if (type !in SUPPORTED_MAP_TYPES) return
+        dataStore.edit { it[MAP_TYPE] = type }
     }
 
     suspend fun snapshot(): Snapshot {
