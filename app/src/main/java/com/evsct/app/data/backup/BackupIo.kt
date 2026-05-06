@@ -533,10 +533,21 @@ class BackupIo @Inject constructor(
             .map { it.removePrefix("$subdir/") }
             .toSet()
         dir.listFiles()?.forEach { file ->
-            if (file.name !in keepNames) file.delete()
+            // Only delete files that match the UUID-name pattern we use for
+            // receipts (.jpg/.pdf) and vehicle photos (.jpg). If a future
+            // feature ever drops differently-named files in these
+            // directories, this leaves them alone instead of silently
+            // wiping them on every restore.
+            if (MANAGED_FILE_PATTERN.matches(file.name) && file.name !in keepNames) {
+                file.delete()
+            }
         }
     }
 }
+
+private val MANAGED_FILE_PATTERN = Regex(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.(jpg|pdf)\$"
+)
 
 /** Strip any path components from a JSON-supplied filename and return the
  *  basename. Returns null if the result is blank. Same defense extractInto
