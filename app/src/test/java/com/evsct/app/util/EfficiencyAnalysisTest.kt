@@ -1,0 +1,194 @@
+package com.evsct.app.util
+
+import com.evsct.app.data.entity.ChargingSession
+import com.evsct.app.data.entity.Vehicle
+import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class EfficiencyAnalysisTest {
+
+    private val vehicle = Vehicle(id = 1, name = "Test", batteryCapacityKwh = 100.0)
+
+    @Test
+    fun `empty list returns empty report`() {
+        val report = EfficiencyAnalysis.analyze(emptyList(), vehicle)
+        assertTrue(report.legs.isEmpty())
+        assertNull(report.avgKmPerKwh)
+    }
+
+    @Test
+    fun `single session has no legs`() {
+        val report = EfficiencyAnalysis.analyze(listOf(session(id = 1)), vehicle)
+        assertTrue(report.legs.isEmpty())
+    }
+
+    @Test
+    fun `same trip pair with full data produces a leg`() {
+        // Vehicle: 100 kWh battery.
+        // Stop A: end at 80%. Stop B: start at 30%. Drive uses (80-30)% × 100 = 50 kWh.
+        // Distance: 280 km. → 5.6 km/kWh.
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 7),
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertEquals(1, report.legs.size)
+        val leg = report.legs.first()
+        assertEquals(280.0, leg.distanceKm)
+        assertEquals(50.0, leg.energyUsedKwh)
+        assertEquals(5.6, leg.kmPerKwh, 0.0001)
+        assertEquals(5.6, report.avgKmPerKwh!!, 0.0001)
+    }
+
+    @Test
+    fun `cross-trip without continuesPrevious does not produce a leg`() {
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 1),
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 2),
+            ),
+            vehicle,
+        )
+        assertTrue(report.legs.isEmpty())
+    }
+
+    @Test
+    fun `cross-trip with continuesPrevious flag produces a leg`() {
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 1),
+                session(
+                    id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 2,
+                    continuesPrevious = true,
+                ),
+            ),
+            vehicle,
+        )
+        assertEquals(1, report.legs.size)
+    }
+
+    @Test
+    fun `null vehicle capacity excludes the leg`() {
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 7),
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 7),
+            ),
+            vehicle.copy(batteryCapacityKwh = null),
+        )
+        assertTrue(report.legs.isEmpty())
+    }
+
+    @Test
+    fun `missing battery on either side excludes the leg`() {
+        val noEnd = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = null, tripId = 7),
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertTrue(noEnd.legs.isEmpty())
+
+        val noStart = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 7),
+                session(id = 2, t = 1, odo = 1280.0, battStart = null, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertTrue(noStart.legs.isEmpty())
+    }
+
+    @Test
+    fun `battery going up between stops excludes the leg`() {
+        // End A 50%, start B 60% — implies untracked charging happened. Drop.
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 50, tripId = 7),
+                session(id = 2, t = 1, odo = 1280.0, battStart = 60, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertTrue(report.legs.isEmpty())
+    }
+
+    @Test
+    fun `odometer going down excludes the leg`() {
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1280.0, battEnd = 80, tripId = 7),
+                session(id = 2, t = 1, odo = 1000.0, battStart = 30, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertTrue(report.legs.isEmpty())
+    }
+
+    @Test
+    fun `missing odometer on either side excludes the leg`() {
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = null, battEnd = 80, tripId = 7),
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertTrue(report.legs.isEmpty())
+    }
+
+    @Test
+    fun `three sessions in one trip produce two legs and a weighted average`() {
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 7),
+                // First leg: end 80, start 30 → 50 kWh, 280 km → 5.6 km/kWh.
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, battEnd = 80, tripId = 7),
+                // Second leg: end 80, start 40 → 40 kWh, 200 km → 5.0 km/kWh.
+                session(id = 3, t = 2, odo = 1480.0, battStart = 40, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertEquals(2, report.legs.size)
+        // Weighted avg = (280 + 200) / (50 + 40) = 480 / 90 ≈ 5.333.
+        assertEquals(480.0 / 90.0, report.avgKmPerKwh!!, 0.0001)
+    }
+
+    @Test
+    fun `out-of-order input is sorted by time before pairing`() {
+        // Pass in reverse chronological order. Pairing should still match
+        // session 1 → session 2 chronologically.
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 7),
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertEquals(1, report.legs.size)
+        assertEquals(1L, report.legs.first().from.id)
+        assertEquals(2L, report.legs.first().to.id)
+    }
+
+    private fun session(
+        id: Long,
+        t: Long = 0,
+        odo: Double? = null,
+        battStart: Int? = null,
+        battEnd: Int? = null,
+        tripId: Long? = null,
+        continuesPrevious: Boolean = false,
+    ): ChargingSession = ChargingSession(
+        id = id,
+        sessionStart = t,
+        odometerKm = odo,
+        batteryStartPct = battStart,
+        batteryEndPct = battEnd,
+        tripId = tripId,
+        continuesPrevious = continuesPrevious,
+    )
+}

@@ -112,4 +112,7 @@ dependencies {
     implementation(libs.play.services.maps)
     implementation(libs.maps.compose)
     implementation(libs.maps.compose.utils)
+
+    testImplementation(libs.junit)
+    testImplementation(kotlin("test"))
 }
