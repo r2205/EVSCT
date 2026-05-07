@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Place
@@ -25,8 +24,6 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -301,46 +298,6 @@ private fun snippetFor(stop: MapStop): String {
     ).joinToString(" · ")
     val visits = "${stop.visits} visit" + if (stop.visits == 1) "" else "s"
     return if (parts.isBlank()) visits else "$parts · $visits"
-}
-
-/** Convert the persisted map-type string into the Maps Compose enum. Falls
- *  back to NORMAL on anything unrecognised. */
-private fun mapTypeOf(value: String): MapType = when (value) {
-    "SATELLITE" -> MapType.SATELLITE
-    "HYBRID" -> MapType.HYBRID
-    "TERRAIN" -> MapType.TERRAIN
-    else -> MapType.NORMAL
-}
-
-private data class MapTypeOption(val key: String, val label: String)
-
-private val MAP_TYPE_OPTIONS = listOf(
-    MapTypeOption("NORMAL", "Default"),
-    MapTypeOption("SATELLITE", "Satellite"),
-    MapTypeOption("HYBRID", "Hybrid"),
-    MapTypeOption("TERRAIN", "Terrain"),
-)
-
-@Composable
-private fun MapTypeMenu(
-    expanded: Boolean,
-    current: String,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        MAP_TYPE_OPTIONS.forEach { option ->
-            DropdownMenuItem(
-                text = { Text(option.label) },
-                onClick = { onSelect(option.key) },
-                trailingIcon = {
-                    if (option.key == current) {
-                        Icon(Icons.Default.Check, contentDescription = "Selected")
-                    }
-                },
-            )
-        }
-    }
 }
 
 @Composable
