@@ -429,10 +429,13 @@ class SessionEditViewModel @Inject constructor(
     }
 
     private fun stopKey(s: ChargingSession): String =
+        stopKey(brand = s.brand, address = s.locationAddress, stationName = s.stationName, city = s.locationCity)
+
+    private fun stopKey(brand: String?, address: String?, stationName: String?, city: String?): String =
         listOfNotNull(
-            s.brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-            (s.locationAddress ?: s.stationName)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-            s.locationCity?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+            brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+            (address ?: stationName)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+            city?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
         ).joinToString("|")
 
     /** Resolve the current odometer reading in km. When the user hasn't
@@ -576,7 +579,14 @@ class SessionEditViewModel @Inject constructor(
      *  when the reverse-geocode returned a value). After applying, the
      *  saved-baseline geocode query is refreshed so save()'s "address
      *  changed by user" detection doesn't fire on this auto-fill and clear
-     *  the freshly-picked coords. */
+     *  the freshly-picked coords.
+     *
+     *  Also propagates the picked coords to every other session that shares
+     *  this session's stopKey (brand + address|station + city). Visits to
+     *  the same charger should agree on where it is — picking once should
+     *  fix the whole stop instead of forcing a per-session edit. The map
+     *  averages a stop's visits, so without this a single re-pick would be
+     *  diluted by older sessions' stale coords. */
     fun applyPickedLocation(lat: Double, lng: Double) {
         viewModelScope.launch {
             val located = locationAutofill.reverseGeocodeAt(lat, lng)
@@ -596,6 +606,28 @@ class SessionEditViewModel @Inject constructor(
                 city = s.city.takeIf { it.isNotBlank() },
                 province = s.province.takeIf { it.isNotBlank() },
             )
+
+            val key = stopKey(
+                brand = s.brand,
+                address = s.address.takeIf { it.isNotBlank() },
+                stationName = s.stationName.takeIf { it.isNotBlank() },
+                city = s.city.takeIf { it.isNotBlank() },
+            )
+            if (key.isNotBlank()) {
+                val siblings = allSessionsCache
+                    .filter { it.id != sessionId && stopKey(it) == key }
+                    .map { it.id }
+                if (siblings.isNotEmpty()) {
+                    sessionRepository.setCoordinates(siblings, lat, lng)
+                    val n = siblings.size
+                    _state.update {
+                        it.copy(
+                            transientMessage = "Updated $n other session" +
+                                (if (n == 1) "" else "s") + " at this stop.",
+                        )
+                    }
+                }
+            }
         }
     }
 
