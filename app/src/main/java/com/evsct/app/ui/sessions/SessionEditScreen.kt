@@ -325,7 +325,7 @@ fun SessionEditScreen(
             TextFieldPlain("Address", state.address) { v ->
                 viewModel.update { it.copy(address = v) }
             }
-            TextFieldPlain("Station / stall name", state.stationName) { v ->
+            TextFieldPlain("Station / stall name / stall number", state.stationName) { v ->
                 viewModel.update { it.copy(stationName = v) }
             }
 

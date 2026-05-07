@@ -429,12 +429,16 @@ class SessionEditViewModel @Inject constructor(
     }
 
     private fun stopKey(s: ChargingSession): String =
-        stopKey(brand = s.brand, address = s.locationAddress, stationName = s.stationName, city = s.locationCity)
+        stopKey(brand = s.brand, address = s.locationAddress, city = s.locationCity)
 
-    private fun stopKey(brand: String?, address: String?, stationName: String?, city: String?): String =
+    /** Stops are grouped by brand + address + city only. Station/stall name
+     *  is intentionally NOT part of the key — visits to the same physical
+     *  charger should group together even when each visit logs a different
+     *  stall number. */
+    private fun stopKey(brand: String?, address: String?, city: String?): String =
         listOfNotNull(
             brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-            (address ?: stationName)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+            address?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
             city?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
         ).joinToString("|")
 
@@ -610,7 +614,6 @@ class SessionEditViewModel @Inject constructor(
             val key = stopKey(
                 brand = s.brand,
                 address = s.address.takeIf { it.isNotBlank() },
-                stationName = s.stationName.takeIf { it.isNotBlank() },
                 city = s.city.takeIf { it.isNotBlank() },
             )
             if (key.isNotBlank()) {

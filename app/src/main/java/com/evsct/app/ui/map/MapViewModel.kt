@@ -292,9 +292,13 @@ class MapViewModel @Inject constructor(
     }
 }
 
+/** Stops are grouped by brand + address + city only. Station/stall name is
+ *  intentionally NOT part of the key — visits to the same physical charger
+ *  should share a pin even when each visit logs a different stall number.
+ *  Mirrors the matching helper in SessionEditViewModel. */
 private fun stopKey(s: ChargingSession): String = listOfNotNull(
     s.brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-    (s.locationAddress ?: s.stationName)?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+    s.locationAddress?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
     s.locationCity?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
 ).joinToString("|")
 
