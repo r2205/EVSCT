@@ -570,6 +570,35 @@ class SessionEditViewModel @Inject constructor(
         }
     }
 
+    /** Apply a lat/lng picked from the map picker. The exact coordinates the
+     *  user dropped become the source of truth; address fields get
+     *  reverse-geocoded so they match what's at that point (only overwriting
+     *  when the reverse-geocode returned a value). After applying, the
+     *  saved-baseline geocode query is refreshed so save()'s "address
+     *  changed by user" detection doesn't fire on this auto-fill and clear
+     *  the freshly-picked coords. */
+    fun applyPickedLocation(lat: Double, lng: Double) {
+        viewModelScope.launch {
+            val located = locationAutofill.reverseGeocodeAt(lat, lng)
+            _state.update {
+                it.copy(
+                    latitude = lat,
+                    longitude = lng,
+                    city = located?.city ?: it.city,
+                    province = located?.provinceState ?: it.province,
+                    address = located?.address ?: it.address,
+                )
+            }
+            val s = _state.value
+            originalGeocodeQuery = geocodeQueryFor(
+                address = s.address.takeIf { it.isNotBlank() },
+                stationName = s.stationName.takeIf { it.isNotBlank() },
+                city = s.city.takeIf { it.isNotBlank() },
+                province = s.province.takeIf { it.isNotBlank() },
+            )
+        }
+    }
+
     fun clearTransientMessage() = _state.update { it.copy(transientMessage = null) }
 
     fun deleteAndExit(onDeleted: () -> Unit) {

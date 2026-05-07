@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -87,10 +88,25 @@ import java.util.Calendar
 @Composable
 fun SessionEditScreen(
     onDone: () -> Unit,
+    onPickLocation: (lat: Double?, lng: Double?) -> Unit = { _, _ -> },
+    pickedLat: Double? = null,
+    pickedLng: Double? = null,
+    onPickedConsumed: () -> Unit = {},
     viewModel: SessionEditViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // The map picker (a sibling nav destination) writes its result into
+    // this screen's SavedStateHandle and pops back. NavGraph reads those
+    // keys and passes them in as pickedLat/pickedLng; apply once and tell
+    // the caller to clear them so we don't re-apply on recomposition.
+    LaunchedEffect(pickedLat, pickedLng) {
+        if (pickedLat != null && pickedLng != null) {
+            viewModel.applyPickedLocation(pickedLat, pickedLng)
+            onPickedConsumed()
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showOdometerWarning by remember { mutableStateOf(false) }
@@ -272,17 +288,27 @@ fun SessionEditScreen(
             BrandPicker(state.brand, state.brandSuggestions) { v ->
                 viewModel.update { it.copy(brand = v) }
             }
-            LocationAutofillCard(
-                isLoading = state.isFetchingLocation,
-                onRequestAutofill = {
-                    locationPermissionLauncher.launch(
-                        arrayOf(
-                            android.Manifest.permission.ACCESS_FINE_LOCATION,
-                            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LocationAutofillCard(
+                    isLoading = state.isFetchingLocation,
+                    onRequestAutofill = {
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                            )
                         )
-                    )
-                },
-            )
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                PickLocationCard(
+                    onPick = { onPickLocation(state.latitude, state.longitude) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextFieldPlain(
                     label = "City",
@@ -992,10 +1018,10 @@ private fun RecentStopRow(stop: RecentStop, onClick: () -> Unit) {
 private fun LocationAutofillCard(
     isLoading: Boolean,
     onRequestAutofill: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clickable(enabled = !isLoading, onClick = onRequestAutofill),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -1021,12 +1047,51 @@ private fun LocationAutofillCard(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (isLoading) "Finding location…" else "Use current location",
+                    if (isLoading) "Finding…" else "Use GPS",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 )
                 Text(
-                    "Auto-fills city, prov/state, and address from GPS.",
+                    "Auto-fill from your location",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+/** Companion to [LocationAutofillCard] for sessions where GPS isn't an
+ *  option (e.g. logging from home, fixing a past entry). Tapping opens the
+ *  map picker so the user can drop the pin exactly where the charger is. */
+@Composable
+private fun PickLocationCard(
+    onPick: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onPick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Place,
+                contentDescription = null,
+                modifier = Modifier.padding(end = 12.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Pick on map",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+                Text(
+                    "Drop a pin manually",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

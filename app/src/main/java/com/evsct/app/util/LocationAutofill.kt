@@ -255,6 +255,28 @@ class LocationAutofill @Inject constructor(
         }
     }
 
+    /**
+     * Reverse-geocode a known lat/lng to an address. Used by the manual map
+     * picker so a confirmed point fills in the city/prov/address fields.
+     * The returned [GeocodedLocation] always carries the input lat/lng, so
+     * even if Geocoder returns nothing the caller still has the coordinates.
+     */
+    suspend fun reverseGeocodeAt(lat: Double, lng: Double): GeocodedLocation? = withContext(Dispatchers.IO) {
+        if (!Geocoder.isPresent()) {
+            return@withContext GeocodedLocation(
+                city = null, provinceState = null, address = null, countryCode = null,
+                latitude = lat, longitude = lng,
+            )
+        }
+        val addresses = try { reverseGeocode(lat, lng) } catch (_: IOException) { emptyList() }
+        val first = addresses.firstOrNull()
+        first?.toGeocoded()?.copy(latitude = lat, longitude = lng)
+            ?: GeocodedLocation(
+                city = null, provinceState = null, address = null, countryCode = null,
+                latitude = lat, longitude = lng,
+            )
+    }
+
     private suspend fun reverseGeocode(lat: Double, lng: Double): List<Address> {
         val geocoder = Geocoder(context, Locale.getDefault())
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

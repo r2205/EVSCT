@@ -6,6 +6,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.evsct.app.ui.map.MapPickerScreen
 import com.evsct.app.ui.map.MapScreen
 import com.evsct.app.ui.sessions.SessionEditScreen
 import com.evsct.app.ui.sessions.SessionListScreen
@@ -32,7 +33,19 @@ object Routes {
     const val VEHICLE_EDIT_ARG = "vehicleId"
     const val STATS = "stats"
     const val MAP = "map"
+    const val MAP_PICKER = "map/picker"
+    const val MAP_PICKER_LAT_ARG = "lat"
+    const val MAP_PICKER_LNG_ARG = "lng"
+    const val PICKED_LAT_KEY = "picked_lat"
+    const val PICKED_LNG_KEY = "picked_lng"
     const val SETTINGS = "settings"
+
+    fun mapPicker(lat: Double?, lng: Double?): String {
+        // Floats lose precision; pass via String query params and parse back.
+        val latArg = lat?.toString().orEmpty()
+        val lngArg = lng?.toString().orEmpty()
+        return "$MAP_PICKER?$MAP_PICKER_LAT_ARG=$latArg&$MAP_PICKER_LNG_ARG=$lngArg"
+    }
 
     fun sessionEdit(id: Long? = null, preselectVehicleId: Long? = null): String {
         val sid = id ?: -1L
@@ -82,8 +95,54 @@ fun EvsctNavGraph(navController: NavHostController) {
                     defaultValue = -1L
                 },
             ),
-        ) {
-            SessionEditScreen(onDone = { navController.popBackStack() })
+        ) { backStackEntry ->
+            // The map picker (a sibling route) writes its result into our
+            // SavedStateHandle and pops back. Read those keys here so the
+            // edit screen can apply them to the form state once.
+            val handle = backStackEntry.savedStateHandle
+            SessionEditScreen(
+                onDone = { navController.popBackStack() },
+                onPickLocation = { lat, lng ->
+                    navController.navigate(Routes.mapPicker(lat, lng))
+                },
+                pickedLat = handle.get<Double>(Routes.PICKED_LAT_KEY),
+                pickedLng = handle.get<Double>(Routes.PICKED_LNG_KEY),
+                onPickedConsumed = {
+                    handle.remove<Double>(Routes.PICKED_LAT_KEY)
+                    handle.remove<Double>(Routes.PICKED_LNG_KEY)
+                },
+            )
+        }
+        composable(
+            route = "${Routes.MAP_PICKER}?${Routes.MAP_PICKER_LAT_ARG}={${Routes.MAP_PICKER_LAT_ARG}}" +
+                "&${Routes.MAP_PICKER_LNG_ARG}={${Routes.MAP_PICKER_LNG_ARG}}",
+            arguments = listOf(
+                navArgument(Routes.MAP_PICKER_LAT_ARG) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument(Routes.MAP_PICKER_LNG_ARG) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { backStackEntry ->
+            val initialLat = backStackEntry.arguments?.getString(Routes.MAP_PICKER_LAT_ARG)
+                ?.toDoubleOrNull()
+            val initialLng = backStackEntry.arguments?.getString(Routes.MAP_PICKER_LNG_ARG)
+                ?.toDoubleOrNull()
+            MapPickerScreen(
+                initialLat = initialLat,
+                initialLng = initialLng,
+                onCancel = { navController.popBackStack() },
+                onConfirm = { lat, lng ->
+                    navController.previousBackStackEntry?.savedStateHandle?.let { handle ->
+                        handle[Routes.PICKED_LAT_KEY] = lat
+                        handle[Routes.PICKED_LNG_KEY] = lng
+                    }
+                    navController.popBackStack()
+                },
+            )
         }
         composable(Routes.TRIP_LIST) {
             TripListScreen(
