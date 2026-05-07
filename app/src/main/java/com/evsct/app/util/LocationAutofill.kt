@@ -76,28 +76,105 @@ class LocationAutofill @Inject constructor(
      * when geocoding isn't available or no result is found. Used by the map
      * screen to backfill historical sessions that have only a textual address.
      */
-    suspend fun geocodeAddress(query: String): GeocodedLocation? = withContext(Dispatchers.IO) {
-        if (query.isBlank() || !Geocoder.isPresent()) return@withContext null
+    /**
+     * Forward-geocode an address to lat/lng with disambiguation. Geocoder
+     * sometimes ranks a famous matching street in a big city above an
+     * obscure one in a small town when both share a province — we mitigate
+     * by:
+     *   1. Asking for several candidates instead of just the first.
+     *   2. Filtering to candidates whose [Address.locality] matches the
+     *      caller's typed [city] (case-insensitive).
+     *   3. Retrying with a country qualifier when the first attempt yielded
+     *      no city-matching candidate (often resolves the ambiguity).
+     *   4. Falling back to a city-only query as a last resort, so the pin
+     *      lands somewhere in the right town instead of the wrong one.
+     */
+    suspend fun geocode(
+        address: String?,
+        city: String?,
+        province: String?,
+    ): GeocodedLocation? = withContext(Dispatchers.IO) {
+        if (!Geocoder.isPresent()) return@withContext null
         val geocoder = Geocoder(context, Locale.getDefault())
-        val result = try {
+        val expectedCity = city?.trim()?.takeIf { it.isNotBlank() }
+        val countryHint = countryFor(province)
+
+        suspend fun lookup(query: String, max: Int): List<Address> = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 suspendCancellableCoroutine { cont ->
-                    geocoder.getFromLocationName(query, 1) { addresses ->
+                    geocoder.getFromLocationName(query, max) { addresses ->
                         if (cont.isActive) cont.resume(addresses)
                     }
                 }
             } else {
                 @Suppress("DEPRECATION")
-                geocoder.getFromLocationName(query, 1) ?: emptyList()
+                geocoder.getFromLocationName(query, max) ?: emptyList()
             }
         } catch (_: IOException) {
-            null
-        } ?: return@withContext null
+            emptyList()
+        }
 
-        val match = result.firstOrNull() ?: return@withContext null
-        match.toGeocoded().copy(
-            latitude = match.latitude.takeIf { match.hasLatitude() },
-            longitude = match.longitude.takeIf { match.hasLongitude() },
+        fun matchesExpectedCity(addr: Address): Boolean =
+            expectedCity == null || addr.locality?.equals(expectedCity, ignoreCase = true) == true
+
+        val baseQuery = listOfNotNull(
+            address?.takeIf { it.isNotBlank() },
+            city?.takeIf { it.isNotBlank() },
+            province?.takeIf { it.isNotBlank() },
+        ).joinToString(", ").takeIf { it.isNotBlank() }
+            ?: return@withContext null
+
+        // 1. Plain query, take the first locality-matching hit.
+        var candidates = lookup(baseQuery, max = 5)
+        candidates.firstOrNull(::matchesExpectedCity)?.let { return@withContext it.toGeocoded() }
+
+        // 2. Same query plus a country qualifier — usually nudges Geocoder
+        //    away from a famous-but-wrong match in another town.
+        if (countryHint != null) {
+            val withCountry = "$baseQuery, $countryHint"
+            candidates = lookup(withCountry, max = 5)
+            candidates.firstOrNull(::matchesExpectedCity)?.let { return@withContext it.toGeocoded() }
+        }
+
+        // 3. Address-level lookup keeps failing; ask for the city alone so
+        //    the pin at least lands in the right town. Acceptable downgrade
+        //    versus rendering at completely the wrong location.
+        val cityOnly = listOfNotNull(
+            city?.takeIf { it.isNotBlank() },
+            province?.takeIf { it.isNotBlank() },
+            countryHint,
+        ).joinToString(", ").takeIf { it.isNotBlank() }
+        if (cityOnly != null) {
+            lookup(cityOnly, max = 1).firstOrNull()?.let { return@withContext it.toGeocoded() }
+        }
+
+        // 4. As a last resort, surrender to whatever Geocoder gave us.
+        candidates.firstOrNull()?.toGeocoded()
+    }
+
+    /** Best-effort country name from the typed province / state code, used
+     *  as a Geocoder qualifier. Returns null when we can't tell. */
+    private fun countryFor(province: String?): String? {
+        val code = province?.trim()?.uppercase() ?: return null
+        return when (code) {
+            in CANADIAN_PROVINCE_CODES -> "Canada"
+            in US_STATE_CODES -> "USA"
+            else -> null
+        }
+    }
+
+    private companion object {
+        private val CANADIAN_PROVINCE_CODES = setOf(
+            "AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU",
+            "ON", "PE", "QC", "SK", "YT",
+        )
+        private val US_STATE_CODES = setOf(
+            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+            "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+            "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+            "DC",
         )
     }
 
@@ -204,6 +281,8 @@ class LocationAutofill @Inject constructor(
             provinceState = adminArea?.takeIf { it.isNotBlank() }?.let { RegionCodes.normalize(it) },
             address = street ?: getAddressLine(0)?.takeIf { it.isNotBlank() },
             countryCode = countryCode,
+            latitude = if (hasLatitude()) latitude else null,
+            longitude = if (hasLongitude()) longitude else null,
         )
     }
 }

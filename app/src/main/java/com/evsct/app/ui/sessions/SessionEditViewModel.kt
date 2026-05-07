@@ -515,7 +515,12 @@ class SessionEditViewModel @Inject constructor(
             // doesn't, lat/lng stay null and the map's backfill will retry
             // on next visit.
             if (addressChanged && newQuery != null) {
-                val located = locationAutofill.geocodeAddress(newQuery)
+                val located = locationAutofill.geocode(
+                    address = s.address.takeIf { it.isNotBlank() }
+                        ?: s.stationName.takeIf { it.isNotBlank() },
+                    city = s.city.takeIf { it.isNotBlank() },
+                    province = s.province.takeIf { it.isNotBlank() },
+                )
                 val lat = located?.latitude
                 val lng = located?.longitude
                 if (lat != null && lng != null) {

@@ -210,8 +210,16 @@ class MapViewModel @Inject constructor(
             backfillStatus.value = BackfillState(running = true)
             var failed = 0
             for ((_, group) in groups) {
-                val query = group.firstNotNullOfOrNull { it.geocodeQuery() } ?: continue
-                val located = locationAutofill.geocodeAddress(query)
+                // Pick the first session in the group that has the fields
+                // we need; the structured geocoder validates the result
+                // against the city it was given.
+                val sample = group.firstOrNull { !it.geocodeQuery().isNullOrBlank() } ?: continue
+                val located = locationAutofill.geocode(
+                    address = sample.locationAddress?.takeIf { it.isNotBlank() }
+                        ?: sample.stationName?.takeIf { it.isNotBlank() },
+                    city = sample.locationCity?.takeIf { it.isNotBlank() },
+                    province = sample.locationProvince?.takeIf { it.isNotBlank() },
+                )
                 val lat = located?.latitude
                 val lng = located?.longitude
                 if (lat != null && lng != null) {
