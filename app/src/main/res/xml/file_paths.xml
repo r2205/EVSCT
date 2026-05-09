@@ -2,4 +2,5 @@
 <paths>
     <files-path name="receipts" path="receipts/" />
     <cache-path name="backup-share" path="backup-share/" />
+    <cache-path name="recap-share" path="recap-share/" />
 </paths>

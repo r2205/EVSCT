@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -50,6 +51,7 @@ import com.evsct.app.util.Format
 @Composable
 fun StatsScreen(
     onBack: () -> Unit,
+    onOpenYearRecap: () -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -62,10 +64,16 @@ fun StatsScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onOpenYearRecap) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = "Year recap")
                     }
                 },
             )

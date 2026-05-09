@@ -12,6 +12,7 @@ import com.evsct.app.ui.sessions.SessionEditScreen
 import com.evsct.app.ui.sessions.SessionListScreen
 import com.evsct.app.ui.settings.SettingsScreen
 import com.evsct.app.ui.stats.StatsScreen
+import com.evsct.app.ui.stats.YearRecapScreen
 import com.evsct.app.ui.trips.TripDetailScreen
 import com.evsct.app.ui.trips.TripListScreen
 import com.evsct.app.ui.vehicles.VehicleDetailScreen
@@ -32,6 +33,7 @@ object Routes {
     const val VEHICLE_EDIT = "vehicles/edit"
     const val VEHICLE_EDIT_ARG = "vehicleId"
     const val STATS = "stats"
+    const val YEAR_RECAP = "stats/recap"
     const val MAP = "map"
     const val MAP_PICKER = "map/picker"
     const val MAP_PICKER_LAT_ARG = "lat"
@@ -77,7 +79,13 @@ fun EvsctNavGraph(navController: NavHostController) {
             )
         }
         composable(Routes.STATS) {
-            StatsScreen(onBack = { navController.popBackStack() })
+            StatsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenYearRecap = { navController.navigate(Routes.YEAR_RECAP) },
+            )
+        }
+        composable(Routes.YEAR_RECAP) {
+            YearRecapScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.MAP) {
             MapScreen(onBack = { navController.popBackStack() })
