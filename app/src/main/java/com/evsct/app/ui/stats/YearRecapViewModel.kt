@@ -11,6 +11,7 @@ import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.UserUnits
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
+import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -69,6 +70,11 @@ data class YearRecapUi(
     /** Trip with the highest distance among trips with at least one
      *  session in [selectedYear]. Whole-trip distance, not in-year only. */
     val longestTrip: LongestTripSummary? = null,
+    /** Display name of the vehicle the recap is scoped to, or null when
+     *  scoped to all vehicles. Used to suffix the exported PDF filename
+     *  so multi-vehicle users don't get N identical "evsct-recap-2024.pdf"
+     *  files in their downloads. */
+    val vehicleName: String? = null,
     /** PDF that was just written to cacheDir and is ready to be shared.
      *  Cleared by [consumePendingShare] after the chooser fires. */
     val pendingShareFile: File? = null,
@@ -81,11 +87,24 @@ private fun emptyMonthly(): List<Pair<String, Double>> {
     return labels.map { it to 0.0 }
 }
 
+/** Default filename for a recap export. Includes a slugified vehicle name
+ *  when the recap is scoped to a single vehicle so multi-vehicle users get
+ *  distinct files. */
+internal fun defaultRecapFilename(year: Int, vehicleName: String?): String {
+    if (vehicleName.isNullOrBlank()) return "evsct-recap-$year.pdf"
+    val slug = vehicleName
+        .replace(Regex("[^A-Za-z0-9]+"), "-")
+        .trim('-')
+        .ifBlank { "vehicle" }
+    return "evsct-recap-$year-$slug.pdf"
+}
+
 @HiltViewModel
 class YearRecapViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     sessionRepository: SessionRepository,
     tripRepository: TripRepository,
+    vehicleRepository: VehicleRepository,
     private val appPreferences: AppPreferences,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -102,15 +121,17 @@ class YearRecapViewModel @Inject constructor(
     private val computed: StateFlow<YearRecapUi> = combine(
         sessionRepository.observeAll(),
         tripRepository.observeAllWithStats(),
+        vehicleRepository.observeAll(),
         selectedYear,
         appPreferences.userUnits,
-    ) { sessions, trips, year, units ->
+    ) { sessions, trips, vehicles, year, units ->
         // Apply the vehicle scope before any year-bucketing — the recap is
         // a snapshot of one vehicle (or all) for the chosen year, including
         // its available-years list.
         val scoped = if (vehicleFilterId == null) sessions
         else sessions.filter { it.vehicleId == vehicleFilterId }
-        recapFor(scoped, trips, year, units)
+        val vehicleName = vehicleFilterId?.let { id -> vehicles.firstOrNull { it.id == id }?.name }
+        recapFor(scoped, trips, year, units).copy(vehicleName = vehicleName)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearRecapUi(isLoading = true))
 
     /** Final state merges the computed snapshot with transient flags
@@ -151,7 +172,7 @@ class YearRecapViewModel @Inject constructor(
                     mkdirs()
                     listFiles()?.forEach { it.delete() }
                 }
-                val target = File(shareDir, "evsct-recap-${ui.selectedYear}.pdf")
+                val target = File(shareDir, defaultRecapFilename(ui.selectedYear, ui.vehicleName))
                 target.outputStream().use { writeYearRecapPdf(it, ui, units) }
                 target
             }

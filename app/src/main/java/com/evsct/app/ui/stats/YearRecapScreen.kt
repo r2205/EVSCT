@@ -139,7 +139,9 @@ fun YearRecapScreen(
             ExportButtons(
                 busy = state.busy,
                 onSave = {
-                    savePdfLauncher.launch("evsct-recap-${state.selectedYear}.pdf")
+                    savePdfLauncher.launch(
+                        defaultRecapFilename(state.selectedYear, state.vehicleName),
+                    )
                 },
                 onShare = { viewModel.shareAsPdf() },
             )
