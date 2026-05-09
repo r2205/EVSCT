@@ -51,7 +51,7 @@ import com.evsct.app.util.Format
 @Composable
 fun StatsScreen(
     onBack: () -> Unit,
-    onOpenYearRecap: () -> Unit,
+    onOpenYearRecap: (vehicleId: Long?) -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -72,7 +72,7 @@ fun StatsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenYearRecap) {
+                    IconButton(onClick = { onOpenYearRecap(state.vehicleFilterId) }) {
                         Icon(Icons.Default.PictureAsPdf, contentDescription = "Year recap")
                     }
                 },

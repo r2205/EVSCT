@@ -34,6 +34,7 @@ object Routes {
     const val VEHICLE_EDIT_ARG = "vehicleId"
     const val STATS = "stats"
     const val YEAR_RECAP = "stats/recap"
+    const val YEAR_RECAP_VEHICLE_ARG = "vehicleId"
     const val MAP = "map"
     const val MAP_PICKER = "map/picker"
     const val MAP_PICKER_LAT_ARG = "lat"
@@ -56,6 +57,12 @@ object Routes {
     }
 
     fun tripDetail(id: Long): String = "$TRIP_DETAIL/$id"
+
+    /** Year recap optionally scoped to a single vehicle. -1 sentinel means
+     *  "all vehicles" so we can keep the nav argument typed as a primitive
+     *  Long instead of a nullable String. */
+    fun yearRecap(vehicleId: Long?): String =
+        "$YEAR_RECAP?$YEAR_RECAP_VEHICLE_ARG=${vehicleId ?: -1L}"
 
     fun vehicleEdit(id: Long? = null): String =
         if (id == null) "$VEHICLE_EDIT?$VEHICLE_EDIT_ARG=-1" else "$VEHICLE_EDIT?$VEHICLE_EDIT_ARG=$id"
@@ -81,10 +88,20 @@ fun EvsctNavGraph(navController: NavHostController) {
         composable(Routes.STATS) {
             StatsScreen(
                 onBack = { navController.popBackStack() },
-                onOpenYearRecap = { navController.navigate(Routes.YEAR_RECAP) },
+                onOpenYearRecap = { vehicleId ->
+                    navController.navigate(Routes.yearRecap(vehicleId))
+                },
             )
         }
-        composable(Routes.YEAR_RECAP) {
+        composable(
+            route = "${Routes.YEAR_RECAP}?${Routes.YEAR_RECAP_VEHICLE_ARG}={${Routes.YEAR_RECAP_VEHICLE_ARG}}",
+            arguments = listOf(
+                navArgument(Routes.YEAR_RECAP_VEHICLE_ARG) {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                },
+            ),
+        ) {
             YearRecapScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.MAP) {

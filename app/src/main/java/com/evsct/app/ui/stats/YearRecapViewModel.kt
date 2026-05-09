@@ -2,6 +2,7 @@ package com.evsct.app.ui.stats
 
 import android.content.Context
 import android.net.Uri
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
@@ -10,6 +11,7 @@ import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.UserUnits
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
+import com.evsct.app.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -85,7 +87,14 @@ class YearRecapViewModel @Inject constructor(
     sessionRepository: SessionRepository,
     tripRepository: TripRepository,
     private val appPreferences: AppPreferences,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    /** Vehicle scope captured at navigation time. Null = "All vehicles".
+     *  -1L is the sentinel the route builder uses for "no filter" so the
+     *  arg can stay typed as a primitive Long. */
+    private val vehicleFilterId: Long? =
+        savedStateHandle.get<Long>(Routes.YEAR_RECAP_VEHICLE_ARG)?.takeIf { it >= 0 }
 
     private val selectedYear = MutableStateFlow(Calendar.getInstance().get(Calendar.YEAR))
     private val transient = MutableStateFlow(YearRecapUi(isLoading = true))
@@ -96,7 +105,12 @@ class YearRecapViewModel @Inject constructor(
         selectedYear,
         appPreferences.userUnits,
     ) { sessions, trips, year, units ->
-        recapFor(sessions, trips, year, units)
+        // Apply the vehicle scope before any year-bucketing — the recap is
+        // a snapshot of one vehicle (or all) for the chosen year, including
+        // its available-years list.
+        val scoped = if (vehicleFilterId == null) sessions
+        else sessions.filter { it.vehicleId == vehicleFilterId }
+        recapFor(scoped, trips, year, units)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearRecapUi(isLoading = true))
 
     /** Final state merges the computed snapshot with transient flags
