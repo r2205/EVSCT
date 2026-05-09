@@ -106,10 +106,15 @@ fun SettingsScreen(
         val file = state.pendingShareFile ?: return@LaunchedEffect
         val authority = "${context.packageName}.fileprovider"
         val contentUri = FileProvider.getUriForFile(context, authority, file)
+        // Many share targets (Drive especially) treat EXTRA_SUBJECT/TITLE as
+        // the saved filename and ignore the FileProvider's display name —
+        // pass the actual filename (with .zip + timestamp) on both extras
+        // so it round-trips with the same naming convention as Save.
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
             putExtra(Intent.EXTRA_STREAM, contentUri)
-            putExtra(Intent.EXTRA_SUBJECT, "EVSCT backup")
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            putExtra(Intent.EXTRA_TITLE, file.name)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(send, "Share backup"))
