@@ -78,6 +78,9 @@ data class MapUi(
     val mapType: String = "NORMAL",
     /** When false, every pin renders individually regardless of zoom. */
     val clusteringEnabled: Boolean = true,
+    /** When true, the map renders a visit-weighted density heatmap and
+     *  suppresses individual pins. Toggled from the layers menu. */
+    val heatmapEnabled: Boolean = false,
 )
 
 @HiltViewModel
@@ -92,12 +95,13 @@ class MapViewModel @Inject constructor(
     private var backfillRequested = false
     private val filters = MutableStateFlow(MapFilters())
 
-    // typed combine maxes out at 5 flows; collapse the two map-related
-    // prefs into a single Pair stream so we still fit.
+    // typed combine maxes out at 5 flows; collapse the map-display prefs
+    // into a single Triple stream so we still fit.
     private val mapPrefs = combine(
         appPreferences.mapType,
         appPreferences.mapClusteringEnabled,
-    ) { type, enabled -> type to enabled }
+        appPreferences.mapHeatmapEnabled,
+    ) { type, clustering, heatmap -> Triple(type, clustering, heatmap) }
 
     val state: StateFlow<MapUi> = combine(
         sessionRepository.observeAll(),
@@ -106,7 +110,7 @@ class MapViewModel @Inject constructor(
         filters,
         mapPrefs,
     ) { sessions, trips, status, f, prefs ->
-        val (mapType, clusteringEnabled) = prefs
+        val (mapType, clusteringEnabled, heatmapEnabled) = prefs
         val tripColorById = trips.associate { it.id to it.pinColor }
         val groups = sessions.groupBy(::stopKey).filterKeys { it.isNotBlank() }
 
@@ -144,11 +148,16 @@ class MapViewModel @Inject constructor(
             anyFilterActive = f.hiddenKeys.isNotEmpty() || !f.colorByTrip,
             mapType = mapType,
             clusteringEnabled = clusteringEnabled,
+            heatmapEnabled = heatmapEnabled,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapUi())
 
     fun setClusteringEnabled(enabled: Boolean) {
         viewModelScope.launch { appPreferences.setMapClusteringEnabled(enabled) }
+    }
+
+    fun setHeatmapEnabled(enabled: Boolean) {
+        viewModelScope.launch { appPreferences.setMapHeatmapEnabled(enabled) }
     }
 
     fun setMapType(type: String) {

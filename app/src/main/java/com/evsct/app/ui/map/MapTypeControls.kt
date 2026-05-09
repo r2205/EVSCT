@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,12 +33,20 @@ private val MAP_TYPE_OPTIONS = listOf(
     MapTypeOption("TERRAIN", "Terrain"),
 )
 
+/**
+ * Layers dropdown. The four basemap rows are always present; pass
+ * [heatmapEnabled] + [onToggleHeatmap] to additionally surface a Heatmap
+ * row beneath them (used by the charging-map screen, not the location
+ * picker — the picker has nothing to heatmap).
+ */
 @Composable
 internal fun MapTypeMenu(
     expanded: Boolean,
     current: String,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
+    heatmapEnabled: Boolean? = null,
+    onToggleHeatmap: ((Boolean) -> Unit)? = null,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         MAP_TYPE_OPTIONS.forEach { option ->
@@ -47,6 +56,18 @@ internal fun MapTypeMenu(
                 trailingIcon = {
                     if (option.key == current) {
                         Icon(Icons.Default.Check, contentDescription = "Selected")
+                    }
+                },
+            )
+        }
+        if (heatmapEnabled != null && onToggleHeatmap != null) {
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Heatmap") },
+                onClick = { onToggleHeatmap(!heatmapEnabled) },
+                trailingIcon = {
+                    if (heatmapEnabled) {
+                        Icon(Icons.Default.Check, contentDescription = "Heatmap on")
                     }
                 },
             )

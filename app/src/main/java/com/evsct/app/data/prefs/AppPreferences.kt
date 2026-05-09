@@ -54,6 +54,10 @@ class AppPreferences @Inject constructor(
          *  renders individually regardless of zoom — useful when the user
          *  wants full visibility of every visited stop. */
         private val MAP_CLUSTERING_ENABLED = booleanPreferencesKey("map_clustering_enabled")
+        /** Whether the map renders a density heatmap weighted by visit count
+         *  instead of individual pins. Lives next to the basemap toggle in
+         *  the layers menu — it's a display mode, not a filter. */
+        private val MAP_HEATMAP_ENABLED = booleanPreferencesKey("map_heatmap_enabled")
 
         val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
         val SUPPORTED_MAP_TYPES = listOf("NORMAL", "SATELLITE", "HYBRID", "TERRAIN")
@@ -154,6 +158,16 @@ class AppPreferences @Inject constructor(
 
     suspend fun setMapClusteringEnabled(enabled: Boolean) {
         dataStore.edit { it[MAP_CLUSTERING_ENABLED] = enabled }
+    }
+
+    /** Whether the map paints a density heatmap instead of pins. Defaults
+     *  to false so the first-open experience stays the familiar pin view. */
+    val mapHeatmapEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[MAP_HEATMAP_ENABLED] ?: false
+    }
+
+    suspend fun setMapHeatmapEnabled(enabled: Boolean) {
+        dataStore.edit { it[MAP_HEATMAP_ENABLED] = enabled }
     }
 
     suspend fun snapshot(): Snapshot {

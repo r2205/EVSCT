@@ -67,7 +67,10 @@ import com.google.maps.android.compose.MapEffect
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.TileOverlay
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.heatmaps.HeatmapTileProvider
+import com.google.maps.android.heatmaps.WeightedLatLng
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -167,6 +170,11 @@ fun MapScreen(
                                 showLayersMenu = false
                             },
                             onDismiss = { showLayersMenu = false },
+                            heatmapEnabled = state.heatmapEnabled,
+                            onToggleHeatmap = { enabled ->
+                                viewModel.setHeatmapEnabled(enabled)
+                                showLayersMenu = false
+                            },
                         )
                     }
                     IconButton(onClick = { showFilters = true }) {
@@ -225,16 +233,40 @@ fun MapScreen(
                     clusterManager.value = mgr
                     clusterRenderer.value = renderer
                 }
+
+                // Heatmap overlay. Built only when the user has flipped to
+                // heatmap mode AND there's at least one stop to weight —
+                // HeatmapTileProvider rejects empty data sets. Visit count
+                // drives intensity so frequently-used home / commute
+                // chargers burn brighter than one-off road-trip stops.
+                if (state.heatmapEnabled && state.stops.isNotEmpty()) {
+                    val tileProvider = remember(state.stops) {
+                        HeatmapTileProvider.Builder()
+                            .weightedData(
+                                state.stops.map {
+                                    WeightedLatLng(
+                                        LatLng(it.latitude, it.longitude),
+                                        it.visits.toDouble().coerceAtLeast(1.0),
+                                    )
+                                },
+                            )
+                            .build()
+                    }
+                    TileOverlay(tileProvider = tileProvider, fadeIn = true)
+                }
             }
             // Push items into the manager whenever the visible stops or the
             // colorByTrip toggle changes. The renderer caches markers and
             // only consults onBeforeClusterItemRendered on first creation —
             // so a colorByTrip flip needs a full clearItems/addItems pass
-            // to force the icon to repaint, not just cluster().
+            // to force the icon to repaint, not just cluster(). When the
+            // heatmap is on we leave the manager empty so pins disappear
+            // entirely while the overlay is the only thing on the map.
             LaunchedEffect(
                 state.stops,
                 state.colorByTrip,
                 state.clusteringEnabled,
+                state.heatmapEnabled,
                 clusterManager.value,
             ) {
                 val mgr = clusterManager.value ?: return@LaunchedEffect
@@ -242,7 +274,9 @@ fun MapScreen(
                 renderer?.colorByTrip = state.colorByTrip
                 renderer?.clusteringEnabled = state.clusteringEnabled
                 mgr.clearItems()
-                mgr.addItems(state.stops.map { ChargingStopClusterItem(it) })
+                if (!state.heatmapEnabled) {
+                    mgr.addItems(state.stops.map { ChargingStopClusterItem(it) })
+                }
                 mgr.cluster()
             }
 
