@@ -1,6 +1,7 @@
 package com.evsct.app.ui.settings
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.prefs.AppPreferences
@@ -93,6 +95,31 @@ fun SettingsScreen(
     val backupImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { showRestoreConfirm = it } }
+
+    val context = LocalContext.current
+
+    // The share path: VM builds the zip in cacheDir and posts the file
+    // here; we wrap it with FileProvider, fire ACTION_SEND through a chooser
+    // (Drive, email, Messages, etc.), then immediately consume the pending
+    // state so the launch is one-shot.
+    LaunchedEffect(state.pendingShareFile) {
+        val file = state.pendingShareFile ?: return@LaunchedEffect
+        val authority = "${context.packageName}.fileprovider"
+        val contentUri = FileProvider.getUriForFile(context, authority, file)
+        // Many share targets (Drive especially) treat EXTRA_SUBJECT/TITLE as
+        // the saved filename and ignore the FileProvider's display name —
+        // pass the actual filename (with .zip + timestamp) on both extras
+        // so it round-trips with the same naming convention as Save.
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "application/zip"
+            putExtra(Intent.EXTRA_STREAM, contentUri)
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            putExtra(Intent.EXTRA_TITLE, file.name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(send, "Share backup"))
+        viewModel.consumePendingShare()
+    }
 
     Scaffold(
         topBar = {
@@ -172,7 +199,9 @@ fun SettingsScreen(
                     )
                     Text(
                         "Save or restore everything — sessions, trips, vehicles, and " +
-                            "vehicle photos — to a single .zip you can move to another phone.",
+                            "vehicle photos — as a single .zip. Save picks a folder on " +
+                            "this device; Share sends the file out via Drive, email, or " +
+                            "any other app you have installed.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Button(
@@ -185,7 +214,12 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                    ) { Text("Export backup file…") }
+                    ) { Text("Save backup file…") }
+                    OutlinedButton(
+                        onClick = { viewModel.shareBackup() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.busy,
+                    ) { Text("Share backup file…") }
                     OutlinedButton(
                         onClick = {
                             backupImportLauncher.launch(

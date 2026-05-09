@@ -10,7 +10,7 @@ import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
-import com.evsct.app.util.BackupReminderNotifier
+import com.evsct.app.util.BackupReminderScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -36,6 +36,9 @@ private const val IMAGE_DIR_IN_ZIP = "vehicles/"
 private const val IMAGE_DIR_IN_FILES = "vehicles"
 private const val RECEIPT_DIR_IN_ZIP = "receipts/"
 private const val RECEIPT_DIR_IN_FILES = "receipts"
+/** Subdirectory under cacheDir where prepare-for-share zips land. Mirrored
+ *  in res/xml/file_paths.xml so FileProvider can hand out content:// URIs. */
+private const val SHARE_DIR_IN_CACHE = "backup-share"
 
 // Decompression caps. A real backup of a heavy user is comfortably under
 // these — they exist to short-circuit zip-bombs that decompress a few KB
@@ -49,6 +52,20 @@ sealed interface BackupResult {
     data class ExportSuccess(val sessions: Int, val trips: Int, val vehicles: Int) : BackupResult
     data class RestoreSuccess(val sessions: Int, val trips: Int, val vehicles: Int) : BackupResult
     data class Failure(val message: String) : BackupResult
+}
+
+/** Successful prepare-for-share. The zip lives in [file], and [counts]
+ *  drives the same status message the Save flow surfaces. */
+data class PreparedShareBackup(
+    val file: File,
+    val sessions: Int,
+    val trips: Int,
+    val vehicles: Int,
+)
+
+sealed interface PrepareShareResult {
+    data class Success(val prepared: PreparedShareBackup) : PrepareShareResult
+    data class Failure(val message: String) : PrepareShareResult
 }
 
 /**
@@ -66,55 +83,101 @@ class BackupIo @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: EvsctDatabase,
     private val appPreferences: AppPreferences,
-    private val backupReminderNotifier: BackupReminderNotifier,
+    private val backupReminderScheduler: BackupReminderScheduler,
 ) {
 
     suspend fun export(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
         try {
-            val sessionDao = database.sessionDao()
-            val tripDao = database.tripDao()
-            val vehicleDao = database.vehicleDao()
-
-            val vehicles = vehicleDao.observeAll().first()
-            val trips = tripDao.observeAll().first()
-            val sessions = sessionDao.observeAll().first()
-
-            val json = buildBackupJson(vehicles, trips, sessions)
             val out = context.contentResolver.openOutputStream(uri, "wt")
                 ?: return@withContext BackupResult.Failure("Could not open output for writing.")
-
-            ZipOutputStream(out).use { zip ->
-                zip.putNextEntry(ZipEntry(BACKUP_JSON))
-                zip.write(json.toString(2).toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
-
-                vehicles.forEach { v ->
-                    val rel = v.imagePath ?: return@forEach
-                    val file = File(context.filesDir, rel)
-                    if (!file.exists()) return@forEach
-                    val nameInZip = IMAGE_DIR_IN_ZIP + file.name
-                    zip.putNextEntry(ZipEntry(nameInZip))
-                    file.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
-                }
-
-                sessions.forEach { s ->
-                    val rel = s.receiptImagePath ?: return@forEach
-                    val file = File(context.filesDir, rel)
-                    if (!file.exists()) return@forEach
-                    val nameInZip = RECEIPT_DIR_IN_ZIP + file.name
-                    zip.putNextEntry(ZipEntry(nameInZip))
-                    file.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
-                }
-            }
+            val counts = out.use { writeBackupZip(it) }
             appPreferences.recordBackup()
-            backupReminderNotifier.cancel()
-            BackupResult.ExportSuccess(sessions.size, trips.size, vehicles.size)
+            backupReminderScheduler.refresh()
+            BackupResult.ExportSuccess(counts.sessions, counts.trips, counts.vehicles)
         } catch (e: Exception) {
             BackupResult.Failure(e.message ?: "Export failed")
         }
     }
+
+    /**
+     * Build the same zip [export] writes, but into a dedicated cache
+     * subdirectory and return the resulting [File] so the caller can hand
+     * it to an Android share-sheet via FileProvider. Older share files are
+     * cleared first so the cache doesn't accumulate after repeated shares.
+     *
+     * Treats handing the file off as the user's intent to back up — records
+     * the timestamp and clears the reminder, matching the Save flow. The
+     * user can still cancel the chooser, but the file does exist on disk
+     * and the data is captured in a self-contained zip.
+     */
+    suspend fun prepareShareFile(filenamePrefix: String = "evsct-backup"): PrepareShareResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val shareDir = File(context.cacheDir, SHARE_DIR_IN_CACHE).apply {
+                    mkdirs()
+                    listFiles()?.forEach { it.delete() }
+                }
+                val ts = java.text.SimpleDateFormat("yyyy-MM-dd-HHmm", java.util.Locale.US)
+                    .format(java.util.Date())
+                val target = File(shareDir, "$filenamePrefix-$ts.zip")
+                val counts = target.outputStream().use { writeBackupZip(it) }
+                appPreferences.recordBackup()
+                backupReminderScheduler.refresh()
+                PrepareShareResult.Success(
+                    PreparedShareBackup(
+                        file = target,
+                        sessions = counts.sessions,
+                        trips = counts.trips,
+                        vehicles = counts.vehicles,
+                    ),
+                )
+            } catch (e: Exception) {
+                PrepareShareResult.Failure(e.message ?: "Could not prepare backup for share")
+            }
+        }
+
+    /** Stream every backed-up byte (json + vehicle photos + receipts) into
+     *  [out] and return the row counts so callers can surface them. The
+     *  caller owns the OutputStream and is expected to close it. */
+    private suspend fun writeBackupZip(out: OutputStream): BackupCounts {
+        val sessionDao = database.sessionDao()
+        val tripDao = database.tripDao()
+        val vehicleDao = database.vehicleDao()
+
+        val vehicles = vehicleDao.observeAll().first()
+        val trips = tripDao.observeAll().first()
+        val sessions = sessionDao.observeAll().first()
+
+        val json = buildBackupJson(vehicles, trips, sessions)
+        ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(ZipEntry(BACKUP_JSON))
+            zip.write(json.toString(2).toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+
+            vehicles.forEach { v ->
+                val rel = v.imagePath ?: return@forEach
+                val file = File(context.filesDir, rel)
+                if (!file.exists()) return@forEach
+                val nameInZip = IMAGE_DIR_IN_ZIP + file.name
+                zip.putNextEntry(ZipEntry(nameInZip))
+                file.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+
+            sessions.forEach { s ->
+                val rel = s.receiptImagePath ?: return@forEach
+                val file = File(context.filesDir, rel)
+                if (!file.exists()) return@forEach
+                val nameInZip = RECEIPT_DIR_IN_ZIP + file.name
+                zip.putNextEntry(ZipEntry(nameInZip))
+                file.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+        }
+        return BackupCounts(sessions = sessions.size, trips = trips.size, vehicles = vehicles.size)
+    }
+
+    private data class BackupCounts(val sessions: Int, val trips: Int, val vehicles: Int)
 
     suspend fun restore(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
         val tempDir = File(context.cacheDir, "backup-restore-${UUID.randomUUID()}")
@@ -245,7 +308,7 @@ class BackupIo @Inject constructor(
             // immediately after restore against a stale (or null)
             // lastBackupAt timestamp.
             appPreferences.recordBackup()
-            backupReminderNotifier.cancel()
+            backupReminderScheduler.refresh()
 
             BackupResult.RestoreSuccess(
                 sessions = payload.sessions.size,

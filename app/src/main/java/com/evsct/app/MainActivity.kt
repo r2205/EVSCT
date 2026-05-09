@@ -16,7 +16,7 @@ import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.ui.ProvideUserPrefs
 import com.evsct.app.ui.navigation.EvsctNavGraph
 import com.evsct.app.ui.theme.EvsctTheme
-import com.evsct.app.util.BackupReminderNotifier
+import com.evsct.app.util.BackupReminderScheduler
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var backupReminderNotifier: BackupReminderNotifier
+    @Inject lateinit var backupReminderScheduler: BackupReminderScheduler
 
     @Inject lateinit var appPreferences: AppPreferences
 
@@ -57,7 +57,9 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Re-evaluate the backup reminder on every foregrounding so the
         // notification appears once the threshold is crossed and clears
-        // automatically after a fresh backup or settings change.
-        lifecycleScope.launch { backupReminderNotifier.refresh() }
+        // automatically after a fresh backup or settings change. Also
+        // re-arms the WorkManager check so the daily nag chain keeps
+        // running while the app is closed.
+        lifecycleScope.launch { backupReminderScheduler.refresh() }
     }
 }
