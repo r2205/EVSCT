@@ -2,7 +2,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![minSdk](https://img.shields.io/badge/minSdk-30-green.svg)](#)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF.svg?logo=kotlin&logoColor=white)](#)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg?logo=kotlin&logoColor=white)](#)
 
 Personal Android app for logging EV charging sessions (DC fast on road trips,
 AC at home/hotels). Stores everything locally; nothing leaves the phone unless
@@ -71,6 +71,10 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 - **Filter sheet** — toggle "Color pins by trip" off to render every pin
   in red, hide individual trips with a checkbox list, or hide untripped
   sessions.
+- **Layers menu** — basemap switcher (Default / Satellite / Hybrid /
+  Terrain) plus a **Heatmap** toggle. With heatmap on, pins are replaced
+  by a density overlay weighted by visit count, so your everyday home
+  charger glows brighter than a one-off road-trip stop.
 - **First-open backfill** — the first time you open the screen, every
   stop with only a textual address is reverse-geocoded and the resolved
   coordinates saved back to those sessions. After that, the map opens
@@ -98,10 +102,22 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 ### Stats
 - Headline card: sessions, total cost, total energy, average effective
   $/kWh, average power.
+- **vs gas this month** card — compares this month's charging cost to
+  what an equivalent distance of driving would have cost in gas. Shows a
+  big "Saved $X" headline with the underlying numbers below.
 - 12-month rolling charts of cost and energy.
 - Top brands by total spend.
 - Charging-type split (DC Fast / AC L2 / AC L1) with percentages.
+- **When you charge** — two 7×24 day-of-week × hour-of-day heatmaps,
+  one for DC Fast and one for AC, so you can see road-trip patterns
+  separately from home/commute charging. Each shows its peak day/hour
+  ("Peak: Sat 2 pm").
 - Vehicle filter mirrors the Charging log tabs.
+- **Year recap** — tap the PDF icon in the top bar to open a year-end
+  recap (any year you pick): headline totals, monthly trend, top
+  brands, longest trip. Save or Share the recap as a single-page PDF.
+  When you open it from a specific vehicle's tab, the recap and PDF
+  are scoped to that vehicle (and the filename includes its name).
 
 ### Settings
 - **Vehicles** — manage your EVs and pick a default for new sessions.
@@ -110,10 +126,14 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
   switch only affects display + form labels. Each session keeps the
   currency it was saved with — the default just seeds new sessions and
   tags totals on the dashboards.
-- **Full backup** — Export a `.zip` containing everything, or Restore.
+- **Full backup** — **Save** a `.zip` to a folder you pick, **Share** it
+  out via Drive / email / Messages / etc., or **Restore** from a backup
+  zip.
 - **Backup reminder** — enable/disable, set the threshold in days
   (1–365, default 30), and optionally toggle on Android system
-  notifications (requests `POST_NOTIFICATIONS` on Android 13+).
+  notifications. The reminder fires even when the app is closed (a
+  lightweight background check wakes the OS at the right time;
+  battery cost is essentially zero).
 - **Backup (CSV)** — Export every session to a flat CSV for Excel /
   Google Sheets analysis.
 - **Import (CSV)** — Round-trips with the CSV export, with a "replace
@@ -124,13 +144,16 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 ### Backup & export
 - **Full backup** — single `.zip` containing `backup.json` + every vehicle
   profile photo + every session receipt (photos and PDFs). Schema-
-  versioned. Restore wipes the database and reinstalls inside one Room
-  transaction; foreign keys are remapped to fresh primary keys so backups
-  from another phone restore cleanly. Confirmation dialog gates the
-  destructive action.
+  versioned. **Save** writes to a folder you pick on the device; **Share**
+  hands the same zip to the Android share sheet so it can land in Drive,
+  email, Messages, or any app that accepts files. Restore wipes the
+  database and reinstalls inside one Room transaction; foreign keys are
+  remapped to fresh primary keys so backups from another phone restore
+  cleanly. Confirmation dialog gates the destructive action.
 - **Backup reminder** — in-app banner on the Charging log when it's been
   longer than your threshold since the last backup, optionally pushed to
-  the notification shade for nag-while-away coverage.
+  the notification shade. The notification fires even when the app is
+  closed.
 
 ### Theming
 - Hand-tuned Material 3 EV-green palette (light + dark), with charging-
@@ -139,10 +162,12 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 
 ## Open in Android Studio
 
-1. Open Android Studio (Hedgehog or newer).
+1. Open Android Studio (a recent version that supports AGP 9.x —
+   Narwhal/2025.x or newer).
 2. **File → Open…** → pick the `EVSCT` folder.
-3. Wait for the initial Gradle sync (AGP 8.13, Kotlin 2.1, Compose,
-   the Android SDK pieces it needs).
+3. Wait for the initial Gradle sync (AGP 9.2.1, Gradle 9.4.1, Kotlin
+   2.2, Compose, the Android SDK pieces it needs). Studio will fetch
+   anything missing on first open.
 4. Plug in your Pixel via USB with USB debugging enabled, select it as the
    target device, and hit **Run**.
 
@@ -184,9 +209,10 @@ the sheet to CSV from Google Sheets and use **Import CSV…** instead.
 
 ## Migrating to a new phone
 
-1. On the old phone: **Settings → Full backup → Export backup file…** and
-   save the resulting `evsct-backup-<timestamp>.zip` somewhere you can
-   reach from the new phone (Drive, Files, etc.).
+1. On the old phone, **Settings → Full backup**. Either:
+   - **Save backup file…** to a folder on the device, or
+   - **Share backup file…** to send the same `evsct-backup-<timestamp>.zip`
+     straight to Drive, email, Messages, or any other share target.
 2. On the new phone: install the app, open it once so the database is
    initialized, then **Settings → Full backup → Restore from backup…** and
    pick the zip. Confirm the destructive restore.
@@ -196,15 +222,17 @@ PDFs) all come across.
 
 ## Stack
 
-- Kotlin 2.1, Jetpack Compose, Material 3
+- Kotlin 2.2, Jetpack Compose, Material 3
 - Room (SQLite) with hand-rolled migrations
 - Hilt for DI, Navigation Compose for screens
+- WorkManager for the background backup-reminder check
 - Coil for image loading
-- Google Maps SDK for Android + Maps Compose
+- Google Maps SDK for Android + Maps Compose (incl. `HeatmapTileProvider`)
+- `android.graphics.pdf.PdfDocument` for the year-recap PDF
 - Apache POI for the legacy XLSX importer (one-shot only)
 - DataStore Preferences for cross-screen settings (units, currency,
-  backup reminder, last-backup timestamp)
-- AGP 8.13.2, minSdk 30, targetSdk 35
+  backup reminder, map prefs, last-backup timestamp)
+- AGP 9.2.1, Gradle 9.4.1, minSdk 30, targetSdk 35
 
 ## License
 

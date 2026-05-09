@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -50,6 +51,7 @@ import com.evsct.app.util.Format
 @Composable
 fun StatsScreen(
     onBack: () -> Unit,
+    onOpenYearRecap: (vehicleId: Long?) -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -62,10 +64,16 @@ fun StatsScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { onOpenYearRecap(state.vehicleFilterId) }) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = "Year recap")
                     }
                 },
             )
@@ -82,6 +90,10 @@ fun StatsScreen(
             }
 
             HeadlineCard(state)
+
+            if (state.thisMonthHasDriving) {
+                GasSavingsCard(state)
+            }
 
             if (state.sessionCount == 0) {
                 com.evsct.app.ui.EmptyState(
@@ -194,6 +206,52 @@ private fun HeadlineCard(state: StatsUi) {
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
+        }
+    }
+}
+
+/**
+ * Tongue-in-cheek-but-motivating "vs gas" card for the current calendar
+ * month. Numbers come from the ViewModel — the card just lays them out.
+ * Always renders the savings line; flips to "Paid $X more than gas" in
+ * the rare case where charging this month was the more expensive option.
+ */
+@Composable
+private fun GasSavingsCard(state: StatsUi) {
+    val saved = state.thisMonthSavings
+    val savedAbsText = Format.money(kotlin.math.abs(saved), state.costCurrency)
+    val savedPositive = saved >= 0
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "vs gas this month",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (savedPositive) "Saved $savedAbsText"
+                else "Paid $savedAbsText more than gas",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (savedPositive) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${Format.money(state.thisMonthCost, state.costCurrency)} charging vs " +
+                    "~${Format.money(state.thisMonthGasCost, state.costCurrency)} on gas",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Assumes \$2.15/L · 12 L/100 km",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
