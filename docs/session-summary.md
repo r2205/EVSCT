@@ -17,15 +17,20 @@ context is in the repo even if the conversation is summarized later.
 
 ## Stack
 
-- Kotlin 2.1, Jetpack Compose, Material 3, Navigation Compose
-- Room (SQLite) with hand-rolled migrations
-- Hilt for DI
+- Kotlin 2.2.10, Jetpack Compose, Material 3, Navigation Compose
+- Room 2.8.4 (SQLite) with hand-rolled migrations
+- Hilt 2.59.2 for DI; AndroidX Hilt 1.2.0 (`hilt-work`,
+  `hilt-navigation-compose`)
+- WorkManager 2.10.0 for the background backup-reminder check
 - Coil 2.7 for image loading
 - Apache POI for one-shot legacy XLSX import
 - DataStore Preferences for cross-screen prefs
 - Google Maps SDK + Maps Compose 4.4.1 + maps-compose-utils
-  (for clustering and BitmapDescriptor pins)
-- minSdk 30, targetSdk 35, AGP 8.13.2 (upgraded mid-project)
+  (for clustering, BitmapDescriptor pins, and `HeatmapTileProvider`)
+- `android.graphics.pdf.PdfDocument` for the year-recap PDF export
+  (no third-party PDF library)
+- minSdk 30, targetSdk 35, AGP 9.2.1, Gradle 9.4.1, KSP 2.3.2
+  (upgraded mid-project from AGP 8.13.2 / Gradle 8.13 / Kotlin 2.1)
 
 ## Data model
 
@@ -216,6 +221,16 @@ context is in the repo even if the conversation is summarized later.
   Default / Satellite / Hybrid / Terrain. Selection persists via
   `AppPreferences.mapType`. Shared composable `MapTypeMenu` is reused
   by `MapPickerScreen`.
+- **Heatmap toggle** lives below the basemap rows in the same Layers
+  menu (only on the charging map, not the location picker — the
+  picker passes `null` for the optional `heatmapEnabled` /
+  `onToggleHeatmap` params and the row hides). When on, pins disappear
+  and a `TileOverlay` driven by `HeatmapTileProvider` renders instead,
+  weighted by `MapStop.visits` so a daily home charger burns brighter
+  than a one-off road-trip stop. The cluster manager is `clearItems`'d
+  while heatmap mode is active so toggling clustering doesn't fight
+  the overlay. Persisted as `mapHeatmapEnabled` (defaults off so the
+  first-open experience stays the familiar pin view).
 - **Manual `ClusterManager`** (rather than the `Clustering(items, …)`
   convenience composable) so we can tune the algorithm and keep
   trip-colored markers. Set up inside `MapEffect(Unit)` once the
@@ -333,10 +348,34 @@ vehicle on the same trip.
 
 - Headline card: sessions, total cost, total energy, avg eff. $/kWh,
   avg power.
+- **"vs gas this month" card** — slotted right under the headline.
+  Big "Saved $X" line with sub-text "$cost charging vs ~$gas on gas"
+  and an "Assumes $2.15/L · 12 L/100 km" caption. Distance preference:
+  per-vehicle odometer deltas where the *end* session is in this
+  month (so the delta from the previous month's last charge counts),
+  falling back to month-kWh × 4 km/kWh when odometer data is sparse.
+  Constants are hardcoded for now (BC pump-price defaults), earmarked
+  for a Settings page later. Card hides entirely when there's no
+  driving data this month.
 - Cost-by-month and Energy-by-month — 12-month rolling horizontal
   bars, normalized to the largest bucket.
 - Top brands by spend (top 8).
 - Charging type split (DC/AC L2/AC L1) — stacked bar with %.
+- **"When you charge" card** — two 7×24 day-of-week × hour-of-day
+  heatmaps (Sunday on top, midnight on the left) showing where in
+  the week the user actually plugs in. **DC Fast** (amber) is
+  rendered separately from **AC L2 + L1 grouped** (blue) so road-trip
+  patterns don't blur with home/commute charging. Each grid shows a
+  "Peak: Sat 2 pm" line at the top right; cell shading is alpha-scaled
+  0.20→1.00 against the busiest hour so single-session cells still
+  visibly tint. Hour ticks (12 am / 6 am / noon / 6 pm / 11 pm) sit
+  underneath via `Arrangement.SpaceBetween` — heuristic alignment with
+  the corresponding columns above, deliberately not pixel-perfect.
+  Empty buckets hide their grid entirely.
+- **Year recap entry** — a PDF-icon action in the Stats top bar
+  carries the currently-selected `vehicleFilterId` into a new
+  `YearRecapScreen` (see below). The icon is always present once
+  there's at least one session.
 - Vehicle filter mirrors the log tabs.
 - No charting library; pure Compose primitives (Box width-fraction).
 - **Multi-currency totals**: the Stats headline + per-vehicle lifetime
@@ -348,6 +387,46 @@ vehicle on the same trip.
 - Aggregate $/km and $/kWh use the user's default currency for the
   conversion target *only when all underlying rows already share it*;
   otherwise the metric is hidden to avoid mixing units.
+
+### Year recap (`YearRecapScreen`)
+
+End-of-year-style recap reachable from the Stats top-bar PDF icon.
+Pre-selects the year of the user's most recent session (`ScrollableTabRow`
+of years where they have data) and recomputes the recap on each pick.
+
+- **Scoping**: takes an optional `vehicleId` nav arg
+  (`-1L` sentinel = "All"). When the user opens it from a specific
+  vehicle's Stats tab, the VM reads the arg from `SavedStateHandle`
+  and filters the session list *before* any year bucketing — so
+  available-years, totals, top brands, monthly trend, longest trip,
+  and the rendered PDF all reflect that one vehicle. The VM also
+  resolves the vehicle's display name into `state.vehicleName`.
+- **Content** (scrollable, top to bottom):
+  - Headline grid: sessions / total cost / total energy / total
+    distance.
+  - Monthly cost (Jan–Dec horizontal bars, same `BarList`-style
+    primitives as the rest of Stats — local copy in
+    `YearRecapScreen` to keep the recap decoupled from `StatsScreen`'s
+    private composables).
+  - Top 8 brands by spend.
+  - Longest trip (whole-trip distance from
+    `TripRepository.observeAllWithStats()`, picked among trips with
+    at least one session in the selected year — slight overclaim
+    when a trip spans years, accepted for v1).
+- **Save / Share PDF buttons** at the bottom mirror the Full backup
+  pattern: Save uses SAF `CreateDocument("application/pdf")`; Share
+  writes to `cacheDir/recap-share/` and fires `ACTION_SEND` through
+  the existing FileProvider (cache path declared in `file_paths.xml`).
+  Both filenames go through `defaultRecapFilename(year, vehicleName)`
+  — `evsct-recap-2024.pdf` when scope is All,
+  `evsct-recap-2024-Tesla-Model-3.pdf` when scoped, slugified.
+- **PDF rendering** (`YearRecapPdf.writeYearRecapPdf`) — single A4
+  portrait page with `android.graphics.pdf.PdfDocument`. Layout is
+  hand-coded against a fixed point grid: title block, 4-cell
+  headline row, monthly-cost bar chart drawn straight to `Canvas`,
+  top-brands list with right-aligned $-amounts, longest-trip block,
+  footer. No third-party PDF library; deliberately text-and-list
+  heavy so wide character ranges don't break layout.
 
 ### Backup & export
 
@@ -363,8 +442,22 @@ vehicle on the same trip.
   foreign keys remapped to fresh primary keys via in-flight ID maps so
   backups from another phone work cleanly. Red "Erase and restore"
   confirmation gates the destructive path. After a successful export,
-  `BackupReminderNotifier.cancel()` clears any pending reminder.
-  Restore also calls `recordBackup()` so the reminder timer resets.
+  the scheduler clears any pending reminder notification and re-arms
+  the next check for `now + thresholdDays`. Restore also calls
+  `recordBackup()` so the reminder timer resets.
+- **Save / Share buttons**: the card has *two* export actions side by
+  side. **Save backup file…** is the SAF flow that's been there
+  forever — `CreateDocument("application/zip")`, user picks a folder.
+  **Share backup file…** is the newer sibling: `BackupIo.prepareShareFile`
+  builds the same zip into `cacheDir/backup-share/` (clearing prior
+  share files first so cache doesn't accumulate), the screen wraps it
+  with FileProvider and fires `ACTION_SEND` through `Intent.createChooser`
+  for Drive / email / Messages / etc. Both paths go through the same
+  private `writeBackupZip(out: OutputStream)` helper so they can't
+  drift. Filenames are `evsct-backup-yyyy-MM-dd-HHmm.zip`; the share
+  intent passes the same name in `EXTRA_SUBJECT` *and* `EXTRA_TITLE`
+  because Drive ignores the FileProvider's display name and uses one
+  of those as the saved filename instead.
 - **Hardening**:
   - Top-level array presence is required (rejects empty/malformed
     payloads up front).
@@ -405,8 +498,33 @@ vehicle on the same trip.
 - In-app banner on the session list when threshold is exceeded (or
   ≥5 sessions and never backed up).
 - `BackupReminderNotifier` posts/cancels a notification on a
-  `backup_reminder` channel. Refreshed in `MainActivity.onResume`;
-  cleared automatically after a successful backup or restore.
+  `backup_reminder` channel. The notifier itself only knows how to
+  fire/clear a notification *right now* — scheduling lives one layer
+  up in `BackupReminderScheduler`.
+- **Background scheduling** (`BackupReminderScheduler` +
+  `BackupReminderWorker`): WorkManager-driven check that wakes the
+  app briefly when a backup is overdue, even with the app fully
+  closed. The scheduler computes the next firing time
+  (`lastBackupAt + thresholdDays`, or `now + 1 day` if already
+  overdue, or "cancel" if reminders are disabled) and enqueues a
+  single `OneTimeWorkRequest` under a unique-work name with
+  `REPLACE` policy so a fresh `refresh()` always wins over a stale
+  pending worker. Worker calls `scheduler.refresh()` (which posts/
+  cancels the notification *and* re-enqueues the next check), so the
+  daily nag chain self-perpetuates while overdue and self-terminates
+  on the next backup. `MainActivity.onResume`, every reminder-pref
+  toggle, and every backup write all go through `scheduler.refresh()`
+  too — same idempotent entry point.
+- **EvsctApplication implements `Configuration.Provider`** so
+  `HiltWorkerFactory` can inject `BackupReminderScheduler` into the
+  `@HiltWorker BackupReminderWorker`. AGP 9 + WorkManager 2.10 don't
+  need the default initializer disabled when a custom Configuration
+  is provided.
+- Battery cost is essentially zero: WorkManager hands timing to the
+  OS, which batches our brief check into the next Doze maintenance
+  window. No service, no wake-lock, no foreground process. Trade-off:
+  "due at exactly day 30" can fire 1–6 hours late depending on Doze.
+  Acceptable for "back up soon" semantics.
 
 ### Theme
 
@@ -430,7 +548,8 @@ Cards (top to bottom):
 2. **Units & currency** — Distance segmented switch (Kilometres /
    Miles), Default currency segmented switch (CAD / USD).
 3. **Theme** — segmented switch (System / Light / Dark).
-4. **Full backup** — Export / Restore.
+4. **Full backup** — Save backup file… / Share backup file… /
+   Restore from backup….
 5. **Backup reminder** — enable, threshold days field, Android
    notification toggle.
 6. **Backup (CSV)** — Export to CSV.
@@ -449,6 +568,7 @@ bug we hit early when the list was too tall for some screens).
 - `userUnits: Flow<UserUnits>` (useMiles, defaultCurrency)
 - `mapType: Flow<String>` (NORMAL / SATELLITE / HYBRID / TERRAIN)
 - `mapClusteringEnabled: Flow<Boolean>` (default true)
+- `mapHeatmapEnabled: Flow<Boolean>` (default false)
 - `themeMode: Flow<String>` (SYSTEM / LIGHT / DARK)
 - `lastMapBackfillAt(): Long?` (one-shot read for the throttle)
 - `snapshot()` for one-shot reads (used by `BackupReminderNotifier`)
@@ -578,6 +698,36 @@ Run from Android Studio (Right-click → Run 'tests') or
 - **`SavedStateHandle` on `previousBackStackEntry` is the clean way
   to return values from a sub-screen**: the pick-on-map flow uses
   this rather than a global event bus.
+- **Hilt-injected `SavedStateHandle` reads nav args directly**: the
+  year-recap VM gets its `vehicleId` arg via `SavedStateHandle.get()`
+  with the same key the route uses, no extra plumbing. Pair with a
+  `-1L` sentinel so the nav arg can stay typed as primitive Long.
+- **AGP 9 / Kotlin 2.2 toolchain coupling is tight**: bumping AGP
+  from 8.13.2 to 9.2.1 also forced Gradle 9.4.1, JDK 17+, Kotlin
+  2.2.10, KSP 2.3.2, Room 2.8.4, and Hilt 2.59.2. The Kotlin docs
+  table claims KGP 2.2.x maxes out at Gradle 8.14, but Studio's
+  Upgrade Assistant chose Gradle 9.4.1 anyway and it builds fine —
+  with deprecation warnings. Trust the Assistant's pin set over the
+  docs table.
+- **Room < 2.7 crashes on Kotlin 2.2 metadata**: 2.6.1's KSP
+  processor blew up with `IllegalStateException: unexpected jvm
+  signature V` on a `@Query` returning `Unit`. Fixed by jumping
+  straight to 2.8.4 (latest stable; 2.7.x is when KSP2 support
+  landed).
+- **Hilt 2.54 caps at Kotlin 2.1 metadata**: `hiltJavaCompileDebug`
+  fails with `Provided Metadata instance has version 2.2.0, while
+  maximum supported version is 2.1.0`. Hilt 2.59 explicitly added
+  AGP 9 + Gradle 9.1+ support; 2.59.2 is the latest stable.
+- **AGP 9 default-off flags worth knowing**: `BuildConfig` is now
+  off by default (we don't use it, no impact); R8 is stricter about
+  `-keepattributes` wildcards (we don't use any); manifest `package=`
+  has been deprecated in favor of `namespace = ` in build.gradle
+  (we already use namespace). Future-proofed by accident — not a lot
+  to do here.
+- **Share intent filename quirks**: Drive (and other receivers) read
+  `EXTRA_SUBJECT` / `EXTRA_TITLE` as the *saved filename* and ignore
+  the FileProvider's display name. Pass the actual filename — including
+  the `.zip`/`.pdf` extension — on both extras to round-trip the name.
 
 ## Audit closeouts
 
@@ -620,6 +770,25 @@ security audit (M1 + M2 + Mn1–Mn5). Highlights of what got fixed:
   - Auto-backup rules pointed at obsolete sharedpref path → updated
     to `domain="file" path="datastore/"` and added device-transfer
     media rules.
+- **AGP 9 upgrade** (Studio's AGP Upgrade Assistant did the heavy
+  lift; we then chased version-incompatibility errors as they
+  surfaced):
+  - Toolchain: AGP 8.13.2 → 9.2.1, Gradle 8.13 → 9.4.1,
+    Kotlin 2.1.0 → 2.2.10, KSP `2.1.0-1.0.29` → `2.3.2`
+    (the new KSP2 semver scheme).
+  - Companion bumps surfaced by build failures: Room 2.6.1 → 2.8.4,
+    Hilt 2.54 → 2.59.2.
+  - Conservative-mode flags written to `gradle.properties` to keep
+    today's behavior on AGP 9 (each emits a deprecation warning,
+    each is a future cleanup): `resvalues=true`,
+    `defaultTargetSdkToCompileSdkIfUnset=false`,
+    `enableAppCompileTimeRClass=false`, `usesSdkInManifest.disallowed=false`,
+    `uniquePackageNames=false`, `dependency.useConstraints=true`,
+    `r8.strictFullModeForKeepRules=false`,
+    `r8.optimizedResourceShrinking=false`, `builtInKotlin=false`,
+    `newDsl=false`.
+  - **No app code changes were required** for the upgrade itself —
+    only build files and version pins.
 
 ## Outstanding ideas (not yet built)
 
@@ -631,14 +800,22 @@ security audit (M1 + M2 + Mn1–Mn5). Highlights of what got fixed:
   needs a nav route + button).
 - Reminders by location ("you're at a station you've been to;
   log a session?") — nice-to-have but adds geofencing complexity.
-- **Cost vs gas comparison** (drafted in an earlier session, not
-  pushed): Settings inputs for gas price + L/100km, Stats card showing
-  hypothetical-gas-cost vs actual-EV-cost savings. Total-distance
-  computed per-vehicle as `max(odometer) − min(odometer)` summed.
-- **Map heatmap overlay** (drafted, not pushed): `TileOverlay` with
-  `HeatmapTileProvider` weighted by visit count, gated by a
-  filter-sheet switch and the `MAP_HEATMAP_ENABLED` pref. Skips
-  cluster `addItems` while active so the heatmap reads cleanly.
+- **Configurable gas-card constants**: $/L, L/100 km, and the
+  fallback km/kWh are currently hardcoded in `StatsViewModel`
+  (BC pump-price defaults). Lift these into Settings so non-CAD
+  users can tune them. The card and the recap's distance fallback
+  share the same `FALLBACK_KM_PER_KWH` so any new pref should drive
+  both.
+- **Year recap polish**: include the scoped vehicle's name in the
+  PDF title block and the screen subtitle (right now it only shows
+  up in the filename); pro-rate cross-year trips for "longest trip"
+  rather than overclaiming the whole-trip distance; multi-page PDF
+  when top-brands or trips overflow.
+- **Toolchain cleanup backlog**: the ten conservative-mode flags
+  in `gradle.properties` (added by the AGP 9 Upgrade Assistant) all
+  preserve current behavior and emit deprecation warnings — flip
+  each on individually as we have time. See "Audit closeouts" → AGP
+  9 upgrade for the list.
 
 ## Repo conventions
 
