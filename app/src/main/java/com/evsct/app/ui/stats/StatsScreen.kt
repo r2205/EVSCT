@@ -129,6 +129,29 @@ fun StatsScreen(
                 }
             }
 
+            val anyDc = state.dcFastByDayHour.any { row -> row.any { it > 0 } }
+            val anyAc = state.acByDayHour.any { row -> row.any { it > 0 } }
+            if (anyDc || anyAc) {
+                ChartCard("When you charge") {
+                    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        if (anyDc) {
+                            TimeOfDayHeatmap(
+                                title = "DC Fast",
+                                grid = state.dcFastByDayHour,
+                                accent = EvAccents.DcFast,
+                            )
+                        }
+                        if (anyAc) {
+                            TimeOfDayHeatmap(
+                                title = "AC (L2 + L1)",
+                                grid = state.acByDayHour,
+                                accent = EvAccents.AcL2,
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -296,6 +319,111 @@ private fun TypeLegend(byType: Map<ChargingType, Int>) {
             }
         }
     }
+}
+
+/**
+ * Day-of-week × hour-of-day heatmap. Sunday on top, midnight on the left.
+ * Cell shading is alpha-scaled against [grid]'s busiest hour so a few-stop
+ * vehicle still has visibly-shaded cells without the busiest one going off
+ * the deep end.
+ */
+@Composable
+private fun TimeOfDayHeatmap(
+    title: String,
+    grid: List<List<Int>>,
+    accent: Color,
+) {
+    val maxCount = grid.flatten().max()
+    val labelStyle = MaterialTheme.typography.labelSmall
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val emptyCellColor = MaterialTheme.colorScheme.surfaceVariant
+    val dayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+            )
+            peakLabel(grid)?.let { peak ->
+                Text(
+                    "Peak: $peak",
+                    style = labelStyle,
+                    color = labelColor,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            for (day in 0..6) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(1.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        dayLabels[day],
+                        style = labelStyle,
+                        color = labelColor,
+                        modifier = Modifier.width(24.dp),
+                    )
+                    for (hour in 0..23) {
+                        val count = grid[day][hour]
+                        // 0.20..1.00 alpha range so even single-session
+                        // cells visibly tint, but the busiest still pop.
+                        val cellColor = if (count == 0) emptyCellColor
+                        else accent.copy(alpha = 0.20f + (count.toFloat() / maxCount) * 0.80f)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(10.dp)
+                                .clip(RoundedCornerShape(1.dp))
+                                .background(cellColor),
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        // Hour tick row — 5 labels at SpaceBetween line up roughly with
+        // grid columns 0 / 6 / 12 / 18 / 23. Pixel-perfect alignment isn't
+        // necessary; the goal is just to anchor "morning vs afternoon."
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 25.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            listOf("12 am", "6 am", "noon", "6 pm", "11 pm").forEach { tick ->
+                Text(tick, style = labelStyle, color = labelColor)
+            }
+        }
+    }
+}
+
+/** "Sat 2 pm" string for the busiest cell, or null when the grid is empty. */
+private fun peakLabel(grid: List<List<Int>>): String? {
+    var best = 0
+    var bestDay = -1
+    var bestHour = -1
+    for (d in 0..6) for (h in 0..23) {
+        val c = grid[d][h]
+        if (c > best) {
+            best = c; bestDay = d; bestHour = h
+        }
+    }
+    if (best == 0) return null
+    val day = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")[bestDay]
+    return "$day ${formatHour12(bestHour)}"
+}
+
+private fun formatHour12(h: Int): String = when {
+    h == 0 -> "12 am"
+    h < 12 -> "$h am"
+    h == 12 -> "noon"
+    else -> "${h - 12} pm"
 }
 
 private fun typeColor(type: ChargingType): Color = when (type) {

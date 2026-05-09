@@ -44,7 +44,16 @@ data class StatsUi(
     val byBrandCost: List<Pair<String, Double>> = emptyList(),
     /** Sessions per charging type, in enum order. */
     val byType: Map<ChargingType, Int> = emptyMap(),
+    /** 7×24 grid of DC Fast session counts, indexed [day][hour] where
+     *  day 0 = Sunday and hour 0 = midnight. Surfaces road-trip / weekend
+     *  patterns separately from the home/work AC grid. */
+    val dcFastByDayHour: List<List<Int>> = emptyDayHourGrid(),
+    /** 7×24 grid of AC (L2 + L1) session counts, indexed [day][hour].
+     *  Surfaces overnight / commute patterns. */
+    val acByDayHour: List<List<Int>> = emptyDayHourGrid(),
 )
+
+private fun emptyDayHourGrid(): List<List<Int>> = List(7) { List(24) { 0 } }
 
 @HiltViewModel
 class StatsViewModel @Inject constructor(
@@ -86,6 +95,10 @@ class StatsViewModel @Inject constructor(
             monthlyEnergy = monthlySeries(sessions) { it.energyKwh ?: 0.0 },
             byBrandCost = brandCostSeries(costSessions),
             byType = sessions.groupingBy { it.chargingType }.eachCount(),
+            dcFastByDayHour = dayHourGrid(sessions.filter { it.chargingType == ChargingType.DC_FAST }),
+            acByDayHour = dayHourGrid(sessions.filter {
+                it.chargingType == ChargingType.AC_L2 || it.chargingType == ChargingType.AC_L1
+            }),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())
 
@@ -132,6 +145,22 @@ class StatsViewModel @Inject constructor(
             val key = keyFmt.format(date)
             labelFmt.format(date) to (totalsByKey[key] ?: 0.0)
         }
+    }
+
+    /** Bucket [sessions] into a 7×24 grid by the local-time day-of-week +
+     *  hour the session started. Calendar.DAY_OF_WEEK is 1 (Sun) – 7 (Sat),
+     *  shifted to 0–6 so Sunday lines up with the top row of the heatmap. */
+    private fun dayHourGrid(sessions: List<ChargingSession>): List<List<Int>> {
+        if (sessions.isEmpty()) return emptyDayHourGrid()
+        val cal = Calendar.getInstance()
+        val grid = Array(7) { IntArray(24) }
+        sessions.forEach { s ->
+            cal.timeInMillis = s.sessionStart
+            val day = cal.get(Calendar.DAY_OF_WEEK) - 1
+            val hour = cal.get(Calendar.HOUR_OF_DAY)
+            grid[day][hour]++
+        }
+        return grid.map { it.toList() }
     }
 
     private fun brandCostSeries(sessions: List<ChargingSession>): List<Pair<String, Double>> {
