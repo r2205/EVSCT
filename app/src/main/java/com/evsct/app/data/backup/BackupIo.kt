@@ -10,7 +10,7 @@ import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
-import com.evsct.app.util.BackupReminderNotifier
+import com.evsct.app.util.BackupReminderScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -83,7 +83,7 @@ class BackupIo @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: EvsctDatabase,
     private val appPreferences: AppPreferences,
-    private val backupReminderNotifier: BackupReminderNotifier,
+    private val backupReminderScheduler: BackupReminderScheduler,
 ) {
 
     suspend fun export(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
@@ -92,7 +92,7 @@ class BackupIo @Inject constructor(
                 ?: return@withContext BackupResult.Failure("Could not open output for writing.")
             val counts = out.use { writeBackupZip(it) }
             appPreferences.recordBackup()
-            backupReminderNotifier.cancel()
+            backupReminderScheduler.refresh()
             BackupResult.ExportSuccess(counts.sessions, counts.trips, counts.vehicles)
         } catch (e: Exception) {
             BackupResult.Failure(e.message ?: "Export failed")
@@ -122,7 +122,7 @@ class BackupIo @Inject constructor(
                 val target = File(shareDir, "$filenamePrefix-$ts.zip")
                 val counts = target.outputStream().use { writeBackupZip(it) }
                 appPreferences.recordBackup()
-                backupReminderNotifier.cancel()
+                backupReminderScheduler.refresh()
                 PrepareShareResult.Success(
                     PreparedShareBackup(
                         file = target,
@@ -308,7 +308,7 @@ class BackupIo @Inject constructor(
             // immediately after restore against a stale (or null)
             // lastBackupAt timestamp.
             appPreferences.recordBackup()
-            backupReminderNotifier.cancel()
+            backupReminderScheduler.refresh()
 
             BackupResult.RestoreSuccess(
                 sessions = payload.sessions.size,

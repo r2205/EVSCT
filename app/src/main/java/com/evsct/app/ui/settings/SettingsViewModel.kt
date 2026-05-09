@@ -13,7 +13,7 @@ import com.evsct.app.data.csv.XlsxImporter
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.BackupReminderSettings
 import com.evsct.app.data.prefs.UserUnits
-import com.evsct.app.util.BackupReminderNotifier
+import com.evsct.app.util.BackupReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
@@ -45,7 +45,7 @@ class SettingsViewModel @Inject constructor(
     private val xlsxImporter: XlsxImporter,
     private val backupIo: BackupIo,
     private val appPreferences: AppPreferences,
-    private val backupReminderNotifier: BackupReminderNotifier,
+    private val backupReminderScheduler: BackupReminderScheduler,
 ) : ViewModel() {
 
     private val transient = MutableStateFlow(SettingsUi())
@@ -74,17 +74,17 @@ class SettingsViewModel @Inject constructor(
 
     fun setReminderEnabled(enabled: Boolean) = viewModelScope.launch {
         appPreferences.setReminderEnabled(enabled)
-        backupReminderNotifier.refresh()
+        backupReminderScheduler.refresh()
     }
 
     fun setReminderThresholdDays(days: Long) = viewModelScope.launch {
         appPreferences.setReminderThresholdDays(days)
-        backupReminderNotifier.refresh()
+        backupReminderScheduler.refresh()
     }
 
     fun setReminderNotifyEnabled(enabled: Boolean) = viewModelScope.launch {
         appPreferences.setReminderNotifyEnabled(enabled)
-        backupReminderNotifier.refresh()
+        backupReminderScheduler.refresh()
     }
 
     fun exportCsv(uri: Uri) = viewModelScope.launch {
