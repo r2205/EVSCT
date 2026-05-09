@@ -2,7 +2,7 @@
 agp = "9.2.1"
 kotlin = "2.2.10"
 ksp = "2.3.2"
-hilt = "2.54"
+hilt = "2.59.2"
 androidxHilt = "1.2.0"
 hiltNavCompose = "1.2.0"
 coreKtx = "1.15.0"
