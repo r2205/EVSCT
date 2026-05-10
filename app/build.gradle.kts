@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
@@ -55,10 +56,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
     }
@@ -74,6 +71,19 @@ android {
                 "/META-INF/LICENSE.txt"
             )
         }
+    }
+}
+
+// AGP-9's BaseAppModuleExtension.kotlinOptions is deprecated; configure
+// Kotlin via the Kotlin plugin's own compilerOptions DSL instead. The
+// -Xannotation-default-target flag opts the project into Kotlin 2.x's
+// upcoming behaviour where constructor-parameter annotations also land on
+// the backing property, so Hilt @Inject sites don't each need @param:
+// (KT-73255).
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+        freeCompilerArgs.add("-Xannotation-default-target=param-property")
     }
 }
 
