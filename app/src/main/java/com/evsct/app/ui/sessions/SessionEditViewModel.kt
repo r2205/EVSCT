@@ -558,14 +558,12 @@ class SessionEditViewModel @Inject constructor(
             // Now that the database row is committed, drop any speculative
             // copies plus the original (if it was replaced or cleared).
             reconcileReceiptFiles(finalPath = session.receiptImagePath)
-            // If the user just filled in BOTH cost and kWh, treat the
-            // tracked charge as complete and clear the persistent
-            // in-progress notification. Otherwise keep it live so they have
-            // a tap-shortcut back to keep filling things in. cancelIfFor
-            // makes this a no-op for the common case (untracked backfill).
-            if (session.energyKwh != null && session.totalCost != null) {
-                inProgressChargeNotifier.cancelIfFor(savedId)
-            }
+            // The user explicitly hit Save, so they're done with this
+            // in-progress entry — drop the persistent notification (and
+            // its ticking stopwatch). If they need to keep editing, the
+            // session is now in the list. cancelIfFor is a no-op for
+            // backfill saves where the notifier was never tracking.
+            inProgressChargeNotifier.cancelIfFor(savedId)
             onSaved()
 
             // Re-geocode in the background when the user changed the
