@@ -11,12 +11,14 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.util.CurrencyTotals
+import com.evsct.app.util.InProgressChargeNotifier
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -60,6 +62,7 @@ class SessionListViewModel @Inject constructor(
     private val tripRepository: TripRepository,
     private val vehicleRepository: VehicleRepository,
     private val appPreferences: AppPreferences,
+    private val inProgressChargeNotifier: InProgressChargeNotifier,
 ) : ViewModel() {
 
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
@@ -177,6 +180,39 @@ class SessionListViewModel @Inject constructor(
 
     fun delete(session: ChargingSession) = viewModelScope.launch {
         sessionRepository.delete(session)
+    }
+
+    /**
+     * Quick-track entry point for the "Start charge" FAB. Persists a fresh
+     * session in the database with sessionStart = now, the active vehicle
+     * tab (or the user's default), and the user's default currency — every
+     * other field stays null so the edit screen can fill it in. Posts the
+     * persistent in-progress notification so the user has a tap-shortcut
+     * back to this session from the notification shade (incl. on the
+     * Android Auto shade) while their charge runs. The created id is
+     * handed back via [onCreated] so the caller can navigate to the
+     * matching edit screen.
+     */
+    fun startTrackedSession(preselectVehicleId: Long?, onCreated: (Long) -> Unit) {
+        viewModelScope.launch {
+            val units = appPreferences.userUnits.first()
+            val effectiveVehicleId = preselectVehicleId
+                ?: vehicleRepository.findDefault()?.id
+            val now = System.currentTimeMillis()
+            val session = ChargingSession(
+                sessionStart = now,
+                vehicleId = effectiveVehicleId,
+                currency = units.defaultCurrency,
+            )
+            val savedId = sessionRepository.upsert(session)
+            inProgressChargeNotifier.post(
+                sessionId = savedId,
+                brand = null,
+                city = null,
+                sessionStart = now,
+            )
+            onCreated(savedId)
+        }
     }
 }
 

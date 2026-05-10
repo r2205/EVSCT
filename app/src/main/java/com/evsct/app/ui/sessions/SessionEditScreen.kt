@@ -83,6 +83,7 @@ import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Format
 import java.util.Calendar
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -239,6 +240,16 @@ fun SessionEditScreen(
                 isError = HintField.DURATION in warnedFields,
                 onValue = { v -> viewModel.update { it.copy(durationText = v) } },
             )
+            if (state.isTracking) {
+                LiveElapsedChip(
+                    sessionStart = state.sessionStart,
+                    onUse = { elapsedSec ->
+                        viewModel.update {
+                            it.copy(durationText = DurationFormat.pretty(elapsedSec))
+                        }
+                    },
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1457,4 +1468,35 @@ private fun ValidationHintsCard(hints: List<ValidationHint>) {
             }
         }
     }
+}
+
+/**
+ * Live-ticking chip that shows the elapsed time since [sessionStart] for a
+ * tracked charge. Tapping it fills the form's duration field with the
+ * current elapsed seconds. Lets the user pin the latest stopwatch value at
+ * the moment they actually finish charging — without having to compute it
+ * by hand or remember when they plugged in.
+ */
+@Composable
+private fun LiveElapsedChip(sessionStart: Long, onUse: (Long) -> Unit) {
+    var nowMs by remember(sessionStart) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(sessionStart) {
+        // 1s tick is fine — Compose only recomposes the chip itself, and the
+        // user is unlikely to stare at this for hours. The effect cancels
+        // automatically when the chip leaves the composition.
+        while (true) {
+            nowMs = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+    val elapsedSec = ((nowMs - sessionStart).coerceAtLeast(0L)) / 1000L
+    val label = "Use elapsed: ${DurationFormat.editable(elapsedSec)}"
+    AssistChip(
+        onClick = { onUse(elapsedSec) },
+        label = { Text(label) },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        ),
+    )
 }

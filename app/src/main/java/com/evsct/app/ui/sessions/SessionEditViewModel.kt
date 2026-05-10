@@ -18,6 +18,7 @@ import com.evsct.app.di.AppScope
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.AutofillResult
 import com.evsct.app.util.DurationFormat
+import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.LocationAutofill
 import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Units
@@ -108,6 +109,12 @@ data class SessionEditUi(
     val isFetchingLocation: Boolean = false,
     val transientMessage: String? = null,
     val hints: List<ValidationHint> = emptyList(),
+    /** True when this edit corresponds to a live-tracked charge (the user
+     *  reached this screen via "Start charge" or by tapping the in-progress
+     *  notification). Surfaces the live-elapsed chip and seeds duration from
+     *  the stopwatch on first open. False after process death — the
+     *  notifier's in-memory state is the source of truth. */
+    val isTracking: Boolean = false,
 )
 
 @HiltViewModel
@@ -119,6 +126,7 @@ class SessionEditViewModel @Inject constructor(
     private val locationAutofill: LocationAutofill,
     private val receiptImageStore: ReceiptImageStore,
     private val appPreferences: AppPreferences,
+    private val inProgressChargeNotifier: InProgressChargeNotifier,
     @AppScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
@@ -165,6 +173,14 @@ class SessionEditViewModel @Inject constructor(
     private var originalGeocodeQuery: String? = null
 
     init {
+        // Single collector that pushes brand/city changes through to the
+        // in-progress notifier. Funnels every state mutation (typed,
+        // GPS-autofilled, recent-stop-applied, map-picked) through the
+        // same path so the shade entry stays in sync without scattering
+        // manual notifier calls across each mutation site.
+        viewModelScope.launch {
+            _state.collect { refreshInProgressNotification(it) }
+        }
         viewModelScope.launch {
             sessionRepository.observeBrands().collect { brands ->
                 _state.update { it.copy(brandSuggestions = brands) }
@@ -216,6 +232,21 @@ class SessionEditViewModel @Inject constructor(
         }
     }
 
+    /** Refresh the in-progress notification with the current brand/city so
+     *  the shade entry stays in sync as the user fills in the form. No-op
+     *  unless the notifier is already tracking this session id, so editing
+     *  an unrelated past session never accidentally posts a new
+     *  notification. */
+    private fun refreshInProgressNotification(form: SessionEditUi) {
+        if (sessionId <= 0) return
+        inProgressChargeNotifier.updateIfTracking(
+            sessionId = sessionId,
+            brand = form.brand.takeIf { it.isNotBlank() },
+            city = form.city.takeIf { it.isNotBlank() },
+            sessionStart = form.sessionStart,
+        )
+    }
+
     private fun loadFrom(s: ChargingSession, units: UserUnits) {
         originalReceiptPath = s.receiptImagePath
         s.receiptImagePath?.let { touchedReceiptPaths += it }
@@ -234,12 +265,25 @@ class SessionEditViewModel @Inject constructor(
             city = s.locationCity,
             province = s.locationProvince,
         )
+        val tracking = inProgressChargeNotifier.isTrackingForSession(sessionId)
+        // Seed an empty duration field with the live elapsed time when this
+        // is a tracked charge — the user can either keep it or overwrite with
+        // the station's reported total. Keep the DB value verbatim if it
+        // already has one (re-opening a tracked session you've already
+        // edited shouldn't clobber what you typed).
+        val durationFromDb = DurationFormat.pretty(s.durationSeconds)
+        val durationText = if (tracking && durationFromDb.isBlank()) {
+            val elapsedSec = ((System.currentTimeMillis() - s.sessionStart)
+                .coerceAtLeast(0L)) / 1000L
+            DurationFormat.pretty(elapsedSec)
+        } else durationFromDb
         _state.update { current ->
             withHints(current.copy(
                 isLoading = false,
                 isNew = false,
                 sessionStart = s.sessionStart,
-                durationText = DurationFormat.pretty(s.durationSeconds),
+                durationText = durationText,
+                isTracking = tracking,
                 odometerText = odoText,
                 useMiles = units.useMiles,
                 energyText = s.energyKwh?.toString().orEmpty(),
@@ -481,10 +525,19 @@ class SessionEditViewModel @Inject constructor(
             // map visit.
             val saveLat = if (addressChanged) null else s.latitude
             val saveLng = if (addressChanged) null else s.longitude
+            // For tracked charges, fall back to the live elapsed time when
+            // the user saves with an empty (or unparseable) duration field —
+            // a "I forgot to fill it in" safety net. A typed value or a
+            // chip-pinned value parses to non-null and wins as-is.
+            val durationSeconds = DurationFormat.parse(s.durationText)
+                ?: if (s.isTracking) {
+                    ((System.currentTimeMillis() - s.sessionStart)
+                        .coerceAtLeast(0L)) / 1000L
+                } else null
             val session = ChargingSession(
                 id = if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
-                durationSeconds = DurationFormat.parse(s.durationText),
+                durationSeconds = durationSeconds,
                 odometerKm = odometerKm,
                 energyKwh = s.energyText.toDoubleOrNull(),
                 totalCost = s.costText.toDoubleOrNull(),
@@ -514,6 +567,12 @@ class SessionEditViewModel @Inject constructor(
             // Now that the database row is committed, drop any speculative
             // copies plus the original (if it was replaced or cleared).
             reconcileReceiptFiles(finalPath = session.receiptImagePath)
+            // The user explicitly hit Save, so they're done with this
+            // in-progress entry — drop the persistent notification (and
+            // its ticking stopwatch). If they need to keep editing, the
+            // session is now in the list. cancelIfFor is a no-op for
+            // backfill saves where the notifier was never tracking.
+            inProgressChargeNotifier.cancelIfFor(savedId)
             onSaved()
 
             // Re-geocode in the background when the user changed the
@@ -642,6 +701,9 @@ class SessionEditViewModel @Inject constructor(
                 sessionRepository.findById(sessionId)?.let {
                     sessionRepository.delete(it)
                 }
+                // The session no longer exists; the in-progress notification
+                // for it would tap into a deleted row, so always clear it.
+                inProgressChargeNotifier.cancelIfFor(sessionId)
             }
             // No row left, so the final path is null — drop every file we
             // touched (original + speculative copies).
