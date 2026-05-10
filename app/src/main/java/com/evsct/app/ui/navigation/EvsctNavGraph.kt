@@ -78,6 +78,9 @@ fun EvsctNavGraph(navController: NavHostController) {
                 onAddSession = { preselectVehicleId ->
                     navController.navigate(Routes.sessionEdit(preselectVehicleId = preselectVehicleId))
                 },
+                onStartTrackedSession = { sessionId ->
+                    navController.navigate(Routes.sessionEdit(sessionId))
+                },
                 onEditSession = { id -> navController.navigate(Routes.sessionEdit(id)) },
                 onOpenTrips = { navController.navigate(Routes.TRIP_LIST) },
                 onOpenStats = { navController.navigate(Routes.STATS) },

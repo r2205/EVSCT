@@ -55,6 +55,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -92,6 +93,7 @@ import com.evsct.app.util.Format
 @Composable
 fun SessionListScreen(
     onAddSession: (preselectVehicleId: Long?) -> Unit,
+    onStartTrackedSession: (sessionId: Long) -> Unit,
     onEditSession: (Long) -> Unit,
     onOpenTrips: () -> Unit,
     onOpenStats: () -> Unit,
@@ -158,12 +160,32 @@ fun SessionListScreen(
         },
         floatingActionButton = {
             if (!state.isSelectionMode) {
-                FloatingActionButton(
-                    onClick = { onAddSession(state.vehicleFilterId) },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add session")
+                Column(horizontalAlignment = Alignment.End) {
+                    // "Start charge" — quick-track entry point that persists a
+                    // fresh session immediately and posts the in-progress
+                    // notification so the user can tap back into the edit
+                    // screen from the shade while their charge runs. The
+                    // smaller FAB is intentional: backfilling past charges
+                    // (the "+" below) stays the primary action.
+                    SmallFloatingActionButton(
+                        onClick = {
+                            viewModel.startTrackedSession(state.vehicleFilterId) { id ->
+                                onStartTrackedSession(id)
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    ) {
+                        Icon(Icons.Default.Bolt, contentDescription = "Start charge now")
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    FloatingActionButton(
+                        onClick = { onAddSession(state.vehicleFilterId) },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add session")
+                    }
                 }
             }
         },

@@ -18,6 +18,7 @@ import com.evsct.app.di.AppScope
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.AutofillResult
 import com.evsct.app.util.DurationFormat
+import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.LocationAutofill
 import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Units
@@ -119,6 +120,7 @@ class SessionEditViewModel @Inject constructor(
     private val locationAutofill: LocationAutofill,
     private val receiptImageStore: ReceiptImageStore,
     private val appPreferences: AppPreferences,
+    private val inProgressChargeNotifier: InProgressChargeNotifier,
     @AppScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
@@ -165,6 +167,14 @@ class SessionEditViewModel @Inject constructor(
     private var originalGeocodeQuery: String? = null
 
     init {
+        // Single collector that pushes brand/city changes through to the
+        // in-progress notifier. Funnels every state mutation (typed,
+        // GPS-autofilled, recent-stop-applied, map-picked) through the
+        // same path so the shade entry stays in sync without scattering
+        // manual notifier calls across each mutation site.
+        viewModelScope.launch {
+            _state.collect { refreshInProgressNotification(it) }
+        }
         viewModelScope.launch {
             sessionRepository.observeBrands().collect { brands ->
                 _state.update { it.copy(brandSuggestions = brands) }
@@ -214,6 +224,21 @@ class SessionEditViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** Refresh the in-progress notification with the current brand/city so
+     *  the shade entry stays in sync as the user fills in the form. No-op
+     *  unless the notifier is already tracking this session id, so editing
+     *  an unrelated past session never accidentally posts a new
+     *  notification. */
+    private fun refreshInProgressNotification(form: SessionEditUi) {
+        if (sessionId <= 0) return
+        inProgressChargeNotifier.updateIfTracking(
+            sessionId = sessionId,
+            brand = form.brand.takeIf { it.isNotBlank() },
+            city = form.city.takeIf { it.isNotBlank() },
+            sessionStart = form.sessionStart,
+        )
     }
 
     private fun loadFrom(s: ChargingSession, units: UserUnits) {
@@ -514,6 +539,14 @@ class SessionEditViewModel @Inject constructor(
             // Now that the database row is committed, drop any speculative
             // copies plus the original (if it was replaced or cleared).
             reconcileReceiptFiles(finalPath = session.receiptImagePath)
+            // If the user just filled in BOTH cost and kWh, treat the
+            // tracked charge as complete and clear the persistent
+            // in-progress notification. Otherwise keep it live so they have
+            // a tap-shortcut back to keep filling things in. cancelIfFor
+            // makes this a no-op for the common case (untracked backfill).
+            if (session.energyKwh != null && session.totalCost != null) {
+                inProgressChargeNotifier.cancelIfFor(savedId)
+            }
             onSaved()
 
             // Re-geocode in the background when the user changed the
@@ -642,6 +675,9 @@ class SessionEditViewModel @Inject constructor(
                 sessionRepository.findById(sessionId)?.let {
                     sessionRepository.delete(it)
                 }
+                // The session no longer exists; the in-progress notification
+                // for it would tap into a deleted row, so always clear it.
+                inProgressChargeNotifier.cancelIfFor(sessionId)
             }
             // No row left, so the final path is null — drop every file we
             // touched (original + speculative copies).
