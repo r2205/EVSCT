@@ -57,6 +57,10 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        // Kotlin 2.x is migrating constructor-parameter annotations to also
+        // apply to backing properties by default. Opt in project-wide so
+        // Hilt @Inject sites don't each need a @param: prefix (KT-73255).
+        freeCompilerArgs += "-Xannotation-default-target=param-property"
     }
 
     buildFeatures {
