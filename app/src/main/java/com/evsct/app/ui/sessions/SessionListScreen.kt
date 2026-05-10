@@ -55,7 +55,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -105,6 +104,7 @@ fun SessionListScreen(
     var showTripPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var showAddSheet by remember { mutableStateOf(false) }
 
     // Keep the search/filter strip visible whenever there are active filters,
     // so the user can always see and remove them.
@@ -160,32 +160,12 @@ fun SessionListScreen(
         },
         floatingActionButton = {
             if (!state.isSelectionMode) {
-                Column(horizontalAlignment = Alignment.End) {
-                    // "Start charge" — quick-track entry point that persists a
-                    // fresh session immediately and posts the in-progress
-                    // notification so the user can tap back into the edit
-                    // screen from the shade while their charge runs. The
-                    // smaller FAB is intentional: backfilling past charges
-                    // (the "+" below) stays the primary action.
-                    SmallFloatingActionButton(
-                        onClick = {
-                            viewModel.startTrackedSession(state.vehicleFilterId) { id ->
-                                onStartTrackedSession(id)
-                            }
-                        },
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    ) {
-                        Icon(Icons.Default.Bolt, contentDescription = "Start charge now")
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    FloatingActionButton(
-                        onClick = { onAddSession(state.vehicleFilterId) },
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add session")
-                    }
+                FloatingActionButton(
+                    onClick = { showAddSheet = true },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add session")
                 }
             }
         },
@@ -271,6 +251,22 @@ fun SessionListScreen(
         }
     }
 
+    if (showAddSheet) {
+        AddSessionChooserSheet(
+            onTrackNow = {
+                showAddSheet = false
+                viewModel.startTrackedSession(state.vehicleFilterId) { id ->
+                    onStartTrackedSession(id)
+                }
+            },
+            onAddPast = {
+                showAddSheet = false
+                onAddSession(state.vehicleFilterId)
+            },
+            onDismiss = { showAddSheet = false },
+        )
+    }
+
     if (showTripPicker) {
         TripPickerSheet(
             trips = state.trips,
@@ -327,6 +323,79 @@ private fun SelectionTopBar(
             }
         },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddSessionChooserSheet(
+    onTrackNow: () -> Unit,
+    onAddPast: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "Log a charge",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            AddSessionChooserRow(
+                icon = Icons.Default.Bolt,
+                title = "Track a charge now",
+                subtitle = "Start a live timer for a charge happening right now. " +
+                    "A notification keeps it handy while you wait.",
+                onClick = onTrackNow,
+            )
+            HorizontalDivider()
+            AddSessionChooserRow(
+                icon = Icons.Default.Add,
+                title = "Log a past charge",
+                subtitle = "Backfill the details of a charge you've already finished.",
+                onClick = onAddPast,
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun AddSessionChooserRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
