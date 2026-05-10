@@ -525,10 +525,19 @@ class SessionEditViewModel @Inject constructor(
             // map visit.
             val saveLat = if (addressChanged) null else s.latitude
             val saveLng = if (addressChanged) null else s.longitude
+            // For tracked charges, fall back to the live elapsed time when
+            // the user saves with an empty (or unparseable) duration field —
+            // a "I forgot to fill it in" safety net. A typed value or a
+            // chip-pinned value parses to non-null and wins as-is.
+            val durationSeconds = DurationFormat.parse(s.durationText)
+                ?: if (s.isTracking) {
+                    ((System.currentTimeMillis() - s.sessionStart)
+                        .coerceAtLeast(0L)) / 1000L
+                } else null
             val session = ChargingSession(
                 id = if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
-                durationSeconds = DurationFormat.parse(s.durationText),
+                durationSeconds = durationSeconds,
                 odometerKm = odometerKm,
                 energyKwh = s.energyText.toDoubleOrNull(),
                 totalCost = s.costText.toDoubleOrNull(),
