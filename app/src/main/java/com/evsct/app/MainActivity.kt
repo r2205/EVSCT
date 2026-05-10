@@ -64,13 +64,18 @@ class MainActivity : ComponentActivity() {
                         val navController = rememberNavController()
                         // Route any pending deep-link (from a tapped
                         // in-progress notification) once the NavController is
-                        // ready. Resetting the flow to null after navigation
-                        // means a process recreate without a fresh intent
-                        // won't re-navigate.
+                        // ready. launchSingleTop reuses the existing edit
+                        // screen when the user is already there — without it,
+                        // tapping the notification while editing pushes a
+                        // duplicate destination on top, spinning up a fresh
+                        // ViewModel that re-loads from the DB and silently
+                        // discards anything the user typed but hadn't saved.
                         LaunchedEffect(navController) {
                             pendingDeepLinkRoute.collect { route ->
                                 if (route != null) {
-                                    navController.navigate(route)
+                                    navController.navigate(route) {
+                                        launchSingleTop = true
+                                    }
                                     pendingDeepLinkRoute.value = null
                                 }
                             }

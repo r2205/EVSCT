@@ -109,6 +109,12 @@ data class SessionEditUi(
     val isFetchingLocation: Boolean = false,
     val transientMessage: String? = null,
     val hints: List<ValidationHint> = emptyList(),
+    /** True when this edit corresponds to a live-tracked charge (the user
+     *  reached this screen via "Start charge" or by tapping the in-progress
+     *  notification). Surfaces the live-elapsed chip and seeds duration from
+     *  the stopwatch on first open. False after process death — the
+     *  notifier's in-memory state is the source of truth. */
+    val isTracking: Boolean = false,
 )
 
 @HiltViewModel
@@ -259,12 +265,25 @@ class SessionEditViewModel @Inject constructor(
             city = s.locationCity,
             province = s.locationProvince,
         )
+        val tracking = inProgressChargeNotifier.isTrackingForSession(sessionId)
+        // Seed an empty duration field with the live elapsed time when this
+        // is a tracked charge — the user can either keep it or overwrite with
+        // the station's reported total. Keep the DB value verbatim if it
+        // already has one (re-opening a tracked session you've already
+        // edited shouldn't clobber what you typed).
+        val durationFromDb = DurationFormat.pretty(s.durationSeconds)
+        val durationText = if (tracking && durationFromDb.isBlank()) {
+            val elapsedSec = ((System.currentTimeMillis() - s.sessionStart)
+                .coerceAtLeast(0L)) / 1000L
+            DurationFormat.pretty(elapsedSec)
+        } else durationFromDb
         _state.update { current ->
             withHints(current.copy(
                 isLoading = false,
                 isNew = false,
                 sessionStart = s.sessionStart,
-                durationText = DurationFormat.pretty(s.durationSeconds),
+                durationText = durationText,
+                isTracking = tracking,
                 odometerText = odoText,
                 useMiles = units.useMiles,
                 energyText = s.energyKwh?.toString().orEmpty(),
