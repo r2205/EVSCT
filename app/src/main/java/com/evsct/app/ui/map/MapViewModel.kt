@@ -3,8 +3,10 @@ package com.evsct.app.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
+import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
+import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.util.LocationAutofill
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -59,6 +61,8 @@ data class MapFilters(
     /** Trip IDs (and null = "untripped") whose pins are hidden. Empty = show all. */
     val hiddenKeys: Set<Long?> = emptySet(),
     val colorByTrip: Boolean = true,
+    /** When non-null, only sessions tagged to this vehicle contribute to pins. */
+    val vehicleFilter: Long? = null,
 )
 
 data class MapUi(
@@ -71,6 +75,11 @@ data class MapUi(
     val tripOptions: List<TripFilterOption> = emptyList(),
     val showUntrippedOption: Boolean = false,
     val untrippedVisible: Boolean = true,
+    /** Vehicles known to the app. Empty / one-element means the vehicle
+     *  picker has nothing useful to show and the filter sheet hides it. */
+    val vehicles: List<Vehicle> = emptyList(),
+    /** Currently selected vehicle, or null for "all vehicles". */
+    val vehicleFilterId: Long? = null,
     val colorByTrip: Boolean = true,
     val anyFilterActive: Boolean = false,
     /** User's preferred Google Maps base layer (NORMAL / SATELLITE / HYBRID
@@ -87,6 +96,7 @@ data class MapUi(
 class MapViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
+    private val vehicleRepository: VehicleRepository,
     private val locationAutofill: LocationAutofill,
     private val appPreferences: com.evsct.app.data.prefs.AppPreferences,
 ) : ViewModel() {
@@ -103,14 +113,30 @@ class MapViewModel @Inject constructor(
         appPreferences.mapHeatmapEnabled,
     ) { type, clustering, heatmap -> Triple(type, clustering, heatmap) }
 
+    // Pair trips + vehicles so the outer combine still fits in 5 args.
+    private val tripsAndVehicles = combine(
+        tripRepository.observeAll(),
+        vehicleRepository.observeAll(),
+    ) { trips, vehicles -> trips to vehicles }
+
     val state: StateFlow<MapUi> = combine(
         sessionRepository.observeAll(),
-        tripRepository.observeAll(),
+        tripsAndVehicles,
         backfillStatus,
         filters,
         mapPrefs,
-    ) { sessions, trips, status, f, prefs ->
+    ) { allSessions, (trips, vehicles), status, f, prefs ->
         val (mapType, clusteringEnabled, heatmapEnabled) = prefs
+
+        // Drop a vehicle filter that points to a deleted vehicle so the
+        // sheet doesn't keep advertising a phantom selection.
+        val effectiveVehicleFilter = f.vehicleFilter?.takeIf { id -> vehicles.any { it.id == id } }
+
+        // Apply the vehicle filter up front: every downstream calculation
+        // (stops, trip options, untripped option) operates on the filtered set.
+        val sessions = if (effectiveVehicleFilter == null) allSessions
+            else allSessions.filter { it.vehicleId == effectiveVehicleFilter }
+
         val tripColorById = trips.associate { it.id to it.pinColor }
         val groups = sessions.groupBy(::stopKey).filterKeys { it.isNotBlank() }
 
@@ -144,8 +170,12 @@ class MapViewModel @Inject constructor(
             tripOptions = tripOptions,
             showUntrippedOption = hasUntripped,
             untrippedVisible = untrippedVisible,
+            vehicles = vehicles,
+            vehicleFilterId = effectiveVehicleFilter,
             colorByTrip = f.colorByTrip,
-            anyFilterActive = f.hiddenKeys.isNotEmpty() || !f.colorByTrip,
+            anyFilterActive = f.hiddenKeys.isNotEmpty() ||
+                !f.colorByTrip ||
+                effectiveVehicleFilter != null,
             mapType = mapType,
             clusteringEnabled = clusteringEnabled,
             heatmapEnabled = heatmapEnabled,
@@ -174,6 +204,25 @@ class MapViewModel @Inject constructor(
 
     fun showAllTrips() {
         filters.update { it.copy(hiddenKeys = emptySet()) }
+    }
+
+    /**
+     * Mark every currently-known trip bucket (and the untripped bucket if it
+     * has any sessions) as hidden. Combined with the per-row checkbox, this
+     * gives the user a fast "start from nothing, opt in just a few" workflow
+     * when their trip list is long.
+     */
+    fun hideAllTrips() {
+        val ui = state.value
+        val keys = buildSet<Long?> {
+            ui.tripOptions.forEach { add(it.tripId) }
+            if (ui.showUntrippedOption) add(null)
+        }
+        filters.update { it.copy(hiddenKeys = keys) }
+    }
+
+    fun setVehicleFilter(vehicleId: Long?) {
+        filters.update { it.copy(vehicleFilter = vehicleId) }
     }
 
     fun setColorByTrip(enabled: Boolean) {
