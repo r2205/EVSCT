@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -303,6 +306,8 @@ fun MapScreen(
             ui = state,
             onToggleTrip = viewModel::toggleTripVisibility,
             onShowAllTrips = viewModel::showAllTrips,
+            onHideAllTrips = viewModel::hideAllTrips,
+            onSetVehicleFilter = viewModel::setVehicleFilter,
             onSetColorByTrip = viewModel::setColorByTrip,
             onSetClusteringEnabled = viewModel::setClusteringEnabled,
             onResetAll = viewModel::resetFilters,
@@ -470,12 +475,14 @@ private fun sharedTripPinDescriptor(): BitmapDescriptor {
     return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun FilterSheet(
     ui: MapUi,
     onToggleTrip: (Long?) -> Unit,
     onShowAllTrips: () -> Unit,
+    onHideAllTrips: () -> Unit,
+    onSetVehicleFilter: (Long?) -> Unit,
     onSetColorByTrip: (Boolean) -> Unit,
     onSetClusteringEnabled: (Boolean) -> Unit,
     onResetAll: () -> Unit,
@@ -549,6 +556,38 @@ private fun FilterSheet(
                 )
             }
 
+            // --- Vehicle filter (hidden when there's only one vehicle to choose
+            //     from, since the chips would be a no-op). ---
+            if (ui.vehicles.size >= 2) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                Text(
+                    "Show pins for vehicle",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = ui.vehicleFilterId == null,
+                        onClick = { onSetVehicleFilter(null) },
+                        label = { Text("All vehicles") },
+                    )
+                    ui.vehicles.forEach { vehicle ->
+                        FilterChip(
+                            selected = ui.vehicleFilterId == vehicle.id,
+                            onClick = { onSetVehicleFilter(vehicle.id) },
+                            label = { Text(vehicle.name) },
+                        )
+                    }
+                }
+            }
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
             // --- Trip visibility list ---
@@ -562,8 +601,15 @@ private fun FilterSheet(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f),
                 )
-                if (ui.tripOptions.any { !it.visible } || !ui.untrippedVisible) {
+                val anyHidden = ui.tripOptions.any { !it.visible } ||
+                    (ui.showUntrippedOption && !ui.untrippedVisible)
+                val anyVisible = ui.tripOptions.any { it.visible } ||
+                    (ui.showUntrippedOption && ui.untrippedVisible)
+                if (anyHidden) {
                     TextButton(onClick = onShowAllTrips) { Text("Show all") }
+                }
+                if (anyVisible && (ui.tripOptions.isNotEmpty() || ui.showUntrippedOption)) {
+                    TextButton(onClick = onHideAllTrips) { Text("Hide all") }
                 }
             }
 
