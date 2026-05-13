@@ -144,6 +144,7 @@ fun SessionEditScreen(
     ) { uri -> uri?.let { viewModel.addReceipt(it) } }
 
     var receiptToPreview by remember { mutableStateOf<String?>(null) }
+    var receiptToRename by remember { mutableStateOf<UiReceipt?>(null) }
     var showReceiptChooser by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.transientMessage) {
@@ -362,6 +363,7 @@ fun SessionEditScreen(
                 receipts = state.receipts,
                 onAdd = { showReceiptChooser = true },
                 onRemove = { path -> viewModel.removeReceipt(path) },
+                onRename = { receipt -> receiptToRename = receipt },
                 onPreview = { path ->
                     if (ReceiptImageStore.isPdf(path)) {
                         openReceiptExternally(context, path)
@@ -398,6 +400,17 @@ fun SessionEditScreen(
         ReceiptPreviewDialog(
             relativePath = path,
             onDismiss = { receiptToPreview = null },
+        )
+    }
+
+    receiptToRename?.let { receipt ->
+        RenameReceiptDialog(
+            initial = receipt.originalFileName.orEmpty(),
+            onConfirm = { newName ->
+                viewModel.renameReceipt(receipt.filePath, newName)
+                receiptToRename = null
+            },
+            onDismiss = { receiptToRename = null },
         )
     }
 
@@ -1286,6 +1299,7 @@ private fun ReceiptsCard(
     receipts: List<UiReceipt>,
     onAdd: () -> Unit,
     onRemove: (String) -> Unit,
+    onRename: (UiReceipt) -> Unit,
     onPreview: (String) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -1333,6 +1347,7 @@ private fun ReceiptsCard(
                         originalFileName = r.originalFileName,
                         onPreview = { onPreview(r.filePath) },
                         onRemove = { onRemove(r.filePath) },
+                        onRename = { onRename(r) },
                     )
                 }
                 Spacer(Modifier.height(12.dp))
@@ -1352,6 +1367,7 @@ private fun ReceiptTile(
     originalFileName: String?,
     onPreview: () -> Unit,
     onRemove: () -> Unit,
+    onRename: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val file = File(ctx.filesDir, path)
@@ -1377,7 +1393,16 @@ private fun ReceiptTile(
             }
         }
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            horizontalArrangement = Arrangement.End,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            // Rename is only useful on PDFs — photos don't show a filename
+            // anywhere in the UI, so the action would be invisible.
+            if (isPdf) {
+                androidx.compose.material3.TextButton(onClick = onRename) { Text("Rename") }
+                Spacer(Modifier.width(4.dp))
+            }
             androidx.compose.material3.TextButton(onClick = onRemove) { Text("Remove") }
         }
     }
@@ -1423,6 +1448,42 @@ private fun PdfThumbnail(originalFileName: String? = null) {
             )
         }
     }
+}
+
+/**
+ * Lets the user backfill (or correct) the display name of an existing PDF
+ * receipt. The on-disk file stays UUID-named; only the [SessionReceipt.
+ * originalFileName] label is rewritten. Leaving the field blank clears the
+ * label and the tile falls back to the generic "PDF receipt" caption.
+ */
+@Composable
+private fun RenameReceiptDialog(
+    initial: String,
+    onConfirm: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var draft by remember(initial) { mutableStateOf(initial) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename receipt") },
+        text = {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                label = { Text("File name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { onConfirm(draft.trim().takeIf { it.isNotEmpty() }) },
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

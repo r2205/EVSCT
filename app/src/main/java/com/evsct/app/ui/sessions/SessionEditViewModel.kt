@@ -485,6 +485,20 @@ class SessionEditViewModel @Inject constructor(
         _state.update { it.copy(receipts = it.receipts.filterNot { r -> r.filePath == path }) }
     }
 
+    /** Update the user-facing label on an existing receipt. Lets the user
+     *  backfill a name onto pre-v11 receipts that were attached before we
+     *  started capturing the picker's display name. Persisted in save(). */
+    fun renameReceipt(path: String, newName: String?) {
+        val cleaned = newName?.trim().orEmpty().takeIf { it.isNotEmpty() }
+        _state.update { current ->
+            current.copy(
+                receipts = current.receipts.map {
+                    if (it.filePath == path) it.copy(originalFileName = cleaned) else it
+                },
+            )
+        }
+    }
+
     fun applyStop(stop: RecentStop) = _state.update { current ->
         current.copy(
             brand = stop.brand?.trim().orEmpty(),
@@ -625,6 +639,7 @@ class SessionEditViewModel @Inject constructor(
             // id for updates and the new autoincrement id for inserts.
             val desiredPaths = s.receipts.mapTo(mutableSetOf()) { it.filePath }
             val existing = sessionReceiptRepository.findForSession(savedId)
+            val existingById = existing.associateBy { it.id }
             existing
                 .filter { it.filePath !in desiredPaths }
                 .forEach { sessionReceiptRepository.delete(it) }
@@ -639,6 +654,16 @@ class SessionEditViewModel @Inject constructor(
                     )
                 }
             if (newRows.isNotEmpty()) sessionReceiptRepository.insertAll(newRows)
+            // Apply renames on already-persisted receipts (matched by id).
+            // We skip when the name is unchanged so we don't bump rows that
+            // didn't move.
+            s.receipts.forEach { r ->
+                val rid = r.id ?: return@forEach
+                val current = existingById[rid] ?: return@forEach
+                if (current.originalFileName != r.originalFileName) {
+                    sessionReceiptRepository.updateName(rid, r.originalFileName)
+                }
+            }
 
             // Drop any speculative copies the user attached and then removed
             // before saving, plus any original files that were removed.

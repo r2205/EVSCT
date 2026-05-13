@@ -35,6 +35,13 @@ interface SessionReceiptDao {
     @Insert
     suspend fun insertAll(receipts: List<SessionReceipt>): List<Long>
 
+    /** Rename an existing receipt without touching its file on disk. Pre-v11
+     *  rows have null original names; this is how the user can backfill a
+     *  friendly label for receipts attached before we started capturing the
+     *  picker's display name. */
+    @Query("UPDATE session_receipts SET originalFileName = :name WHERE id = :id")
+    suspend fun updateName(id: Long, name: String?)
+
     @Delete
     suspend fun delete(receipt: SessionReceipt)
 }

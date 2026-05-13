@@ -26,5 +26,7 @@ class SessionReceiptRepository @Inject constructor(
 
     suspend fun insertAll(receipts: List<SessionReceipt>): List<Long> = dao.insertAll(receipts)
 
+    suspend fun updateName(id: Long, name: String?) = dao.updateName(id, name)
+
     suspend fun delete(receipt: SessionReceipt) = dao.delete(receipt)
 }
