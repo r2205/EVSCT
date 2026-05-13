@@ -12,6 +12,7 @@ import java.util.Calendar
 import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.apache.poi.openxml4j.util.ZipSecureFile
@@ -105,8 +106,10 @@ class XlsxImporter @Inject constructor(
         val postedKwh = row.getCell(7)?.numericOrNull()
         val postedTimeRate = row.getCell(9)?.numericOrNull()
         val postedMaxKw = row.getCell(12)?.numericOrNull()
-        val battStart = row.getCell(13)?.numericOrNull()?.let { (it * 100).toInt() }
-        val battEnd = row.getCell(14)?.numericOrNull()?.let { (it * 100).toInt() }
+        // Excel stores % cells as a 0–1 fraction; round to the nearest whole
+        // percent rather than truncating so 0.856 reads back as 86, not 85.
+        val battStart = row.getCell(13)?.numericOrNull()?.let { (it * 100).roundToInt() }
+        val battEnd = row.getCell(14)?.numericOrNull()?.let { (it * 100).roundToInt() }
         val brand = row.getCell(15)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
         val cityProv = row.getCell(16)?.toStringSafe()?.trim()
         val (city, prov) = splitCityProv(cityProv)
