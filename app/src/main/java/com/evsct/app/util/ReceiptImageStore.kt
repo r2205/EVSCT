@@ -2,6 +2,7 @@ package com.evsct.app.util
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -24,6 +25,11 @@ private const val MAX_RECEIPT_BYTES: Long = 25L * 1024 * 1024
 class FileTooLargeException(val limitBytes: Long) :
     IOException("File exceeds $limitBytes byte size cap.")
 
+/** A copy result: the on-disk relative path (UUID-named) plus the picker's
+ *  display name when one was available. The display name is used for UI
+ *  labels only — the canonical path is always [filePath]. */
+data class CopiedReceipt(val filePath: String, val displayName: String?)
+
 /**
  * Persists session receipts (images or PDFs) into the app's private files dir
  * under `receipts/<uuid>.<ext>`. The extension preserves whether the receipt
@@ -36,9 +42,10 @@ class ReceiptImageStore @Inject constructor(
 ) {
     private val dir: File get() = File(context.filesDir, "receipts").apply { mkdirs() }
 
-    suspend fun copyFromUri(source: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun copyFromUri(source: Uri): CopiedReceipt = withContext(Dispatchers.IO) {
         val mime = context.contentResolver.getType(source)
         val ext = if (mime == "application/pdf") "pdf" else "jpg"
+        val displayName = queryDisplayName(source)
         val name = "${UUID.randomUUID()}.$ext"
         val target = File(dir, name)
         try {
@@ -54,8 +61,21 @@ class ReceiptImageStore @Inject constructor(
             target.delete()
             throw e
         }
-        "receipts/$name"
+        CopiedReceipt(filePath = "receipts/$name", displayName = displayName)
     }
+
+    /** Pull the user-visible filename out of a SAF URI via OpenableColumns.
+     *  Returns null when the provider doesn't surface a name (some custom
+     *  providers don't) — the UI falls back to a generic label in that case. */
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        context.contentResolver.query(
+            uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst() && cursor.columnCount > 0) {
+                cursor.getString(0)?.takeIf { it.isNotBlank() }
+            } else null
+        }
+    }.getOrNull()
 
     private fun InputStream.copyBoundedTo(out: OutputStream, limit: Long) {
         val buf = ByteArray(8 * 1024)

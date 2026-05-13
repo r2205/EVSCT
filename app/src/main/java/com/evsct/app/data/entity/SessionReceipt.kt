@@ -29,5 +29,10 @@ data class SessionReceipt(
     val sessionId: Long,
     /** Path relative to `filesDir` — e.g. `receipts/<uuid>.jpg`. */
     val filePath: String,
+    /** Display name from the picker (e.g. "expense-aug-2025.pdf") at the
+     *  time the user attached the file. Null when the picker didn't
+     *  surface a name. Used purely for UI labels; the underlying file is
+     *  always the UUID-named copy at [filePath]. */
+    val originalFileName: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 )

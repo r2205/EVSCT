@@ -204,7 +204,7 @@ class BackupIo @Inject constructor(
             val plannedReceipts: Map<String, String> = payload.sessions
                 .asSequence()
                 .flatMap { it.receipts.asSequence() }
-                .mapNotNull(::sanitizedBasename)
+                .mapNotNull { sanitizedBasename(it.file) }
                 .toSet()
                 .associateWith { name -> "$RECEIPT_DIR_IN_FILES/$name" }
 
@@ -305,10 +305,14 @@ class BackupIo @Inject constructor(
                 val receiptRows = payload.sessions
                     .zip(newSessionIds)
                     .flatMap { (raw, newSessionId) ->
-                        raw.receipts.mapNotNull { receiptName ->
-                            val basename = sanitizedBasename(receiptName) ?: return@mapNotNull null
+                        raw.receipts.mapNotNull { entry ->
+                            val basename = sanitizedBasename(entry.file) ?: return@mapNotNull null
                             val resolvedPath = plannedReceipts[basename] ?: return@mapNotNull null
-                            SessionReceipt(sessionId = newSessionId, filePath = resolvedPath)
+                            SessionReceipt(
+                                sessionId = newSessionId,
+                                filePath = resolvedPath,
+                                originalFileName = entry.originalName,
+                            )
                         }
                     }
                 if (receiptRows.isNotEmpty()) sessionReceiptDao.insertAll(receiptRows)
@@ -425,14 +429,19 @@ class BackupIo @Inject constructor(
         putOptLong("vehicleId", vehicleId)
         putOptString("notes", notes)
         putOptString("tags", tags)
-        // New canonical form: every receipt's basename in a JSON array.
-        // Strip the directory prefix — the receipts/ folder is implicit
-        // in the zip layout.
+        // Canonical form: an object per receipt with { file, originalName }.
+        // file is the basename stripped of the implicit "receipts/" prefix.
+        // originalName is whatever the SAF picker reported (may be absent).
         put(
             "receipts",
             JSONArray().also { arr ->
                 receipts.forEach { r ->
-                    arr.put(r.filePath.removePrefix("$RECEIPT_DIR_IN_FILES/"))
+                    arr.put(
+                        JSONObject().apply {
+                            put("file", r.filePath.removePrefix("$RECEIPT_DIR_IN_FILES/"))
+                            putOptString("originalName", r.originalFileName)
+                        },
+                    )
                 }
             },
         )
@@ -567,11 +576,26 @@ class BackupIo @Inject constructor(
                     vehicleId = s.optLongOrNull("vehicleId"),
                     notes = s.optStringOrNull("notes"),
                     tags = s.optStringOrNull("tags"),
-                    // Prefer the new array form; fall back to the legacy
-                    // single-receipt field so v5 backups still restore.
+                    // Receipt parsing handles three historical forms:
+                    //  1) JSON array of { file, originalName? } objects — current.
+                    //  2) JSON array of plain basename strings — intermediate.
+                    //  3) Legacy "receiptFile" field for v5 backups.
                     receipts = s.optJSONArray("receipts")?.let { arr ->
-                        (0 until arr.length()).mapNotNull { i -> arr.optString(i).takeIf { it.isNotBlank() } }
-                    } ?: listOfNotNull(s.optStringOrNull("receiptFile")),
+                        (0 until arr.length()).mapNotNull { i ->
+                            val obj = arr.optJSONObject(i)
+                            if (obj != null) {
+                                val file = obj.optString("file").takeIf { it.isNotBlank() }
+                                    ?: return@mapNotNull null
+                                RawReceipt(file = file, originalName = obj.optStringOrNull("originalName"))
+                            } else {
+                                arr.optString(i).takeIf { it.isNotBlank() }
+                                    ?.let { RawReceipt(file = it, originalName = null) }
+                            }
+                        }
+                    } ?: listOfNotNull(
+                        s.optStringOrNull("receiptFile")
+                            ?.let { RawReceipt(file = it, originalName = null) },
+                    ),
                     latitude = s.optDoubleOrNull("latitude"),
                     longitude = s.optDoubleOrNull("longitude"),
                     continuesPrevious = s.optBoolean("continuesPrevious", false),
@@ -711,6 +735,11 @@ private data class RawTrip(
     val createdAt: Long,
 )
 
+/** Receipt entry parsed from backup JSON. file = basename only (no
+ *  "receipts/" prefix); originalName is null when older formats didn't
+ *  carry it. */
+private data class RawReceipt(val file: String, val originalName: String?)
+
 private data class RawSession(
     val id: Long,
     val sessionStart: Long,
@@ -737,10 +766,9 @@ private data class RawSession(
     val vehicleId: Long?,
     val notes: String?,
     val tags: String?,
-    /** Receipt basenames (without the "receipts/" prefix). Older backups
-     *  with only a single `receiptFile` field are read into a one-element
-     *  list; empty when the session has no attachments. */
-    val receipts: List<String>,
+    /** Receipts attached to this session, parsed from one of three JSON
+     *  forms (see fromJson). Empty when the session has no attachments. */
+    val receipts: List<RawReceipt>,
     val latitude: Double?,
     val longitude: Double?,
     val continuesPrevious: Boolean,

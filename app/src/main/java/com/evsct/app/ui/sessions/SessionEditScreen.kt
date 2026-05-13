@@ -1330,6 +1330,7 @@ private fun ReceiptsCard(
                     if (idx > 0) Spacer(Modifier.height(12.dp))
                     ReceiptTile(
                         path = r.filePath,
+                        originalFileName = r.originalFileName,
                         onPreview = { onPreview(r.filePath) },
                         onRemove = { onRemove(r.filePath) },
                     )
@@ -1348,6 +1349,7 @@ private fun ReceiptsCard(
 @Composable
 private fun ReceiptTile(
     path: String,
+    originalFileName: String?,
     onPreview: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -1364,7 +1366,7 @@ private fun ReceiptTile(
             contentAlignment = Alignment.Center,
         ) {
             if (isPdf) {
-                PdfThumbnail()
+                PdfThumbnail(originalFileName = originalFileName)
             } else {
                 AsyncImage(
                     model = file,
@@ -1382,7 +1384,7 @@ private fun ReceiptTile(
 }
 
 @Composable
-private fun PdfThumbnail() {
+private fun PdfThumbnail(originalFileName: String? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1408,9 +1410,11 @@ private fun PdfThumbnail() {
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "PDF receipt",
+                originalFileName?.takeIf { it.isNotBlank() } ?: "PDF receipt",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
             Text(
                 "Tap to open in your PDF viewer.",

@@ -48,6 +48,7 @@ object AppModule {
                 EvsctDatabase.MIGRATION_7_8,
                 EvsctDatabase.MIGRATION_8_9,
                 EvsctDatabase.MIGRATION_9_10,
+                EvsctDatabase.MIGRATION_10_11,
             )
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()

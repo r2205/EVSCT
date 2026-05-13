@@ -81,6 +81,10 @@ data class RecentStop(
 data class UiReceipt(
     val id: Long?,
     val filePath: String,
+    /** Display name from the original picker (e.g. "expense-aug-2025.pdf").
+     *  Null when the picker didn't surface a name; UI falls back to a
+     *  generic label. */
+    val originalFileName: String? = null,
 )
 
 data class SessionEditUi(
@@ -278,7 +282,9 @@ class SessionEditViewModel @Inject constructor(
         // v9→v10 migration has already promoted any old value into the new
         // table, so we ignore the column here.
         val storedReceipts = sessionReceiptRepository.findForSession(s.id)
-        val storedUiReceipts = storedReceipts.map { UiReceipt(id = it.id, filePath = it.filePath) }
+        val storedUiReceipts = storedReceipts.map {
+            UiReceipt(id = it.id, filePath = it.filePath, originalFileName = it.originalFileName)
+        }
         originalReceiptPaths = storedReceipts.mapTo(mutableSetOf()) { it.filePath }
         touchedReceiptPaths += originalReceiptPaths
         val odoText = s.odometerKm?.let {
@@ -445,7 +451,7 @@ class SessionEditViewModel @Inject constructor(
             // Copy the new file to disk and track it. Don't delete anything
             // yet — already-attached receipts stay valid until save() commits
             // the diff, so backing out without saving leaves the DB intact.
-            val path = try {
+            val copied = try {
                 receiptImageStore.copyFromUri(uri)
             } catch (e: com.evsct.app.util.FileTooLargeException) {
                 val mb = e.limitBytes / (1024 * 1024)
@@ -458,9 +464,15 @@ class SessionEditViewModel @Inject constructor(
                 _state.update { it.copy(transientMessage = "Could not attach receipt. Try again or pick a different file.") }
                 return@launch
             }
-            touchedReceiptPaths += path
+            touchedReceiptPaths += copied.filePath
             _state.update {
-                it.copy(receipts = it.receipts + UiReceipt(id = null, filePath = path))
+                it.copy(
+                    receipts = it.receipts + UiReceipt(
+                        id = null,
+                        filePath = copied.filePath,
+                        originalFileName = copied.displayName,
+                    ),
+                )
             }
         }
     }
@@ -619,7 +631,13 @@ class SessionEditViewModel @Inject constructor(
             val existingPaths = existing.mapTo(mutableSetOf()) { it.filePath }
             val newRows = s.receipts
                 .filter { it.filePath !in existingPaths }
-                .map { SessionReceipt(sessionId = savedId, filePath = it.filePath) }
+                .map {
+                    SessionReceipt(
+                        sessionId = savedId,
+                        filePath = it.filePath,
+                        originalFileName = it.originalFileName,
+                    )
+                }
             if (newRows.isNotEmpty()) sessionReceiptRepository.insertAll(newRows)
 
             // Drop any speculative copies the user attached and then removed

@@ -12,7 +12,7 @@ import com.evsct.app.data.entity.Vehicle
 
 @Database(
     entities = [ChargingSession::class, SessionReceipt::class, Trip::class, Vehicle::class],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -206,6 +206,18 @@ abstract class EvsctDatabase : RoomDatabase() {
                     FROM `charging_sessions`
                     WHERE receiptImagePath IS NOT NULL
                     """.trimIndent()
+                )
+            }
+        }
+
+        /** Adds the picker-supplied display name onto each receipt row so the
+         *  edit screen can show "expense-aug-2025.pdf" instead of the generic
+         *  "PDF receipt" label. Receipts created before this migration stay
+         *  null and fall back to the generic label. */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `session_receipts` ADD COLUMN `originalFileName` TEXT"
                 )
             }
         }
