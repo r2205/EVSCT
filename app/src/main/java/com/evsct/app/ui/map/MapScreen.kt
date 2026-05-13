@@ -184,6 +184,7 @@ fun MapScreen(
                                 viewModel.setPolylinesEnabled(enabled)
                                 showLayersMenu = false
                             },
+                            polylinesAvailable = !state.heatmapEnabled,
                         )
                     }
                     IconButton(onClick = { showFilters = true }) {

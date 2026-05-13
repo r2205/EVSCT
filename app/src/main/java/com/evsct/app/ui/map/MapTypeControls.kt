@@ -49,6 +49,10 @@ internal fun MapTypeMenu(
     onToggleHeatmap: ((Boolean) -> Unit)? = null,
     polylinesEnabled: Boolean? = null,
     onTogglePolylines: ((Boolean) -> Unit)? = null,
+    /** When false, the Trip routes row is shown grayed-out and not clickable.
+     *  Its checkmark state is preserved so flipping heatmap off restores the
+     *  previous polyline preference without the user having to re-toggle. */
+    polylinesAvailable: Boolean = true,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         MAP_TYPE_OPTIONS.forEach { option ->
@@ -81,6 +85,7 @@ internal fun MapTypeMenu(
         if (hasPolylines) {
             DropdownMenuItem(
                 text = { Text("Trip routes") },
+                enabled = polylinesAvailable,
                 onClick = { onTogglePolylines(!polylinesEnabled!!) },
                 trailingIcon = {
                     if (polylinesEnabled == true) {
