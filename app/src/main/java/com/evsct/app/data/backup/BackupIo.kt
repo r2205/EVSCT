@@ -283,6 +283,7 @@ class BackupIo @Inject constructor(
                         latitude = raw.latitude,
                         longitude = raw.longitude,
                         continuesPrevious = raw.continuesPrevious,
+                        waitTimeMinutes = raw.waitTimeMinutes,
                         createdAt = raw.createdAt,
                         updatedAt = raw.updatedAt,
                     )
@@ -371,6 +372,7 @@ class BackupIo @Inject constructor(
         put("id", id)
         put("sessionStart", sessionStart)
         putOptLong("durationSeconds", durationSeconds)
+        putOptLong("waitTimeMinutes", waitTimeMinutes?.toLong())
         putOptDouble("odometerKm", odometerKm)
         putOptDouble("energyKwh", energyKwh)
         putOptDouble("totalCost", totalCost)
@@ -491,6 +493,7 @@ class BackupIo @Inject constructor(
                     id = s.getLong("id"),
                     sessionStart = s.getLong("sessionStart"),
                     durationSeconds = s.optLongOrNull("durationSeconds"),
+                    waitTimeMinutes = s.optLongOrNull("waitTimeMinutes")?.toInt(),
                     odometerKm = s.optDoubleOrNull("odometerKm"),
                     energyKwh = s.optDoubleOrNull("energyKwh"),
                     totalCost = s.optDoubleOrNull("totalCost"),
@@ -659,6 +662,7 @@ private data class RawSession(
     val id: Long,
     val sessionStart: Long,
     val durationSeconds: Long?,
+    val waitTimeMinutes: Int?,
     val odometerKm: Double?,
     val energyKwh: Double?,
     val totalCost: Double?,

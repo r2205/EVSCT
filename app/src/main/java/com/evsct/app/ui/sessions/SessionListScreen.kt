@@ -710,7 +710,14 @@ private fun SessionRow(
                     Spacer(Modifier.width(12.dp))
                     Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     Spacer(Modifier.width(12.dp))
-                    Text(Format.duration(session.durationSeconds), style = MaterialTheme.typography.bodySmall)
+                    val waitNote = session.waitTimeMinutes
+                        ?.takeIf { it > 0 }
+                        ?.let { " +${it}m wait" }
+                        .orEmpty()
+                    Text(
+                        Format.duration(session.durationSeconds) + waitNote,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Spacer(Modifier.width(12.dp))
                     Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     Spacer(Modifier.width(12.dp))

@@ -74,6 +74,9 @@ data class SessionEditUi(
     val isNew: Boolean = true,
     val sessionStart: Long = System.currentTimeMillis(),
     val durationText: String = "",
+    /** Optional integer-minutes-as-string for the wait-before-charging field.
+     *  Empty when unset; never affects kWh/cost computations. */
+    val waitTimeText: String = "",
     val odometerText: String = "",
     val energyText: String = "",
     val costText: String = "",
@@ -283,6 +286,7 @@ class SessionEditViewModel @Inject constructor(
                 isNew = false,
                 sessionStart = s.sessionStart,
                 durationText = durationText,
+                waitTimeText = s.waitTimeMinutes?.toString().orEmpty(),
                 isTracking = tracking,
                 odometerText = odoText,
                 useMiles = units.useMiles,
@@ -538,6 +542,7 @@ class SessionEditViewModel @Inject constructor(
                 id = if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
                 durationSeconds = durationSeconds,
+                waitTimeMinutes = s.waitTimeText.toIntOrNull()?.takeIf { it >= 0 },
                 odometerKm = odometerKm,
                 energyKwh = s.energyText.toDoubleOrNull(),
                 totalCost = s.costText.toDoubleOrNull(),

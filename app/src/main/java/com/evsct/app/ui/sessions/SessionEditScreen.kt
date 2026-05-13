@@ -250,6 +250,11 @@ fun SessionEditScreen(
                     },
                 )
             }
+            NumberField(
+                label = "Wait time (min, optional)",
+                value = state.waitTimeText,
+                onValue = { v -> viewModel.update { it.copy(waitTimeText = v) } },
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
