@@ -108,6 +108,15 @@ data class MapUi(
     /** One entry per visible trip with two-plus located visits, in the same
      *  order the screen should render them. Empty when polylines are off. */
     val tripPolylines: List<TripPolyline> = emptyList(),
+    /** All trip names keyed by id, so the session-picker sheet can label
+     *  each session with its trip without re-querying the repo. */
+    val tripNamesById: Map<Long, String> = emptyMap(),
+    /** Stop the user tapped on, or null when the picker isn't open.
+     *  Drives the bottom sheet that lists the sessions sharing that pin. */
+    val selectedStop: MapStop? = null,
+    /** Sessions belonging to [selectedStop], newest first. Empty list when
+     *  no stop is selected. */
+    val selectedStopSessions: List<ChargingSession> = emptyList(),
 )
 
 @HiltViewModel
@@ -122,6 +131,11 @@ class MapViewModel @Inject constructor(
     private val backfillStatus = MutableStateFlow(BackfillState())
     private var backfillRequested = false
     private val filters = MutableStateFlow(MapFilters())
+    private val selectedStop = MutableStateFlow<MapStop?>(null)
+
+    /** Bundle filters + the picker selection into a single stream so the
+     *  outer state combine still fits in 5 args. */
+    private val filtersAndSelection = combine(filters, selectedStop) { f, sel -> f to sel }
 
     // typed combine maxes out at 5 flows; collapse the map-display prefs
     // into a single MapPrefs stream so we still fit.
@@ -144,9 +158,10 @@ class MapViewModel @Inject constructor(
         sessionRepository.observeAll(),
         tripsAndVehicles,
         backfillStatus,
-        filters,
+        filtersAndSelection,
         mapPrefs,
-    ) { allSessions, (trips, vehicles), status, f, prefs ->
+    ) { allSessions, (trips, vehicles), status, fs, prefs ->
+        val (f, currentSelectedStop) = fs
         val (mapType, clusteringEnabled, heatmapEnabled, polylinesEnabled) = prefs
 
         // Drop a vehicle filter that points to a deleted vehicle so the
@@ -201,6 +216,16 @@ class MapViewModel @Inject constructor(
                 }
                 .toList()
 
+        // Re-resolve the selected stop against the current visible set so the
+        // picker auto-closes if a filter change makes its pin disappear.
+        val resolvedSelectedStop = currentSelectedStop?.let { sel ->
+            stops.firstOrNull { it.key == sel.key }
+        }
+        val pickerSessions = resolvedSelectedStop
+            ?.let { stop -> allSessions.filter { it.id in stop.sessionIds } }
+            ?.sortedByDescending { it.sessionStart }
+            .orEmpty()
+
         MapUi(
             stops = stops,
             totalDistinct = groups.size,
@@ -222,6 +247,9 @@ class MapViewModel @Inject constructor(
             heatmapEnabled = heatmapEnabled,
             polylinesEnabled = polylinesEnabled,
             tripPolylines = tripPolylines,
+            tripNamesById = trips.associate { it.id to it.name },
+            selectedStop = resolvedSelectedStop,
+            selectedStopSessions = pickerSessions,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapUi())
 
@@ -270,6 +298,11 @@ class MapViewModel @Inject constructor(
 
     fun setVehicleFilter(vehicleId: Long?) {
         filters.update { it.copy(vehicleFilter = vehicleId) }
+    }
+
+    /** Open or close the per-pin session picker. Pass null to dismiss. */
+    fun selectStop(stop: MapStop?) {
+        selectedStop.value = stop
     }
 
     fun setColorByTrip(enabled: Boolean) {
