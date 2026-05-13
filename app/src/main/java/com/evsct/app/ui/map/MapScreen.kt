@@ -244,20 +244,33 @@ fun MapScreen(
                         minClusterSize = 6
                     }
                     mgr.renderer = renderer
-                    // Single-session pin → jump straight to that session's
-                    // edit screen. Multi-session pin → open the picker sheet
-                    // so the user can disambiguate. Returning true on the
-                    // listener suppresses the default info window.
+                    // Click behaviour splits by stop type:
+                    //  - 1 session  → return false so the default Maps info
+                    //    window pops with brand + address + visit count (the
+                    //    familiar "tooltip"). The info-window listener below
+                    //    handles navigation on tap.
+                    //  - N sessions → consume the click and open our custom
+                    //    sheet so the user can pick which session to open.
                     mgr.setOnClusterItemClickListener { item ->
                         val ids = item.stop.sessionIds
-                        when {
-                            ids.size == 1 -> onEditSession(ids.single())
-                            ids.size > 1 -> viewModel.selectStop(item.stop)
+                        if (ids.size > 1) {
+                            viewModel.selectStop(item.stop)
+                            true
+                        } else {
+                            false
                         }
-                        true
+                    }
+                    // Tapping the info window of a single-session pin jumps
+                    // to that session's edit screen. Multi-session pins never
+                    // show the info window (consumed above), so this only
+                    // fires for the single-session path.
+                    mgr.setOnClusterItemInfoWindowClickListener { item ->
+                        val ids = item.stop.sessionIds
+                        if (ids.size == 1) onEditSession(ids.single())
                     }
                     map.setOnCameraIdleListener(mgr)
                     map.setOnMarkerClickListener(mgr)
+                    map.setOnInfoWindowClickListener(mgr)
                     clusterManager.value = mgr
                     clusterRenderer.value = renderer
                 }
