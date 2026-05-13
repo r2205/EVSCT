@@ -1047,6 +1047,18 @@ private fun FilterSheet(
                     label = { Text(dateTo?.let { "To: ${formatDateRange(null, it).removePrefix("Until ")}" } ?: "To…") },
                 )
             }
+            // Visible validation when the user accidentally inverts the range —
+            // otherwise the predicate (sessionStart >= from AND <= to) silently
+            // hides every session and the list looks empty for no obvious reason.
+            val dateRangeInvalid = dateFrom != null && dateTo != null && dateFrom!! > dateTo!!
+            if (dateRangeInvalid) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "“From” must be on or before “To”.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
 
             Spacer(Modifier.height(20.dp))
             Text("Brand", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
@@ -1114,6 +1126,7 @@ private fun FilterSheet(
                 TextButton(onClick = onDismiss) { Text("Cancel") }
                 Spacer(Modifier.width(8.dp))
                 androidx.compose.material3.Button(
+                    enabled = !dateRangeInvalid,
                     onClick = { onApply(brand, dateFrom, dateTo, tagSelection) },
                 ) {
                     Text("Apply")
