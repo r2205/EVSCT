@@ -258,6 +258,7 @@ fun SessionListScreen(
                             session = s,
                             tripName = s.tripId?.let { state.tripNamesById[it] },
                             vehicleName = vehicleName,
+                            hasReceipt = s.id in state.sessionsWithReceipts,
                             isSelected = isSelected,
                             isSelectionMode = state.isSelectionMode,
                             onClick = {
@@ -615,6 +616,7 @@ private fun SessionRow(
     session: ChargingSession,
     tripName: String?,
     vehicleName: String?,
+    hasReceipt: Boolean,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     onClick: () -> Unit,
@@ -682,7 +684,7 @@ private fun SessionRow(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (session.receiptImagePath != null) {
+                            if (hasReceipt) {
                                 Icon(
                                     imageVector = androidx.compose.material.icons.Icons.Default.Receipt,
                                     contentDescription = "Has receipt",

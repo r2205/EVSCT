@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.evsct.app.data.db.ChargingSessionDao
 import com.evsct.app.data.db.EvsctDatabase
+import com.evsct.app.data.db.SessionReceiptDao
 import com.evsct.app.data.db.TripDao
 import com.evsct.app.data.db.VehicleDao
 import dagger.Module
@@ -46,12 +47,16 @@ object AppModule {
                 EvsctDatabase.MIGRATION_6_7,
                 EvsctDatabase.MIGRATION_7_8,
                 EvsctDatabase.MIGRATION_8_9,
+                EvsctDatabase.MIGRATION_9_10,
             )
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 
     @Provides
     fun provideSessionDao(db: EvsctDatabase): ChargingSessionDao = db.sessionDao()
+
+    @Provides
+    fun provideSessionReceiptDao(db: EvsctDatabase): SessionReceiptDao = db.sessionReceiptDao()
 
     @Provides
     fun provideTripDao(db: EvsctDatabase): TripDao = db.tripDao()

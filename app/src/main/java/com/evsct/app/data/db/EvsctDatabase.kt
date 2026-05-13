@@ -6,17 +6,19 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.evsct.app.data.entity.ChargingSession
+import com.evsct.app.data.entity.SessionReceipt
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 
 @Database(
-    entities = [ChargingSession::class, Trip::class, Vehicle::class],
-    version = 9,
+    entities = [ChargingSession::class, SessionReceipt::class, Trip::class, Vehicle::class],
+    version = 10,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
 abstract class EvsctDatabase : RoomDatabase() {
     abstract fun sessionDao(): ChargingSessionDao
+    abstract fun sessionReceiptDao(): SessionReceiptDao
     abstract fun tripDao(): TripDao
     abstract fun vehicleDao(): VehicleDao
 
@@ -164,6 +166,46 @@ abstract class EvsctDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `charging_sessions` ADD COLUMN `tags` TEXT"
+                )
+            }
+        }
+
+        /**
+         * Moves single receipts into a proper many-to-one [session_receipts]
+         * table so a session can carry several files. The legacy
+         * `charging_sessions.receiptImagePath` column is left in place to
+         * avoid a heavy table rebuild — going forward the app writes null
+         * to it and reads from the new table exclusively.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `session_receipts` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `sessionId` INTEGER NOT NULL,
+                        `filePath` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`sessionId`) REFERENCES `charging_sessions`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_session_receipts_sessionId` " +
+                        "ON `session_receipts` (`sessionId`)"
+                )
+                // Promote every existing single receipt into the new table.
+                // The session's createdAt is the best stand-in for when the
+                // receipt was attached — we don't track per-receipt times in
+                // the old schema.
+                db.execSQL(
+                    """
+                    INSERT INTO `session_receipts` (sessionId, filePath, createdAt)
+                    SELECT id, receiptImagePath, createdAt
+                    FROM `charging_sessions`
+                    WHERE receiptImagePath IS NOT NULL
+                    """.trimIndent()
                 )
             }
         }
