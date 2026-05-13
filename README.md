@@ -166,8 +166,9 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
   notifications. The reminder fires even when the app is closed (a
   lightweight background check wakes the OS at the right time;
   battery cost is essentially zero).
-- **Backup (CSV)** — Export every session to a flat CSV for Excel /
-  Google Sheets analysis.
+- **Backup (CSV)** — **Save** every session to a flat CSV for Excel /
+  Google Sheets analysis, or **Share** the CSV out via Drive / email /
+  Messages / etc.
 - **Import (CSV)** — Round-trips with the CSV export, with a "replace
   existing" toggle.
 - **One-time XLSX import** — for the legacy `DC Fast Charging.xlsx`
