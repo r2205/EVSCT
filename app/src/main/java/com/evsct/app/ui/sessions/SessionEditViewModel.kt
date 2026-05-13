@@ -10,6 +10,8 @@ import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.UserUnits
+import com.evsct.app.data.entity.SessionReceipt
+import com.evsct.app.data.repository.SessionReceiptRepository
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
@@ -70,6 +72,21 @@ data class RecentStop(
     }
 }
 
+/**
+ * One row in the edit screen's Receipts list. [id] is null for receipts the
+ * user just attached (we insert on save); non-null for receipts that are
+ * already persisted (we hand the id back on save so we know what to delete
+ * if the row was removed).
+ */
+data class UiReceipt(
+    val id: Long?,
+    val filePath: String,
+    /** Display name from the original picker (e.g. "expense-aug-2025.pdf").
+     *  Null when the picker didn't surface a name; UI falls back to a
+     *  generic label. */
+    val originalFileName: String? = null,
+)
+
 data class SessionEditUi(
     val isLoading: Boolean = true,
     val isNew: Boolean = true,
@@ -105,7 +122,11 @@ data class SessionEditUi(
     /** Free-form tags for this session, parsed from the comma-joined storage
      *  string. The screen renders these as removable chips. */
     val tags: List<String> = emptyList(),
-    val receiptImagePath: String? = null,
+    /** Receipts currently attached to this session — already-saved DB rows
+     *  plus speculative copies the user just attached. `id == null` means
+     *  "not yet in the DB"; save() inserts those rows. The screen renders
+     *  this list as a vertical stack of thumbnail / PDF tiles. */
+    val receipts: List<UiReceipt> = emptyList(),
     val latitude: Double? = null,
     val longitude: Double? = null,
     val brandSuggestions: List<String> = emptyList(),
@@ -128,6 +149,7 @@ data class SessionEditUi(
 class SessionEditViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val sessionRepository: SessionRepository,
+    private val sessionReceiptRepository: SessionReceiptRepository,
     private val tripRepository: TripRepository,
     private val vehicleRepository: VehicleRepository,
     private val locationAutofill: LocationAutofill,
@@ -149,13 +171,12 @@ class SessionEditViewModel @Inject constructor(
     private val _state = MutableStateFlow(SessionEditUi())
     val state: StateFlow<SessionEditUi> = _state.asStateFlow()
 
-    /** Path the database currently references at load time. Stays alive on
-     *  disk until either save() commits a different value or the user trashes
-     *  the session. */
-    private var originalReceiptPath: String? = null
+    /** Receipts the DB referenced at load time. Stays alive on disk until
+     *  save() commits a different set or the user trashes the session. */
+    private var originalReceiptPaths: Set<String> = emptySet()
 
     /** Every receipt file we've copied to disk during this edit session.
-     *  Includes the original (if any) so cleanup logic can iterate one set. */
+     *  Includes the originals (if any) so cleanup logic can iterate one set. */
     private val touchedReceiptPaths = mutableSetOf<String>()
 
     /** Becomes true once save() or deleteAndExit() has fully reconciled the
@@ -254,9 +275,18 @@ class SessionEditViewModel @Inject constructor(
         )
     }
 
-    private fun loadFrom(s: ChargingSession, units: UserUnits) {
-        originalReceiptPath = s.receiptImagePath
-        s.receiptImagePath?.let { touchedReceiptPaths += it }
+    private suspend fun loadFrom(s: ChargingSession, units: UserUnits) {
+        // Receipts now live in their own table — pull the list and seed both
+        // the form state and the deferred-delete tracking set. The legacy
+        // receiptImagePath on the entity is left null going forward; the
+        // v9→v10 migration has already promoted any old value into the new
+        // table, so we ignore the column here.
+        val storedReceipts = sessionReceiptRepository.findForSession(s.id)
+        val storedUiReceipts = storedReceipts.map {
+            UiReceipt(id = it.id, filePath = it.filePath, originalFileName = it.originalFileName)
+        }
+        originalReceiptPaths = storedReceipts.mapTo(mutableSetOf()) { it.filePath }
+        touchedReceiptPaths += originalReceiptPaths
         val odoText = s.odometerKm?.let {
             val display = Units.kmToDisplay(it, units.useMiles)
             // Trim trailing .0 for whole numbers to match the rest of the app's
@@ -315,7 +345,7 @@ class SessionEditViewModel @Inject constructor(
                 vehicleId = s.vehicleId,
                 notes = s.notes.orEmpty(),
                 tags = Tags.parse(s.tags),
-                receiptImagePath = s.receiptImagePath,
+                receipts = storedUiReceipts,
                 latitude = s.latitude,
                 longitude = s.longitude,
             ))
@@ -416,12 +446,12 @@ class SessionEditViewModel @Inject constructor(
         return out
     }
 
-    fun pickReceipt(uri: Uri) {
+    fun addReceipt(uri: Uri) {
         viewModelScope.launch {
             // Copy the new file to disk and track it. Don't delete anything
-            // yet — the previous path stays valid until save() commits, so
-            // backing out without saving leaves the database row intact.
-            val path = try {
+            // yet — already-attached receipts stay valid until save() commits
+            // the diff, so backing out without saving leaves the DB intact.
+            val copied = try {
                 receiptImageStore.copyFromUri(uri)
             } catch (e: com.evsct.app.util.FileTooLargeException) {
                 val mb = e.limitBytes / (1024 * 1024)
@@ -434,15 +464,48 @@ class SessionEditViewModel @Inject constructor(
                 _state.update { it.copy(transientMessage = "Could not attach receipt. Try again or pick a different file.") }
                 return@launch
             }
-            touchedReceiptPaths += path
-            _state.update { it.copy(receiptImagePath = path) }
+            touchedReceiptPaths += copied.filePath
+            _state.update {
+                it.copy(
+                    receipts = it.receipts + UiReceipt(
+                        id = null,
+                        filePath = copied.filePath,
+                        originalFileName = copied.displayName,
+                    ),
+                )
+            }
         }
     }
 
-    fun clearReceipt() {
-        // Pure form-state change — no disk I/O. The actual file deletion
-        // happens after save() persists the null path.
-        _state.update { it.copy(receiptImagePath = null) }
+    /** Remove one receipt from the in-memory list. The file stays on disk
+     *  until save() commits the diff — backing out without saving keeps
+     *  the original receipts intact (touchedReceiptPaths handles cleanup
+     *  of newly-attached files that the user later removed before saving). */
+    fun removeReceipt(path: String) {
+        _state.update { it.copy(receipts = it.receipts.filterNot { r -> r.filePath == path }) }
+    }
+
+    /** Update the user-facing label on an existing receipt. Lets the user
+     *  backfill a name onto pre-v11 receipts that were attached before we
+     *  started capturing the picker's display name. Persisted in save().
+     *  For PDFs, auto-appends ".pdf" when the user-typed name doesn't
+     *  already end in it (case-insensitive) — matches what the picker
+     *  produces and keeps the tile consistent. */
+    fun renameReceipt(path: String, newName: String?) {
+        val trimmed = newName?.trim().orEmpty()
+        val cleaned = when {
+            trimmed.isEmpty() -> null
+            com.evsct.app.util.ReceiptImageStore.isPdf(path) &&
+                !trimmed.endsWith(".pdf", ignoreCase = true) -> "$trimmed.pdf"
+            else -> trimmed
+        }
+        _state.update { current ->
+            current.copy(
+                receipts = current.receipts.map {
+                    if (it.filePath == path) it.copy(originalFileName = cleaned) else it
+                },
+            )
+        }
     }
 
     fun applyStop(stop: RecentStop) = _state.update { current ->
@@ -570,14 +633,50 @@ class SessionEditViewModel @Inject constructor(
                 vehicleId = s.vehicleId,
                 notes = s.notes.takeIf { it.isNotBlank() },
                 tags = Tags.serialize(s.tags),
-                receiptImagePath = s.receiptImagePath,
+                // Always null: receipts live in their own table now. The
+                // column remains in the schema only to avoid a table rebuild.
+                receiptImagePath = null,
                 latitude = saveLat,
                 longitude = saveLng,
             )
             val savedId = sessionRepository.upsert(session)
-            // Now that the database row is committed, drop any speculative
-            // copies plus the original (if it was replaced or cleared).
-            reconcileReceiptFiles(finalPath = session.receiptImagePath)
+
+            // Diff the in-memory receipts against the DB and apply the delta.
+            // Newly added rows (id == null) get inserted; rows that the user
+            // removed get deleted. The session_receipts.sessionId FK uses
+            // the freshly-upserted savedId, which is the same as the existing
+            // id for updates and the new autoincrement id for inserts.
+            val desiredPaths = s.receipts.mapTo(mutableSetOf()) { it.filePath }
+            val existing = sessionReceiptRepository.findForSession(savedId)
+            val existingById = existing.associateBy { it.id }
+            existing
+                .filter { it.filePath !in desiredPaths }
+                .forEach { sessionReceiptRepository.delete(it) }
+            val existingPaths = existing.mapTo(mutableSetOf()) { it.filePath }
+            val newRows = s.receipts
+                .filter { it.filePath !in existingPaths }
+                .map {
+                    SessionReceipt(
+                        sessionId = savedId,
+                        filePath = it.filePath,
+                        originalFileName = it.originalFileName,
+                    )
+                }
+            if (newRows.isNotEmpty()) sessionReceiptRepository.insertAll(newRows)
+            // Apply renames on already-persisted receipts (matched by id).
+            // We skip when the name is unchanged so we don't bump rows that
+            // didn't move.
+            s.receipts.forEach { r ->
+                val rid = r.id ?: return@forEach
+                val current = existingById[rid] ?: return@forEach
+                if (current.originalFileName != r.originalFileName) {
+                    sessionReceiptRepository.updateName(rid, r.originalFileName)
+                }
+            }
+
+            // Drop any speculative copies the user attached and then removed
+            // before saving, plus any original files that were removed.
+            reconcileReceiptFiles(finalPaths = desiredPaths)
             // The user explicitly hit Save, so they're done with this
             // in-progress entry — drop the persistent notification (and
             // its ticking stopwatch). If they need to keep editing, the
@@ -607,12 +706,13 @@ class SessionEditViewModel @Inject constructor(
         }
     }
 
-    /** Delete every receipt file we touched during this edit session except
-     *  the one [finalPath] now points at. Called from save() (after upsert
-     *  commits) and deleteAndExit() (which clears the row entirely). */
-    private suspend fun reconcileReceiptFiles(finalPath: String?) {
+    /** Delete every receipt file we touched during this edit session whose
+     *  path isn't in [finalPaths]. Called from save() (after upsert commits
+     *  and the receipts table is reconciled) and deleteAndExit() (which
+     *  passes an empty set because the row is going away). */
+    private suspend fun reconcileReceiptFiles(finalPaths: Set<String>) {
         receiptCleanupHandled = true
-        val toDelete = touchedReceiptPaths.filter { it != finalPath }
+        val toDelete = touchedReceiptPaths - finalPaths
         toDelete.forEach { receiptImageStore.delete(it) }
     }
 
@@ -716,9 +816,10 @@ class SessionEditViewModel @Inject constructor(
                 // for it would tap into a deleted row, so always clear it.
                 inProgressChargeNotifier.cancelIfFor(sessionId)
             }
-            // No row left, so the final path is null — drop every file we
-            // touched (original + speculative copies).
-            reconcileReceiptFiles(finalPath = null)
+            // No row left, so drop every file we touched (originals plus
+            // speculative copies). FK CASCADE has already removed the
+            // session_receipts rows for the deleted session.
+            reconcileReceiptFiles(finalPaths = emptySet())
             onDeleted()
         }
     }
@@ -727,12 +828,12 @@ class SessionEditViewModel @Inject constructor(
         super.onCleared()
         // If save()/deleteAndExit() already reconciled, nothing to do.
         if (receiptCleanupHandled) return
-        // The user backed out without saving. The database row (if any) still
-        // references originalReceiptPath, so leave that file alone — but any
-        // speculative copies we wrote during this edit are unreferenced and
-        // safe to drop. Use the app-scoped scope since viewModelScope is
-        // already cancelled at this point.
-        val orphans = touchedReceiptPaths.filter { it != originalReceiptPath }
+        // The user backed out without saving. The database rows still
+        // reference originalReceiptPaths, so leave those files alone —
+        // but any speculative copies we wrote during this edit are
+        // unreferenced and safe to drop. Use the app-scoped scope since
+        // viewModelScope is already cancelled at this point.
+        val orphans = touchedReceiptPaths - originalReceiptPaths
         if (orphans.isEmpty()) return
         appScope.launch {
             orphans.forEach { receiptImageStore.delete(it) }

@@ -8,6 +8,7 @@ import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
+import com.evsct.app.data.entity.SessionReceipt
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.util.BackupReminderScheduler
@@ -143,12 +144,15 @@ class BackupIo @Inject constructor(
         val sessionDao = database.sessionDao()
         val tripDao = database.tripDao()
         val vehicleDao = database.vehicleDao()
+        val receiptDao = database.sessionReceiptDao()
 
         val vehicles = vehicleDao.observeAll().first()
         val trips = tripDao.observeAll().first()
         val sessions = sessionDao.observeAll().first()
+        val receipts = receiptDao.findAll()
+        val receiptsBySession = receipts.groupBy { it.sessionId }
 
-        val json = buildBackupJson(vehicles, trips, sessions)
+        val json = buildBackupJson(vehicles, trips, sessions, receiptsBySession)
         ZipOutputStream(out).use { zip ->
             zip.putNextEntry(ZipEntry(BACKUP_JSON))
             zip.write(json.toString(2).toByteArray(Charsets.UTF_8))
@@ -164,9 +168,9 @@ class BackupIo @Inject constructor(
                 zip.closeEntry()
             }
 
-            sessions.forEach { s ->
-                val rel = s.receiptImagePath ?: return@forEach
-                val file = File(context.filesDir, rel)
+            // Write every attached receipt file, not just one per session.
+            receipts.forEach { r ->
+                val file = File(context.filesDir, r.filePath)
                 if (!file.exists()) return@forEach
                 val nameInZip = RECEIPT_DIR_IN_ZIP + file.name
                 zip.putNextEntry(ZipEntry(nameInZip))
@@ -198,10 +202,14 @@ class BackupIo @Inject constructor(
                 .mapNotNull { v -> v.imageFile?.let(::sanitizedBasename) }
                 .associateWith { name -> "$IMAGE_DIR_IN_FILES/$name" }
             val plannedReceipts: Map<String, String> = payload.sessions
-                .mapNotNull { s -> s.receiptFile?.let(::sanitizedBasename) }
+                .asSequence()
+                .flatMap { it.receipts.asSequence() }
+                .mapNotNull { sanitizedBasename(it.file) }
+                .toSet()
                 .associateWith { name -> "$RECEIPT_DIR_IN_FILES/$name" }
 
             val sessionDao = database.sessionDao()
+            val sessionReceiptDao = database.sessionReceiptDao()
             val tripDao = database.tripDao()
             val vehicleDao = database.vehicleDao()
 
@@ -280,7 +288,8 @@ class BackupIo @Inject constructor(
                         vehicleId = raw.vehicleId?.let(vehicleIdMap::get),
                         notes = raw.notes,
                         tags = raw.tags,
-                        receiptImagePath = raw.receiptFile?.let(::sanitizedBasename)?.let { plannedReceipts[it] },
+                        // Legacy column — receipts now live in session_receipts.
+                        receiptImagePath = null,
                         latitude = raw.latitude,
                         longitude = raw.longitude,
                         continuesPrevious = raw.continuesPrevious,
@@ -289,7 +298,24 @@ class BackupIo @Inject constructor(
                         updatedAt = raw.updatedAt,
                     )
                 }
-                sessionDao.insertAll(sessionEntities)
+                // insertAll returns the new auto-generated ids in input
+                // order — zip back against the raw list so we can attach
+                // each session's receipts to its fresh id.
+                val newSessionIds = sessionDao.insertAll(sessionEntities)
+                val receiptRows = payload.sessions
+                    .zip(newSessionIds)
+                    .flatMap { (raw, newSessionId) ->
+                        raw.receipts.mapNotNull { entry ->
+                            val basename = sanitizedBasename(entry.file) ?: return@mapNotNull null
+                            val resolvedPath = plannedReceipts[basename] ?: return@mapNotNull null
+                            SessionReceipt(
+                                sessionId = newSessionId,
+                                filePath = resolvedPath,
+                                originalFileName = entry.originalName,
+                            )
+                        }
+                    }
+                if (receiptRows.isNotEmpty()) sessionReceiptDao.insertAll(receiptRows)
             }
 
             // Transaction committed — now (and only now) mutate filesDir.
@@ -330,6 +356,7 @@ class BackupIo @Inject constructor(
         vehicles: List<Vehicle>,
         trips: List<Trip>,
         sessions: List<ChargingSession>,
+        receiptsBySession: Map<Long, List<SessionReceipt>>,
     ): JSONObject = JSONObject().apply {
         put("schemaVersion", SCHEMA_VERSION)
         put("exportedAt", System.currentTimeMillis())
@@ -337,7 +364,14 @@ class BackupIo @Inject constructor(
 
         put("vehicles", JSONArray().also { arr -> vehicles.forEach { arr.put(it.toJson()) } })
         put("trips", JSONArray().also { arr -> trips.forEach { arr.put(it.toJson()) } })
-        put("sessions", JSONArray().also { arr -> sessions.forEach { arr.put(it.toJson()) } })
+        put(
+            "sessions",
+            JSONArray().also { arr ->
+                sessions.forEach { s ->
+                    arr.put(s.toJson(receiptsBySession[s.id].orEmpty()))
+                }
+            },
+        )
     }
 
     private fun Vehicle.toJson(): JSONObject = JSONObject().apply {
@@ -369,7 +403,7 @@ class BackupIo @Inject constructor(
         put("createdAt", createdAt)
     }
 
-    private fun ChargingSession.toJson(): JSONObject = JSONObject().apply {
+    private fun ChargingSession.toJson(receipts: List<SessionReceipt>): JSONObject = JSONObject().apply {
         put("id", id)
         put("sessionStart", sessionStart)
         putOptLong("durationSeconds", durationSeconds)
@@ -395,8 +429,29 @@ class BackupIo @Inject constructor(
         putOptLong("vehicleId", vehicleId)
         putOptString("notes", notes)
         putOptString("tags", tags)
-        // Strip the "receipts/" prefix; the directory is implicit in the zip.
-        putOptString("receiptFile", receiptImagePath?.removePrefix("$RECEIPT_DIR_IN_FILES/"))
+        // Canonical form: an object per receipt with { file, originalName }.
+        // file is the basename stripped of the implicit "receipts/" prefix.
+        // originalName is whatever the SAF picker reported (may be absent).
+        put(
+            "receipts",
+            JSONArray().also { arr ->
+                receipts.forEach { r ->
+                    arr.put(
+                        JSONObject().apply {
+                            put("file", r.filePath.removePrefix("$RECEIPT_DIR_IN_FILES/"))
+                            putOptString("originalName", r.originalFileName)
+                        },
+                    )
+                }
+            },
+        )
+        // Legacy single-receipt field, kept so older builds restoring a
+        // newer backup can still pick up at least one file per session.
+        // The new reader path below prefers the [receipts] array.
+        putOptString(
+            "receiptFile",
+            receipts.firstOrNull()?.filePath?.removePrefix("$RECEIPT_DIR_IN_FILES/"),
+        )
         putOptDouble("latitude", latitude)
         putOptDouble("longitude", longitude)
         put("continuesPrevious", continuesPrevious)
@@ -521,7 +576,26 @@ class BackupIo @Inject constructor(
                     vehicleId = s.optLongOrNull("vehicleId"),
                     notes = s.optStringOrNull("notes"),
                     tags = s.optStringOrNull("tags"),
-                    receiptFile = s.optStringOrNull("receiptFile"),
+                    // Receipt parsing handles three historical forms:
+                    //  1) JSON array of { file, originalName? } objects — current.
+                    //  2) JSON array of plain basename strings — intermediate.
+                    //  3) Legacy "receiptFile" field for v5 backups.
+                    receipts = s.optJSONArray("receipts")?.let { arr ->
+                        (0 until arr.length()).mapNotNull { i ->
+                            val obj = arr.optJSONObject(i)
+                            if (obj != null) {
+                                val file = obj.optString("file").takeIf { it.isNotBlank() }
+                                    ?: return@mapNotNull null
+                                RawReceipt(file = file, originalName = obj.optStringOrNull("originalName"))
+                            } else {
+                                arr.optString(i).takeIf { it.isNotBlank() }
+                                    ?.let { RawReceipt(file = it, originalName = null) }
+                            }
+                        }
+                    } ?: listOfNotNull(
+                        s.optStringOrNull("receiptFile")
+                            ?.let { RawReceipt(file = it, originalName = null) },
+                    ),
                     latitude = s.optDoubleOrNull("latitude"),
                     longitude = s.optDoubleOrNull("longitude"),
                     continuesPrevious = s.optBoolean("continuesPrevious", false),
@@ -661,6 +735,11 @@ private data class RawTrip(
     val createdAt: Long,
 )
 
+/** Receipt entry parsed from backup JSON. file = basename only (no
+ *  "receipts/" prefix); originalName is null when older formats didn't
+ *  carry it. */
+private data class RawReceipt(val file: String, val originalName: String?)
+
 private data class RawSession(
     val id: Long,
     val sessionStart: Long,
@@ -687,7 +766,9 @@ private data class RawSession(
     val vehicleId: Long?,
     val notes: String?,
     val tags: String?,
-    val receiptFile: String?,
+    /** Receipts attached to this session, parsed from one of three JSON
+     *  forms (see fromJson). Empty when the session has no attachments. */
+    val receipts: List<RawReceipt>,
     val latitude: Double?,
     val longitude: Double?,
     val continuesPrevious: Boolean,

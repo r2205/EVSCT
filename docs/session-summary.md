@@ -66,6 +66,18 @@ context is in the repo even if the conversation is summarized later.
   user labels stored comma-joined. `util/Tags.kt` handles parsing,
   sanitizing (commas in input are stripped so they can't break round-
   trip), and case-insensitive dedupe.
+- **v9 → v10**: promoted receipts from a single column on
+  `charging_sessions` into a proper many-to-one `session_receipts`
+  table (with `ON DELETE CASCADE`). MIGRATION_9_10 creates the table
+  and copies every non-null `receiptImagePath` over as a row. The
+  legacy column stays in the schema (kept on the entity, written null
+  on every save going forward) — avoids a heavy table rebuild for
+  what is now dead data.
+- **v10 → v11**: added `originalFileName` (TEXT, nullable) on
+  `session_receipts`. Captures the SAF picker's display name at
+  attach time so PDF tiles can show e.g. "expense-aug-2025.pdf"
+  instead of a generic label. Pre-v11 rows stay null; the user can
+  backfill via the in-app rename action.
 
 `fallbackToDestructiveMigration(dropAllTables = true)` is enabled as a
 last-resort safety net (the explicit `dropAllTables` arg replaces the
@@ -139,27 +151,47 @@ deprecated zero-arg overload).
   user type "work, winter, fast" without reaching for Done. Dedupes
   case-insensitively via `Tags.add` so "Work" and "work" don't end
   up as two chips.
-- **Receipt attachment**: photo or PDF, picked from a small "Photo /
-  PDF" bottom-sheet chooser. Photos use the Photo Picker; PDFs use
-  `OpenDocument` filtered to `application/pdf`. Storage preserves the
-  source extension (`.jpg` / `.pdf`). 25 MB cap enforced via a bounded
-  copy; oversize attachments raise `FileTooLargeException` and surface
-  a snackbar instead of silently truncating.
-  - Photos render inline at 180dp with **pinch-to-zoom** fullscreen
-    (1×–6×, pan when zoomed, double-tap toggle 1×↔2.5×, single-tap
-    dismiss only at 1×). Shared with the vehicle profile photo viewer
-    via `ImageZoomDialog`.
-  - PDFs render as a "PDF receipt — tap to open" tile and hand off to
-    the system PDF viewer via `ACTION_VIEW` through a `FileProvider`
-    pointed at `filesDir/receipts/`.
-  - Remove button now opens a confirmation dialog (avoids accidental
-    delete).
-- **File-deletion deferral**: replacing or removing the receipt
-  doesn't delete the prior file until `save()` actually commits.
-  `originalReceiptPath` and `touchedReceiptPaths` track what's safe to
-  clean up; `onCleared()` (via an `@AppScope` CoroutineScope) handles
-  the back-out case so a user who edits, swaps the photo, then taps
-  Back doesn't end up with their original photo deleted.
+- **Receipt attachments** (multiple per session as of DB v10): photos
+  and PDFs in any mix, picked from a small "Photo / PDF" bottom-sheet
+  chooser. Photos use the Photo Picker; PDFs use `OpenDocument`
+  filtered to `application/pdf`. Files are stored as
+  `filesDir/receipts/<uuid>.{jpg,pdf}`; a separate `session_receipts`
+  table links them to their parent session with `ON DELETE CASCADE`.
+  25 MB cap enforced per file via a bounded copy; oversize attachments
+  raise `FileTooLargeException` and surface a snackbar.
+  - **Tile per receipt** stacked vertically — each renders the photo
+    inline at 180dp (with pinch-to-zoom fullscreen via
+    `ImageZoomDialog`) or the PDF as an icon tile that opens
+    externally via `ACTION_VIEW` through a `FileProvider` pointed at
+    `filesDir/receipts/`. Below the stack sits an "Add another"
+    button that re-opens the chooser sheet.
+  - **PDF filename display** — at attach time we capture the SAF
+    picker's `OpenableColumns.DISPLAY_NAME` and store it as
+    `SessionReceipt.originalFileName`. The PDF tile labels itself
+    with that name (truncated to 2 lines with ellipsis) instead of
+    a generic "PDF receipt". The on-disk file is still UUID-named —
+    `originalFileName` is purely a UI label.
+  - **Rename action** on each PDF tile (sibling to Remove) — opens a
+    small `AlertDialog` with a text field so the user can backfill
+    or correct the label. Auto-appends `.pdf` (case-insensitive
+    check) when the typed value doesn't already end in it. Clearing
+    the field reverts the tile to the generic "PDF receipt" caption.
+    Photos hide the rename action since they don't display a filename.
+  - **Per-tile Remove** drops a single attachment immediately from the
+    in-memory list; no confirmation dialog because the on-disk file
+    isn't actually deleted until save() commits, so a wrong tap is
+    reversible by tapping Back.
+- **File-deletion deferral** (generalised from one path to a set):
+  `originalReceiptPaths: Set<String>` captures everything the DB
+  pointed at when the screen loaded; `touchedReceiptPaths` accumulates
+  every path touched during the edit (originals + speculative copies
+  + later-removed-from-the-list). save() diffs the in-memory list
+  against the DB — inserts new rows, deletes removed rows, applies
+  per-id `updateName` for renames where the label changed without
+  bumping unrelated metadata. Then `reconcileReceiptFiles(finalPaths)`
+  deletes every touched path that didn't survive into the saved set.
+  `onCleared()` handles the back-out case (the user just leaves) via
+  the `@AppScope` scope since `viewModelScope` is already cancelled.
 - **Validation hints**: amber "heads-up" card at the **top** of the
   form when:
   - Odometer < previous session for this vehicle
@@ -178,10 +210,13 @@ deprecated zero-arg overload).
 
 - Cards with a 6dp colored leading bar by charging type (amber /
   blue / purple), brand, city, cost in primary green, eff. $/kWh
-  pill, vehicle pill (only on All tab), trip pill, receipt icon if
-  attached. The duration line appends `+Xm wait` when the session
-  carries a wait time; a wrapping FlowRow of `#tag` pills sits below
-  the meta line when tags are set.
+  pill, vehicle pill (only on All tab), trip pill, and a paperclip
+  icon when the session carries one or more receipts (read from
+  `sessionsWithReceipts: Set<Long>` in the UI state, derived from
+  `SessionReceiptDao.observeCountsBySession()`). The duration line
+  appends `+Xm wait` when the session carries a wait time; a
+  wrapping FlowRow of `#tag` pills sits below the meta line when
+  tags are set.
 - **Vehicle tabs** — `ScrollableTabRow` with All + each vehicle.
   Hidden when ≤ 1 vehicle.
 - **Search** (toggle via top-bar magnifying glass): matches brand,
@@ -303,6 +338,24 @@ deprecated zero-arg overload).
   - Custom `ChargingStopClusterRenderer` extending
     `DefaultClusterRenderer` to apply per-pin `BitmapDescriptor`s
     (trip color or "shared" gray bitmap).
+- **Tap a pin to drill into its sessions**:
+  - 1-session pin → tap shows the Maps default info window (brand,
+    address, "1 visit") just like before; tapping the info window
+    navigates to that session's edit screen via the screen's new
+    `onEditSession: (Long) -> Unit` callback (wired by `EvsctNavGraph`
+    to `Routes.sessionEdit(id)`).
+  - N-session pin → tap consumes the click (returns `true` from
+    `setOnClusterItemClickListener`, suppressing the info window)
+    and opens a custom `ModalBottomSheet`. The sheet lists each
+    session at the stop with date, kWh, a Trip / Untripped badge,
+    and the vehicle name (when ≥2 vehicles). Tap a row to jump to
+    its edit screen.
+  - The selected stop lives on a `MutableStateFlow<MapStop?>` in
+    `MapViewModel` bundled with `filters` into `filtersAndSelection`
+    so the outer 5-arg combine still fits. On every emission the VM
+    re-resolves the selected stop against the currently-visible
+    stops list, so the sheet auto-closes when a filter change hides
+    its pin.
 - **First-open backfill**: when the screen opens, every distinct stop
   that has only a textual address is reverse-geocoded and the
   coordinates written back to all sessions sharing that address.
@@ -497,11 +550,21 @@ of years where they have data) and recomputes the recap on each pick.
   - v4 added per-trip pinColor
   - v5 added per-session `continuesPrevious`
   - **Post-v5 additive fields** (no version bump): `waitTimeMinutes`
-    and `tags` are read/written through the same JSON keys regardless
-    of version. v5 readers ignore unknown keys, and a future version
-    bump can promote them to a "v6 added wait time + tags" entry
-    without code changes. Pending decision; tracked in Outstanding
-    ideas.
+    and `tags` ride alongside. `receipts` evolved through three forms
+    (handled by a single reader): an array of `{ file, originalName }`
+    objects (current), an array of plain basename strings
+    (intermediate), and the v5 legacy `receiptFile` single-receipt
+    field — each older form is read into the new in-memory shape with
+    `originalName = null` so old backups still restore cleanly. The
+    writer always emits the current object form, plus a populated
+    `receiptFile` field (set to the first receipt's basename) so an
+    older build restoring a newer backup still recovers one
+    attachment per session. v5 readers ignore unknown keys, and a
+    future version bump can collapse all this into a "v6 added wait
+    time + tags + multi-receipt + receipt names" entry without code
+    changes. Pending decision; tracked in Outstanding ideas.
+  - All receipt files in the zip are still flat `receipts/<uuid>.ext`;
+    the new shape just lets one session reference several of them.
   Restore wipes the DB and reinstalls inside one Room transaction;
   foreign keys remapped to fresh primary keys via in-flight ID maps so
   backups from another phone work cleanly. Red "Erase and restore"

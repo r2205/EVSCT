@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -56,6 +59,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.data.entity.ChargingSession
+import com.evsct.app.util.Format
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -83,6 +88,7 @@ import com.google.maps.android.heatmaps.WeightedLatLng
 @Composable
 fun MapScreen(
     onBack: () -> Unit,
+    onEditSession: (Long) -> Unit,
     viewModel: MapViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -238,8 +244,33 @@ fun MapScreen(
                         minClusterSize = 6
                     }
                     mgr.renderer = renderer
+                    // Click behaviour splits by stop type:
+                    //  - 1 session  → return false so the default Maps info
+                    //    window pops with brand + address + visit count (the
+                    //    familiar "tooltip"). The info-window listener below
+                    //    handles navigation on tap.
+                    //  - N sessions → consume the click and open our custom
+                    //    sheet so the user can pick which session to open.
+                    mgr.setOnClusterItemClickListener { item ->
+                        val ids = item.stop.sessionIds
+                        if (ids.size > 1) {
+                            viewModel.selectStop(item.stop)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    // Tapping the info window of a single-session pin jumps
+                    // to that session's edit screen. Multi-session pins never
+                    // show the info window (consumed above), so this only
+                    // fires for the single-session path.
+                    mgr.setOnClusterItemInfoWindowClickListener { item ->
+                        val ids = item.stop.sessionIds
+                        if (ids.size == 1) onEditSession(ids.single())
+                    }
                     map.setOnCameraIdleListener(mgr)
                     map.setOnMarkerClickListener(mgr)
+                    map.setOnInfoWindowClickListener(mgr)
                     clusterManager.value = mgr
                     clusterRenderer.value = renderer
                 }
@@ -335,6 +366,21 @@ fun MapScreen(
             onSetClusteringEnabled = viewModel::setClusteringEnabled,
             onResetAll = viewModel::resetFilters,
             onDismiss = { showFilters = false },
+        )
+    }
+
+    state.selectedStop?.let { stop ->
+        StopSessionsSheet(
+            stop = stop,
+            sessions = state.selectedStopSessions,
+            tripNamesById = state.tripNamesById,
+            vehicleNamesById = state.vehicles.associate { it.id to it.name },
+            showVehicle = state.vehicles.size >= 2,
+            onPick = { id ->
+                viewModel.selectStop(null)
+                onEditSession(id)
+            },
+            onDismiss = { viewModel.selectStop(null) },
         )
     }
 }
@@ -662,6 +708,145 @@ private fun FilterSheet(
                 }
             }
         }
+    }
+}
+
+/**
+ * Bottom sheet that lists every session sharing the tapped pin. Used to
+ * disambiguate "which session at this stop is mis-tagged" — each row shows
+ * the session date, energy, trip badge (or Untripped), and the vehicle
+ * name when there's more than one vehicle in the garage. Tap a row to jump
+ * to its edit screen.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StopSessionsSheet(
+    stop: MapStop,
+    sessions: List<ChargingSession>,
+    tripNamesById: Map<Long, String>,
+    vehicleNamesById: Map<Long, String>,
+    showVehicle: Boolean,
+    onPick: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 16.dp),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Text(
+                    stop.brand?.takeIf { it.isNotBlank() }
+                        ?: stop.stationName?.takeIf { it.isNotBlank() }
+                        ?: "Charging stop",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                val locationLine = listOfNotNull(
+                    stop.address?.takeIf { it.isNotBlank() },
+                    listOfNotNull(
+                        stop.city?.takeIf { it.isNotBlank() },
+                        stop.province?.takeIf { it.isNotBlank() },
+                    ).joinToString(", ").takeIf { it.isNotBlank() },
+                ).joinToString(" · ")
+                if (locationLine.isNotEmpty()) {
+                    Text(
+                        locationLine,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val plural = if (sessions.size == 1) "" else "s"
+                Text(
+                    "${sessions.size} session$plural — tap to open",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            HorizontalDivider()
+            sessions.forEach { session ->
+                StopSessionRow(
+                    session = session,
+                    tripName = session.tripId?.let { tripNamesById[it] },
+                    vehicleName = if (showVehicle) {
+                        session.vehicleId?.let { vehicleNamesById[it] }
+                    } else null,
+                    onClick = { onPick(session.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StopSessionRow(
+    session: ChargingSession,
+    tripName: String?,
+    vehicleName: String?,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                Format.dateTime(session.sessionStart),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                Format.kwh(session.energyKwh),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StopTripBadge(tripName)
+            if (vehicleName != null) {
+                Text(
+                    vehicleName,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StopTripBadge(tripName: String?) {
+    val container = if (tripName != null) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val onContainer = if (tripName != null) {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(container)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        Text(
+            tripName ?: "Untripped",
+            style = MaterialTheme.typography.labelSmall,
+            color = onContainer,
+        )
     }
 }
 

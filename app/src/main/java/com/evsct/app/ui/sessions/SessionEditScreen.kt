@@ -137,15 +137,15 @@ fun SessionEditScreen(
 
     val receiptPhotoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> uri?.let { viewModel.pickReceipt(it) } }
+    ) { uri -> uri?.let { viewModel.addReceipt(it) } }
 
     val receiptPdfPicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let { viewModel.pickReceipt(it) } }
+    ) { uri -> uri?.let { viewModel.addReceipt(it) } }
 
     var receiptToPreview by remember { mutableStateOf<String?>(null) }
+    var receiptToRename by remember { mutableStateOf<UiReceipt?>(null) }
     var showReceiptChooser by remember { mutableStateOf(false) }
-    var showReceiptRemoveConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.transientMessage) {
         state.transientMessage?.let { msg ->
@@ -358,13 +358,13 @@ fun SessionEditScreen(
                 onCheckedChange = { v -> viewModel.update { it.copy(continuesPrevious = v) } },
             )
 
-            SectionLabel("Receipt")
-            ReceiptCard(
-                receiptPath = state.receiptImagePath,
-                onPick = { showReceiptChooser = true },
-                onClear = { showReceiptRemoveConfirm = true },
-                onPreview = {
-                    val path = state.receiptImagePath ?: return@ReceiptCard
+            SectionLabel("Receipts")
+            ReceiptsCard(
+                receipts = state.receipts,
+                onAdd = { showReceiptChooser = true },
+                onRemove = { path -> viewModel.removeReceipt(path) },
+                onRename = { receipt -> receiptToRename = receipt },
+                onPreview = { path ->
                     if (ReceiptImageStore.isPdf(path)) {
                         openReceiptExternally(context, path)
                     } else {
@@ -400,6 +400,17 @@ fun SessionEditScreen(
         ReceiptPreviewDialog(
             relativePath = path,
             onDismiss = { receiptToPreview = null },
+        )
+    }
+
+    receiptToRename?.let { receipt ->
+        RenameReceiptDialog(
+            initial = receipt.originalFileName.orEmpty(),
+            onConfirm = { newName ->
+                viewModel.renameReceipt(receipt.filePath, newName)
+                receiptToRename = null
+            },
+            onDismiss = { receiptToRename = null },
         )
     }
 
@@ -446,29 +457,6 @@ fun SessionEditScreen(
         )
     }
 
-    if (showReceiptRemoveConfirm) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showReceiptRemoveConfirm = false },
-            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
-            title = { Text("Remove receipt?") },
-            text = { Text("The attached file will be deleted from this session.") },
-            confirmButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        showReceiptRemoveConfirm = false
-                        viewModel.clearReceipt()
-                    },
-                ) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showReceiptRemoveConfirm = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
 
     if (showDeleteConfirm) {
         androidx.compose.material3.AlertDialog(
@@ -1307,52 +1295,20 @@ private fun TextFieldPlain(
 
 
 @Composable
-private fun ReceiptCard(
-    receiptPath: String?,
-    onPick: () -> Unit,
-    onClear: () -> Unit,
-    onPreview: () -> Unit,
+private fun ReceiptsCard(
+    receipts: List<UiReceipt>,
+    onAdd: () -> Unit,
+    onRemove: (String) -> Unit,
+    onRename: (UiReceipt) -> Unit,
+    onPreview: (String) -> Unit,
 ) {
-    val ctx = LocalContext.current
-    val file = receiptPath?.let { File(ctx.filesDir, it) }
-    val hasReceipt = file != null && file.exists()
-    val isPdf = ReceiptImageStore.isPdf(receiptPath)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            if (hasReceipt) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onPreview),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (isPdf) {
-                        PdfThumbnail()
-                    } else {
-                        AsyncImage(
-                            model = file,
-                            contentDescription = "Receipt photo",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxWidth().height(180.dp),
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onPick) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Change")
-                    }
-                    OutlinedButton(onClick = onClear) { Text("Remove") }
-                }
-            } else {
+            if (receipts.isEmpty()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onPick)
+                        .clickable(onClick = onAdd)
                         .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1372,16 +1328,33 @@ private fun ReceiptCard(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Attach a receipt",
+                            "Attach receipts",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                         )
                         Text(
-                            "Photo or PDF — useful for expense reports.",
+                            "Photo or PDF — add as many as you need.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            } else {
+                receipts.forEachIndexed { idx, r ->
+                    if (idx > 0) Spacer(Modifier.height(12.dp))
+                    ReceiptTile(
+                        path = r.filePath,
+                        originalFileName = r.originalFileName,
+                        onPreview = { onPreview(r.filePath) },
+                        onRemove = { onRemove(r.filePath) },
+                        onRename = { onRename(r) },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = onAdd) {
+                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add another")
                 }
             }
         }
@@ -1389,7 +1362,54 @@ private fun ReceiptCard(
 }
 
 @Composable
-private fun PdfThumbnail() {
+private fun ReceiptTile(
+    path: String,
+    originalFileName: String?,
+    onPreview: () -> Unit,
+    onRemove: () -> Unit,
+    onRename: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val file = File(ctx.filesDir, path)
+    val isPdf = ReceiptImageStore.isPdf(path)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onPreview),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isPdf) {
+                PdfThumbnail(originalFileName = originalFileName)
+            } else {
+                AsyncImage(
+                    model = file,
+                    contentDescription = "Receipt photo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().height(180.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            horizontalArrangement = Arrangement.End,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            // Rename is only useful on PDFs — photos don't show a filename
+            // anywhere in the UI, so the action would be invisible.
+            if (isPdf) {
+                androidx.compose.material3.TextButton(onClick = onRename) { Text("Rename") }
+                Spacer(Modifier.width(4.dp))
+            }
+            androidx.compose.material3.TextButton(onClick = onRemove) { Text("Remove") }
+        }
+    }
+}
+
+@Composable
+private fun PdfThumbnail(originalFileName: String? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1415,9 +1435,11 @@ private fun PdfThumbnail() {
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "PDF receipt",
+                originalFileName?.takeIf { it.isNotBlank() } ?: "PDF receipt",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
             Text(
                 "Tap to open in your PDF viewer.",
@@ -1426,6 +1448,42 @@ private fun PdfThumbnail() {
             )
         }
     }
+}
+
+/**
+ * Lets the user backfill (or correct) the display name of an existing PDF
+ * receipt. The on-disk file stays UUID-named; only the [SessionReceipt.
+ * originalFileName] label is rewritten. Leaving the field blank clears the
+ * label and the tile falls back to the generic "PDF receipt" caption.
+ */
+@Composable
+private fun RenameReceiptDialog(
+    initial: String,
+    onConfirm: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var draft by remember(initial) { mutableStateOf(initial) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename receipt") },
+        text = {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                label = { Text("File name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { onConfirm(draft.trim().takeIf { it.isNotEmpty() }) },
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

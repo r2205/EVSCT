@@ -77,7 +77,13 @@ data class ChargingSession(
      *  Use [com.evsct.app.util.Tags] to parse to/from List<String> rather
      *  than splitting at call sites. */
     val tags: String? = null,
-    /** Optional path under filesDir to an attached receipt image. */
+    /**
+     * Legacy single-receipt column. As of DB v10 receipts live in their own
+     * many-to-one [SessionReceipt] table; this field is retained to keep the
+     * Room schema stable (no heavy table rebuild) but the app now writes
+     * null here on every save and never reads it back. MIGRATION_9_10
+     * promoted existing values into the new table.
+     */
     val receiptImagePath: String? = null,
 
     /** True when the user attests that no untracked charging happened between

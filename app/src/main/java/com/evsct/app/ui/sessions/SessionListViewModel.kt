@@ -7,6 +7,7 @@ import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.BackupReminderSettings
+import com.evsct.app.data.repository.SessionReceiptRepository
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -66,6 +68,9 @@ data class SessionListUi(
     val tagsInUse: List<String> = emptyList(),
     val tripNamesById: Map<Long, String> = emptyMap(),
     val vehicleNamesById: Map<Long, String> = emptyMap(),
+    /** Session ids that carry at least one receipt — drives the paperclip
+     *  icon on each row without forcing a per-row DAO query. */
+    val sessionsWithReceipts: Set<Long> = emptySet(),
     val totalCostByCurrency: CurrencyTotals = CurrencyTotals(emptyMap()),
     val totalKwh: Double = 0.0,
     val sessionCount: Int = 0,
@@ -83,6 +88,7 @@ class SessionListViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
     private val vehicleRepository: VehicleRepository,
+    private val sessionReceiptRepository: SessionReceiptRepository,
     private val appPreferences: AppPreferences,
     private val inProgressChargeNotifier: InProgressChargeNotifier,
 ) : ViewModel() {
@@ -157,16 +163,26 @@ class SessionListViewModel @Inject constructor(
             ) to allSessions.size
         }
 
+    /** Set of session ids that have at least one receipt attached. Derived
+     *  from the receipts table so the row icon stays in sync without a
+     *  per-row DAO query. */
+    private val sessionsWithReceipts =
+        sessionReceiptRepository.observeCountsBySession().map { rows ->
+            rows.asSequence().filter { it.count > 0 }.mapTo(mutableSetOf()) { it.sessionId }
+        }
+
     val state: StateFlow<SessionListUi> =
         combine(
             baseUi,
             appPreferences.lastBackupAt,
             appPreferences.reminderSettings,
             backupNudgeDismissed,
-        ) { pair, lastBackupAt, reminder, dismissed ->
+            sessionsWithReceipts,
+        ) { pair, lastBackupAt, reminder, dismissed, withReceipts ->
             val (ui, totalSessions) = pair
             ui.copy(
                 backupNudge = computeBackupNudge(totalSessions, lastBackupAt, reminder, dismissed),
+                sessionsWithReceipts = withReceipts,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SessionListUi())
 

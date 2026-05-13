@@ -108,7 +108,10 @@ fun EvsctNavGraph(navController: NavHostController) {
             YearRecapScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.MAP) {
-            MapScreen(onBack = { navController.popBackStack() })
+            MapScreen(
+                onBack = { navController.popBackStack() },
+                onEditSession = { id -> navController.navigate(Routes.sessionEdit(id)) },
+            )
         }
         composable(
             route = "${Routes.SESSION_EDIT}?${Routes.SESSION_EDIT_ARG}={${Routes.SESSION_EDIT_ARG}}" +
