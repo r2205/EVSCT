@@ -1,8 +1,10 @@
 package com.evsct.app.ui.settings
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,7 +64,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.BuildConfig
 import com.evsct.app.data.prefs.AppPreferences
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -309,6 +314,8 @@ fun SettingsScreen(
                     ) { Text("Import legacy XLSX…") }
                 }
             }
+
+            AboutCard(context = context)
         }
     }
 
@@ -615,3 +622,68 @@ private fun ThemeCard(
         }
     }
 }
+
+/**
+ * Bottom-of-Settings card showing the running build's version + git commit.
+ * The commit line is tappable when the build came from a clean working tree
+ * — taps open the matching GitHub commit page. Dirty or unknown builds
+ * render the same text in muted color and don't link anywhere, since the
+ * URL wouldn't actually reflect what's on the phone.
+ */
+@Composable
+private fun AboutCard(context: Context) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "About",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "EVSCT ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            val sha = BuildConfig.GIT_SHA
+            val commitDate = formatCommitDate(BuildConfig.GIT_COMMIT_DATE)
+            val canOpen = sha != "unknown" && !sha.endsWith("-dirty")
+            val commitLine = buildString {
+                append("Commit ")
+                append(sha)
+                if (commitDate.isNotEmpty()) {
+                    append(" · ")
+                    append(commitDate)
+                }
+            }
+            if (canOpen) {
+                Text(
+                    commitLine,
+                    modifier = Modifier.clickable {
+                        val url = "https://github.com/r2205/EVSCT/commit/$sha"
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                Text(
+                    commitLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** Render `git log %cI`-style ISO offset dates as "May 13, 2026". Falls back
+ *  to the raw string when parsing fails so a future format quirk degrades
+ *  gracefully instead of hiding the field. */
+private fun formatCommitDate(raw: String): String =
+    if (raw == "unknown" || raw.isBlank()) ""
+    else runCatching {
+        OffsetDateTime.parse(raw)
+            .format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }.getOrDefault(raw)
