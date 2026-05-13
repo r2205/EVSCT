@@ -22,6 +22,28 @@ val mapsApiKey: String = run {
     props.getProperty("MAPS_API_KEY", "")
 }
 
+// --- Git info baked into BuildConfig for the in-app About card. providers.exec
+// is configuration-cache safe and only re-runs when the underlying git output
+// actually changes. Each helper falls back to "unknown" when git isn't on the
+// PATH or there's no .git directory (e.g. a fresh extract of a downloaded zip)
+// so the build never fails just because version info is missing.
+fun gitOutput(vararg command: String): Provider<String> =
+    providers.exec {
+        commandLine(*command)
+        isIgnoreExitValue = true
+    }.standardOutput.asText.map { it.trim() }
+
+val gitSha: Provider<String> = gitOutput("git", "rev-parse", "--short", "HEAD")
+    .map { it.ifBlank { "unknown" } }
+    .orElse("unknown")
+val gitDirty: Provider<String> = gitOutput("git", "status", "--porcelain")
+    .map { if (it.isBlank()) "" else "-dirty" }
+    .orElse("")
+val gitCommitDate: Provider<String> = gitOutput("git", "log", "-1", "--format=%cI")
+    .map { it.ifBlank { "unknown" } }
+    .orElse("unknown")
+val gitDescribe: Provider<String> = gitSha.zip(gitDirty) { sha, dirty -> sha + dirty }
+
 android {
     namespace = "com.evsct.app"
     compileSdk = 35
@@ -34,6 +56,13 @@ android {
         versionName = "0.1.0"
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+
+        // Surface the current commit in the About card. .get() at config
+        // time is fine — Gradle's configuration cache replays the captured
+        // strings on subsequent invocations and only re-runs the git execs
+        // when the underlying inputs actually change.
+        buildConfigField("String", "GIT_SHA", "\"${gitDescribe.get()}\"")
+        buildConfigField("String", "GIT_COMMIT_DATE", "\"${gitCommitDate.get()}\"")
     }
 
     buildTypes {
@@ -58,6 +87,9 @@ android {
 
     buildFeatures {
         compose = true
+        // AGP 9 ships this off by default; re-enable so we can emit
+        // GIT_SHA / GIT_COMMIT_DATE for the in-app About card.
+        buildConfig = true
     }
 
     packaging {
