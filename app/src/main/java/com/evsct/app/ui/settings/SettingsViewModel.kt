@@ -8,6 +8,7 @@ import com.evsct.app.data.backup.BackupResult
 import com.evsct.app.data.backup.PrepareShareResult
 import com.evsct.app.data.csv.CsvImportResult
 import com.evsct.app.data.csv.CsvIo
+import com.evsct.app.data.csv.PrepareCsvShareResult
 import com.evsct.app.data.csv.XlsxImportResult
 import com.evsct.app.data.csv.XlsxImporter
 import com.evsct.app.data.prefs.AppPreferences
@@ -96,6 +97,18 @@ class SettingsViewModel @Inject constructor(
             .onFailure { e ->
                 transient.update { it.copy(busy = false, message = "Export failed: ${e.message}") }
             }
+    }
+
+    fun shareCsv() = viewModelScope.launch {
+        transient.update { it.copy(busy = true, message = null) }
+        when (val result = csvIo.prepareShareFile()) {
+            is PrepareCsvShareResult.Success -> transient.update {
+                it.copy(busy = false, pendingShareFile = result.prepared.file)
+            }
+            is PrepareCsvShareResult.Failure -> transient.update {
+                it.copy(busy = false, message = "CSV share failed: ${result.message}")
+            }
+        }
     }
 
     fun importCsv(uri: Uri, replaceExisting: Boolean) = viewModelScope.launch {

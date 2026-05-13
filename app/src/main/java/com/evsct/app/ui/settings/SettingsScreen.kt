@@ -98,26 +98,31 @@ fun SettingsScreen(
 
     val context = LocalContext.current
 
-    // The share path: VM builds the zip in cacheDir and posts the file
-    // here; we wrap it with FileProvider, fire ACTION_SEND through a chooser
-    // (Drive, email, Messages, etc.), then immediately consume the pending
-    // state so the launch is one-shot.
+    // The share path: VM builds the file in cacheDir and posts it here; we
+    // wrap it with FileProvider, fire ACTION_SEND through a chooser (Drive,
+    // email, Messages, etc.), then immediately consume the pending state so
+    // the launch is one-shot. MIME type and chooser title are derived from
+    // the file extension so the same effect handles both the full-backup zip
+    // and the CSV export.
     LaunchedEffect(state.pendingShareFile) {
         val file = state.pendingShareFile ?: return@LaunchedEffect
         val authority = "${context.packageName}.fileprovider"
         val contentUri = FileProvider.getUriForFile(context, authority, file)
+        val isCsv = file.name.endsWith(".csv", ignoreCase = true)
+        val mimeType = if (isCsv) "text/csv" else "application/zip"
+        val chooserTitle = if (isCsv) "Share CSV" else "Share backup"
         // Many share targets (Drive especially) treat EXTRA_SUBJECT/TITLE as
         // the saved filename and ignore the FileProvider's display name —
-        // pass the actual filename (with .zip + timestamp) on both extras
-        // so it round-trips with the same naming convention as Save.
+        // pass the actual filename (with extension + timestamp) on both
+        // extras so it round-trips with the same naming convention as Save.
         val send = Intent(Intent.ACTION_SEND).apply {
-            type = "application/zip"
+            type = mimeType
             putExtra(Intent.EXTRA_STREAM, contentUri)
             putExtra(Intent.EXTRA_SUBJECT, file.name)
             putExtra(Intent.EXTRA_TITLE, file.name)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(send, "Share backup"))
+        context.startActivity(Intent.createChooser(send, chooserTitle))
         viewModel.consumePendingShare()
     }
 
@@ -246,7 +251,9 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Export every session to a CSV file you can open in Excel or Google Sheets.",
+                        "Export every session to a CSV file you can open in Excel or Google " +
+                            "Sheets. Save picks a folder on this device; Share sends the file " +
+                            "out via Drive, email, or any other app you have installed.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Button(
@@ -257,6 +264,11 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) { Text("Export to CSV…") }
+                    OutlinedButton(
+                        onClick = { viewModel.shareCsv() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.busy,
+                    ) { Text("Share CSV file…") }
                 }
             }
 
