@@ -11,8 +11,10 @@ import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.io.Writer
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -106,6 +108,20 @@ object Csv {
 
 data class CsvImportResult(val imported: Int, val skipped: Int)
 
+/** Successful prepare-for-share. The CSV lives in [file], and [sessions] is
+ *  the count just written so the screen can surface the same status text as
+ *  Save does. */
+data class PreparedShareCsv(val file: File, val sessions: Int)
+
+sealed interface PrepareCsvShareResult {
+    data class Success(val prepared: PreparedShareCsv) : PrepareCsvShareResult
+    data class Failure(val message: String) : PrepareCsvShareResult
+}
+
+/** Subdirectory under cacheDir where prepare-for-share CSVs land. Mirrored
+ *  in res/xml/file_paths.xml so FileProvider can hand out content:// URIs. */
+private const val CSV_SHARE_DIR_IN_CACHE = "csv-share"
+
 @Singleton
 class CsvIo @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -115,26 +131,61 @@ class CsvIo @Inject constructor(
     private val vehicleRepository: VehicleRepository,
 ) {
     suspend fun export(uri: Uri): Int = withContext(Dispatchers.IO) {
+        var count = 0
+        context.contentResolver.openOutputStream(uri, "wt")?.use { os ->
+            OutputStreamWriter(os, Charsets.UTF_8).use { w ->
+                count = writeCsvTo(w)
+            }
+        }
+        count
+    }
+
+    /**
+     * Build the same CSV [export] writes, but into a dedicated cache
+     * subdirectory and return the resulting [File] so the caller can hand
+     * it to an Android share-sheet via FileProvider. Older share files are
+     * cleared first so the cache doesn't accumulate after repeated shares.
+     */
+    suspend fun prepareShareFile(filenamePrefix: String = "evsct-export"): PrepareCsvShareResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val shareDir = File(context.cacheDir, CSV_SHARE_DIR_IN_CACHE).apply {
+                    mkdirs()
+                    listFiles()?.forEach { it.delete() }
+                }
+                val ts = java.text.SimpleDateFormat("yyyy-MM-dd-HHmm", java.util.Locale.US)
+                    .format(java.util.Date())
+                val target = File(shareDir, "$filenamePrefix-$ts.csv")
+                val count = target.outputStream().use { os ->
+                    OutputStreamWriter(os, Charsets.UTF_8).use { w -> writeCsvTo(w) }
+                }
+                PrepareCsvShareResult.Success(PreparedShareCsv(file = target, sessions = count))
+            } catch (e: Exception) {
+                PrepareCsvShareResult.Failure(e.message ?: "Could not prepare CSV for share")
+            }
+        }
+
+    /** Stream the CSV header + every session row into [writer] and return the
+     *  row count so callers can surface it. Trip/vehicle names are joined in
+     *  via the existing repositories so the format is identical regardless of
+     *  whether the destination is a SAF URI or a cacheDir file. */
+    private suspend fun writeCsvTo(writer: Writer): Int {
         val sessions = sessionRepository.observeAll().first()
         val trips = tripRepository.observeAll().first().associate { it.id to it.name }
         val vehicles = vehicleRepository.observeAll().first().associate { it.id to it.name }
-        context.contentResolver.openOutputStream(uri, "wt")?.use { os ->
-            OutputStreamWriter(os, Charsets.UTF_8).use { w ->
-                w.appendLine(Csv.encodeRow(CsvFormat.HEADERS))
-                for (s in sessions) {
-                    w.appendLine(
-                        Csv.encodeRow(
-                            CsvFormat.toRow(
-                                session = s,
-                                tripName = trips[s.tripId],
-                                vehicleName = vehicles[s.vehicleId],
-                            )
-                        )
+        writer.appendLine(Csv.encodeRow(CsvFormat.HEADERS))
+        for (s in sessions) {
+            writer.appendLine(
+                Csv.encodeRow(
+                    CsvFormat.toRow(
+                        session = s,
+                        tripName = trips[s.tripId],
+                        vehicleName = vehicles[s.vehicleId],
                     )
-                }
-            }
+                )
+            )
         }
-        sessions.size
+        return sessions.size
     }
 
     suspend fun import(uri: Uri, replaceExisting: Boolean): CsvImportResult = withContext(Dispatchers.IO) {
