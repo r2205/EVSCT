@@ -21,6 +21,7 @@ import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.LocationAutofill
 import com.evsct.app.util.ReceiptImageStore
+import com.evsct.app.util.Tags
 import com.evsct.app.util.Units
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
@@ -101,6 +102,9 @@ data class SessionEditUi(
     val continuesPrevious: Boolean = false,
     val vehicleId: Long? = null,
     val notes: String = "",
+    /** Free-form tags for this session, parsed from the comma-joined storage
+     *  string. The screen renders these as removable chips. */
+    val tags: List<String> = emptyList(),
     val receiptImagePath: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
@@ -310,6 +314,7 @@ class SessionEditViewModel @Inject constructor(
                 continuesPrevious = s.continuesPrevious,
                 vehicleId = s.vehicleId,
                 notes = s.notes.orEmpty(),
+                tags = Tags.parse(s.tags),
                 receiptImagePath = s.receiptImagePath,
                 latitude = s.latitude,
                 longitude = s.longitude,
@@ -564,6 +569,7 @@ class SessionEditViewModel @Inject constructor(
                 continuesPrevious = s.continuesPrevious,
                 vehicleId = s.vehicleId,
                 notes = s.notes.takeIf { it.isNotBlank() },
+                tags = Tags.serialize(s.tags),
                 receiptImagePath = s.receiptImagePath,
                 latitude = saveLat,
                 longitude = saveLng,

@@ -12,6 +12,7 @@ import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.InProgressChargeNotifier
+import com.evsct.app.util.Tags
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,9 +29,13 @@ data class SessionFilters(
     val brand: String? = null,
     val dateFrom: Long? = null,
     val dateTo: Long? = null,
+    /** Selected tags. A session matches when it carries at least one of these
+     *  (OR semantics). Empty = no tag filter. Compared case-insensitively. */
+    val tags: Set<String> = emptySet(),
 ) {
     val hasActive: Boolean
-        get() = query.isNotBlank() || brand != null || dateFrom != null || dateTo != null
+        get() = query.isNotBlank() || brand != null || dateFrom != null ||
+            dateTo != null || tags.isNotEmpty()
 }
 
 /**
@@ -56,6 +61,9 @@ data class SessionListUi(
     val trips: List<Trip> = emptyList(),
     val vehicles: List<Vehicle> = emptyList(),
     val brandsInUse: List<String> = emptyList(),
+    /** All distinct tags across every session, deduped case-insensitively
+     *  (display reflects the first-seen casing) and sorted A–Z. */
+    val tagsInUse: List<String> = emptyList(),
     val tripNamesById: Map<Long, String> = emptyMap(),
     val vehicleNamesById: Map<Long, String> = emptyMap(),
     val totalCostByCurrency: CurrencyTotals = CurrencyTotals(emptyMap()),
@@ -112,6 +120,16 @@ class SessionListViewModel @Inject constructor(
                 .distinctBy { it.lowercase() }
                 .sortedBy { it.lowercase() }
 
+            // Same idea for tags: aggregate across the unfiltered set so the
+            // filter sheet shows every tag the user has ever used, regardless
+            // of what filters are currently active.
+            val tagsInUse = allSessions
+                .asSequence()
+                .flatMap { Tags.parse(it.tags).asSequence() }
+                .distinctBy { it.lowercase() }
+                .sortedBy { it.lowercase() }
+                .toList()
+
             val sessions = allSessions.asSequence()
                 .filter { effectiveVehicleFilter == null || it.vehicleId == effectiveVehicleFilter }
                 .filter { it.matches(f) }
@@ -126,6 +144,7 @@ class SessionListViewModel @Inject constructor(
                 trips = trips,
                 vehicles = vehicles,
                 brandsInUse = brandsInUse,
+                tagsInUse = tagsInUse,
                 tripNamesById = trips.associate { it.id to it.name },
                 vehicleNamesById = vehicles.associate { it.id to it.name },
                 totalCostByCurrency = CurrencyTotals.from(sessions),
@@ -170,6 +189,10 @@ class SessionListViewModel @Inject constructor(
 
     fun setDateRange(from: Long?, to: Long?) {
         filters.update { it.copy(dateFrom = from, dateTo = to) }
+    }
+
+    fun setTagsFilter(tags: Set<String>) {
+        filters.update { it.copy(tags = tags) }
     }
 
     fun clearFilters() {
@@ -266,11 +289,16 @@ private fun ChargingSession.matches(f: SessionFilters): Boolean {
     if (f.brand != null && !brand.equals(f.brand, ignoreCase = true)) return false
     if (f.dateFrom != null && sessionStart < f.dateFrom) return false
     if (f.dateTo != null && sessionStart > f.dateTo) return false
+    if (f.tags.isNotEmpty()) {
+        val sessionTags = Tags.parse(tags).map { it.lowercase() }.toSet()
+        val wanted = f.tags.map { it.lowercase() }
+        if (wanted.none { it in sessionTags }) return false
+    }
     if (f.query.isNotBlank()) {
         val q = f.query.trim()
         val haystack = listOfNotNull(
             brand, locationCity, locationProvince, locationAddress,
-            stationName, stallName, notes,
+            stationName, stallName, notes, tags,
         ).joinToString(" ")
         if (!haystack.contains(q, ignoreCase = true)) return false
     }

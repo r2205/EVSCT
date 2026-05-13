@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -45,6 +48,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -68,6 +72,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
@@ -81,6 +86,7 @@ import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.util.Brands
 import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.ReceiptImageStore
+import com.evsct.app.util.Tags
 import com.evsct.app.util.Format
 import java.util.Calendar
 import kotlinx.coroutines.delay
@@ -364,6 +370,17 @@ fun SessionEditScreen(
                     } else {
                         receiptToPreview = path
                     }
+                },
+            )
+
+            SectionLabel("Tags")
+            TagsField(
+                tags = state.tags,
+                onAdd = { tag ->
+                    viewModel.update { it.copy(tags = Tags.add(it.tags, tag)) }
+                },
+                onRemove = { tag ->
+                    viewModel.update { it.copy(tags = Tags.remove(it.tags, tag)) }
                 },
             )
 
@@ -1184,6 +1201,73 @@ private fun DurationField(
                 hasFocus = nowFocused
             },
     )
+}
+
+/**
+ * Free-form tag editor: existing tags render as InputChips with an X to
+ * remove; the bottom field accepts new tags. Submitting via Enter or by
+ * typing a comma commits the chip and clears the field — the comma path
+ * lets users keep typing through "work, winter, fast" without reaching
+ * for the Done key.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagsField(
+    tags: List<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    var draft by remember { mutableStateOf("") }
+    val commit: () -> Unit = {
+        val trimmed = draft.trim()
+        if (trimmed.isNotEmpty()) onAdd(trimmed)
+        draft = ""
+    }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (tags.isNotEmpty()) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                tags.forEach { tag ->
+                    InputChip(
+                        selected = false,
+                        onClick = { onRemove(tag) },
+                        label = { Text(tag) },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Remove $tag",
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { v ->
+                // Comma is the storage delimiter — treat it as a "commit this
+                // chip" gesture rather than letting it land in the chip name.
+                if (v.endsWith(",")) {
+                    val candidate = v.dropLast(1).trim()
+                    if (candidate.isNotEmpty()) onAdd(candidate)
+                    draft = ""
+                } else {
+                    draft = v
+                }
+            },
+            label = { Text("Add tag…") },
+            placeholder = { Text("e.g. work charge") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { commit() }),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }
 
 @Composable

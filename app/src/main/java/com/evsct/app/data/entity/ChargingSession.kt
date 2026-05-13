@@ -73,6 +73,10 @@ data class ChargingSession(
     val tripId: Long? = null,
     val vehicleId: Long? = null,
     val notes: String? = null,
+    /** Free-form user tags, comma-joined. Empty/null when no tags are set.
+     *  Use [com.evsct.app.util.Tags] to parse to/from List<String> rather
+     *  than splitting at call sites. */
+    val tags: String? = null,
     /** Optional path under filesDir to an attached receipt image. */
     val receiptImagePath: String? = null,
 

@@ -10,6 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -90,6 +92,7 @@ import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.theme.EvAccents
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
+import com.evsct.app.util.Tags
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -201,6 +204,7 @@ fun SessionListScreen(
                     },
                     onClearBrand = { viewModel.setBrandFilter(null) },
                     onClearDateRange = { viewModel.setDateRange(null, null) },
+                    onClearTags = { viewModel.setTagsFilter(emptySet()) },
                 )
             }
             if (state.vehicles.size >= 2) {
@@ -301,9 +305,11 @@ fun SessionListScreen(
         FilterSheet(
             filters = state.filters,
             brands = state.brandsInUse,
-            onApply = { brand, from, to ->
+            tags = state.tagsInUse,
+            onApply = { brand, from, to, tagSel ->
                 viewModel.setBrandFilter(brand)
                 viewModel.setDateRange(from, to)
+                viewModel.setTagsFilter(tagSel)
                 showFilterSheet = false
             },
             onDismiss = { showFilterSheet = false },
@@ -748,8 +754,41 @@ private fun SessionRow(
                         }
                     }
                 }
+                val tags = Tags.parse(session.tags)
+                if (tags.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    SessionTagsRow(tags)
+                }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SessionTagsRow(tags: List<String>) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        tags.forEach { TagPill(it) }
+    }
+}
+
+@Composable
+private fun TagPill(label: String) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        Text(
+            "#$label",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -835,11 +874,14 @@ private fun SearchAndFilterStrip(
     onClearAll: () -> Unit,
     onClearBrand: () -> Unit,
     onClearDateRange: () -> Unit,
+    onClearTags: () -> Unit,
 ) {
-    val anyChip = filters.brand != null || filters.dateFrom != null || filters.dateTo != null
+    val anyChip = filters.brand != null || filters.dateFrom != null ||
+        filters.dateTo != null || filters.tags.isNotEmpty()
     val activeFilterCount = listOfNotNull(
         filters.brand,
         if (filters.dateFrom != null || filters.dateTo != null) "date" else null,
+        if (filters.tags.isNotEmpty()) "tags" else null,
     ).size
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -903,6 +945,22 @@ private fun SearchAndFilterStrip(
                         ),
                     )
                 }
+                if (filters.tags.isNotEmpty()) {
+                    val label = if (filters.tags.size == 1) {
+                        "#${filters.tags.first()}"
+                    } else {
+                        "${filters.tags.size} tags"
+                    }
+                    AssistChip(
+                        onClick = onClearTags,
+                        label = { Text(label) },
+                        leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
+                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove tag filter") },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -918,18 +976,25 @@ private fun formatDateRange(from: Long?, to: Long?): String {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun FilterSheet(
     filters: SessionFilters,
     brands: List<String>,
-    onApply: (brand: String?, from: Long?, to: Long?) -> Unit,
+    tags: List<String>,
+    onApply: (brand: String?, from: Long?, to: Long?, tags: Set<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var brand by remember(filters.brand) { mutableStateOf(filters.brand) }
     var dateFrom by remember(filters.dateFrom) { mutableStateOf(filters.dateFrom) }
     var dateTo by remember(filters.dateTo) { mutableStateOf(filters.dateTo) }
+    // Local working copy lower-cased so toggling a chip a second time matches
+    // regardless of the casing each session stored. Re-keys whenever the
+    // applied selection changes from outside.
+    var tagSelection by remember(filters.tags) {
+        mutableStateOf(filters.tags.map { it.lowercase() }.toSet())
+    }
     var showFromPicker by remember { mutableStateOf(false) }
     var showToPicker by remember { mutableStateOf(false) }
 
@@ -1010,6 +1075,35 @@ private fun FilterSheet(
                 }
             }
 
+            Spacer(Modifier.height(20.dp))
+            Text("Tags", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            if (tags.isEmpty()) {
+                Text(
+                    "No tags yet — add some when editing a session.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    tags.forEach { t ->
+                        val key = t.lowercase()
+                        FilterChip(
+                            selected = key in tagSelection,
+                            onClick = {
+                                tagSelection = if (key in tagSelection) tagSelection - key
+                                               else tagSelection + key
+                            },
+                            label = { Text(t) },
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
             Row(
                 horizontalArrangement = Arrangement.End,
@@ -1017,7 +1111,9 @@ private fun FilterSheet(
             ) {
                 TextButton(onClick = onDismiss) { Text("Cancel") }
                 Spacer(Modifier.width(8.dp))
-                androidx.compose.material3.Button(onClick = { onApply(brand, dateFrom, dateTo) }) {
+                androidx.compose.material3.Button(
+                    onClick = { onApply(brand, dateFrom, dateTo, tagSelection) },
+                ) {
                     Text("Apply")
                 }
             }
