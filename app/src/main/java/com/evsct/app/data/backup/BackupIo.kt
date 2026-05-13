@@ -621,6 +621,12 @@ class BackupIo @Inject constructor(
         val safeName = File(rel).name
         if (safeName.isBlank()) return 0L
         val out = File(targetDir, safeName)
+        // Two entries that reduce to the same basename (e.g. `vehicles/foo.jpg`
+        // and `vehicles/sub/foo.jpg`) would otherwise clobber each other on
+        // disk — and corrupt the first mid-write if the second errors out.
+        // The DB only ever references one file per basename, so keep the
+        // first and silently drop later duplicates.
+        if (out.exists()) return 0L
         return out.outputStream().use { os -> zip.copyBoundedTo(os, MAX_ENTRY_BYTES) }
     }
 
