@@ -487,9 +487,18 @@ class SessionEditViewModel @Inject constructor(
 
     /** Update the user-facing label on an existing receipt. Lets the user
      *  backfill a name onto pre-v11 receipts that were attached before we
-     *  started capturing the picker's display name. Persisted in save(). */
+     *  started capturing the picker's display name. Persisted in save().
+     *  For PDFs, auto-appends ".pdf" when the user-typed name doesn't
+     *  already end in it (case-insensitive) — matches what the picker
+     *  produces and keeps the tile consistent. */
     fun renameReceipt(path: String, newName: String?) {
-        val cleaned = newName?.trim().orEmpty().takeIf { it.isNotEmpty() }
+        val trimmed = newName?.trim().orEmpty()
+        val cleaned = when {
+            trimmed.isEmpty() -> null
+            com.evsct.app.util.ReceiptImageStore.isPdf(path) &&
+                !trimmed.endsWith(".pdf", ignoreCase = true) -> "$trimmed.pdf"
+            else -> trimmed
+        }
         _state.update { current ->
             current.copy(
                 receipts = current.receipts.map {
