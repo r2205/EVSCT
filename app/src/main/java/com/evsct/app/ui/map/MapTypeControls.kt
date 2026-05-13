@@ -35,9 +35,9 @@ private val MAP_TYPE_OPTIONS = listOf(
 
 /**
  * Layers dropdown. The four basemap rows are always present; pass
- * [heatmapEnabled] + [onToggleHeatmap] to additionally surface a Heatmap
- * row beneath them (used by the charging-map screen, not the location
- * picker — the picker has nothing to heatmap).
+ * [heatmapEnabled] + [onToggleHeatmap] (and optionally [polylinesEnabled] +
+ * [onTogglePolylines]) to additionally surface display-mode rows beneath
+ * them. Used by the charging-map screen, not the location picker.
  */
 @Composable
 internal fun MapTypeMenu(
@@ -47,6 +47,8 @@ internal fun MapTypeMenu(
     onDismiss: () -> Unit,
     heatmapEnabled: Boolean? = null,
     onToggleHeatmap: ((Boolean) -> Unit)? = null,
+    polylinesEnabled: Boolean? = null,
+    onTogglePolylines: ((Boolean) -> Unit)? = null,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         MAP_TYPE_OPTIONS.forEach { option ->
@@ -60,14 +62,29 @@ internal fun MapTypeMenu(
                 },
             )
         }
-        if (heatmapEnabled != null && onToggleHeatmap != null) {
+        val hasHeatmap = heatmapEnabled != null && onToggleHeatmap != null
+        val hasPolylines = polylinesEnabled != null && onTogglePolylines != null
+        if (hasHeatmap || hasPolylines) {
             HorizontalDivider()
+        }
+        if (hasHeatmap) {
             DropdownMenuItem(
                 text = { Text("Heatmap") },
-                onClick = { onToggleHeatmap(!heatmapEnabled) },
+                onClick = { onToggleHeatmap(!heatmapEnabled!!) },
                 trailingIcon = {
-                    if (heatmapEnabled) {
+                    if (heatmapEnabled == true) {
                         Icon(Icons.Default.Check, contentDescription = "Heatmap on")
+                    }
+                },
+            )
+        }
+        if (hasPolylines) {
+            DropdownMenuItem(
+                text = { Text("Trip routes") },
+                onClick = { onTogglePolylines(!polylinesEnabled!!) },
+                trailingIcon = {
+                    if (polylinesEnabled == true) {
+                        Icon(Icons.Default.Check, contentDescription = "Trip routes on")
                     }
                 },
             )

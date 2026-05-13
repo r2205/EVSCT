@@ -58,6 +58,10 @@ class AppPreferences @Inject constructor(
          *  instead of individual pins. Lives next to the basemap toggle in
          *  the layers menu — it's a display mode, not a filter. */
         private val MAP_HEATMAP_ENABLED = booleanPreferencesKey("map_heatmap_enabled")
+        /** Whether the map draws colored polylines connecting consecutive
+         *  same-trip sessions in chronological order. Sits next to the
+         *  heatmap toggle in the layers menu. */
+        private val MAP_POLYLINES_ENABLED = booleanPreferencesKey("map_polylines_enabled")
 
         val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
         val SUPPORTED_MAP_TYPES = listOf("NORMAL", "SATELLITE", "HYBRID", "TERRAIN")
@@ -168,6 +172,16 @@ class AppPreferences @Inject constructor(
 
     suspend fun setMapHeatmapEnabled(enabled: Boolean) {
         dataStore.edit { it[MAP_HEATMAP_ENABLED] = enabled }
+    }
+
+    /** Whether the map draws colored trip-route polylines. Defaults to false
+     *  so the first-open experience stays a clean pin map. */
+    val mapPolylinesEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[MAP_POLYLINES_ENABLED] ?: false
+    }
+
+    suspend fun setMapPolylinesEnabled(enabled: Boolean) {
+        dataStore.edit { it[MAP_POLYLINES_ENABLED] = enabled }
     }
 
     suspend fun snapshot(): Snapshot {
