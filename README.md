@@ -26,9 +26,16 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 - **Free-form tags** — type "work charge", "winter test", "kid's hockey
   trip"; press Enter or comma to commit. Tags appear as `#pill` chips on
   the row and become a filter chip in the log's Filter sheet.
-- Notes and an optional **receipt** — either a **photo** (with tap-to-
-  fullscreen + pinch-to-zoom) or a **PDF** (opens in your system PDF
-  viewer). A small "Photo / PDF" chooser appears when you tap to attach.
+- Notes and **multiple receipts** — any mix of photos (with tap-to-
+  fullscreen + pinch-to-zoom) and PDFs (open in your system PDF
+  viewer). A small "Photo / PDF" chooser appears when you tap "Add
+  another"; useful when a station gives you a transaction receipt
+  and the car's app shows a separate kWh / session summary. PDFs
+  display their original filename on the tile (e.g.
+  `expense-aug-2025.pdf`); a per-tile **Rename** button lets you
+  fix that label for any receipt — handy for older attachments that
+  never captured a name. Removing a tile is deferred until you save,
+  so a wrong tap is recoverable by tapping Back.
 
 ### Smart entry helpers
 - **Brand picker** — curated North-American networks (Tesla, Electrify
@@ -49,8 +56,6 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
   fields turn red so the offender is obvious.
 - **Empty odometer warning** — confirmation prompt before saving without an
   odometer reading.
-- **Remove confirmation** — tapping Remove on an attached receipt asks
-  before discarding it.
 
 ### The Charging log
 - Cards per session with a colored leading bar (amber DC fast, blue AC L2,
@@ -95,6 +100,13 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
     Lines are geodesic so cross-country routes curve naturally instead
     of looking like flat-Earth shortcuts. Suppressed (and grayed in the
     menu) while heatmap mode owns the canvas.
+- **Tap a pin to drill in** — single-session pins still show the Maps
+  tooltip (brand · address · "1 visit"); tap the tooltip to jump to
+  that session's edit screen. Multi-session pins skip the tooltip and
+  open a bottom sheet listing each session's date, energy, trip badge
+  (or "Untripped"), and vehicle name; tap a row to open it. Useful
+  for figuring out which session at a frequently-visited stop is the
+  one you need to fix.
 - **First-open backfill** — the first time you open the screen, every
   stop with only a textual address is reverse-geocoded and the resolved
   coordinates saved back to those sessions. After that, the map opens
@@ -163,13 +175,16 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 
 ### Backup & export
 - **Full backup** — single `.zip` containing `backup.json` + every vehicle
-  profile photo + every session receipt (photos and PDFs). Schema-
-  versioned. **Save** writes to a folder you pick on the device; **Share**
-  hands the same zip to the Android share sheet so it can land in Drive,
-  email, Messages, or any app that accepts files. Restore wipes the
-  database and reinstalls inside one Room transaction; foreign keys are
-  remapped to fresh primary keys so backups from another phone restore
-  cleanly. Confirmation dialog gates the destructive action.
+  profile photo + every session receipt (photos and PDFs, including the
+  multi-receipt sessions added in v10). Schema-versioned. **Save** writes
+  to a folder you pick on the device; **Share** hands the same zip to the
+  Android share sheet so it can land in Drive, email, Messages, or any
+  app that accepts files. Restore wipes the database and reinstalls
+  inside one Room transaction; foreign keys are remapped to fresh primary
+  keys so backups from another phone restore cleanly. Older backups (down
+  to v1) still restore — the receipt JSON reader knows three historical
+  shapes and falls back gracefully. Confirmation dialog gates the
+  destructive action.
 - **Backup reminder** — in-app banner on the Charging log when it's been
   longer than your threshold since the last backup, optionally pushed to
   the notification shade. The notification fires even when the app is
