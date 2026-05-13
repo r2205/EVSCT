@@ -21,6 +21,7 @@ import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.LocationAutofill
 import com.evsct.app.util.ReceiptImageStore
+import com.evsct.app.util.Tags
 import com.evsct.app.util.Units
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
@@ -74,6 +75,9 @@ data class SessionEditUi(
     val isNew: Boolean = true,
     val sessionStart: Long = System.currentTimeMillis(),
     val durationText: String = "",
+    /** Optional integer-minutes-as-string for the wait-before-charging field.
+     *  Empty when unset; never affects kWh/cost computations. */
+    val waitTimeText: String = "",
     val odometerText: String = "",
     val energyText: String = "",
     val costText: String = "",
@@ -98,6 +102,9 @@ data class SessionEditUi(
     val continuesPrevious: Boolean = false,
     val vehicleId: Long? = null,
     val notes: String = "",
+    /** Free-form tags for this session, parsed from the comma-joined storage
+     *  string. The screen renders these as removable chips. */
+    val tags: List<String> = emptyList(),
     val receiptImagePath: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
@@ -283,6 +290,7 @@ class SessionEditViewModel @Inject constructor(
                 isNew = false,
                 sessionStart = s.sessionStart,
                 durationText = durationText,
+                waitTimeText = s.waitTimeMinutes?.toString().orEmpty(),
                 isTracking = tracking,
                 odometerText = odoText,
                 useMiles = units.useMiles,
@@ -306,6 +314,7 @@ class SessionEditViewModel @Inject constructor(
                 continuesPrevious = s.continuesPrevious,
                 vehicleId = s.vehicleId,
                 notes = s.notes.orEmpty(),
+                tags = Tags.parse(s.tags),
                 receiptImagePath = s.receiptImagePath,
                 latitude = s.latitude,
                 longitude = s.longitude,
@@ -538,6 +547,7 @@ class SessionEditViewModel @Inject constructor(
                 id = if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
                 durationSeconds = durationSeconds,
+                waitTimeMinutes = s.waitTimeText.toIntOrNull()?.takeIf { it >= 0 },
                 odometerKm = odometerKm,
                 energyKwh = s.energyText.toDoubleOrNull(),
                 totalCost = s.costText.toDoubleOrNull(),
@@ -559,6 +569,7 @@ class SessionEditViewModel @Inject constructor(
                 continuesPrevious = s.continuesPrevious,
                 vehicleId = s.vehicleId,
                 notes = s.notes.takeIf { it.isNotBlank() },
+                tags = Tags.serialize(s.tags),
                 receiptImagePath = s.receiptImagePath,
                 latitude = saveLat,
                 longitude = saveLng,

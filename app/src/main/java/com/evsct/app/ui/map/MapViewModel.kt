@@ -57,6 +57,18 @@ data class TripFilterOption(
     val visible: Boolean,
 )
 
+/**
+ * Chronologically-ordered list of (lat, lng) coordinates for a single trip,
+ * used to render a colored polyline connecting the trip's charging stops.
+ * Trips with fewer than two located sessions don't produce a polyline (one
+ * point is not a line).
+ */
+data class TripPolyline(
+    val tripId: Long,
+    val pinColorKey: String?,
+    val points: List<Pair<Double, Double>>,
+)
+
 data class MapFilters(
     /** Trip IDs (and null = "untripped") whose pins are hidden. Empty = show all. */
     val hiddenKeys: Set<Long?> = emptySet(),
@@ -90,6 +102,12 @@ data class MapUi(
     /** When true, the map renders a visit-weighted density heatmap and
      *  suppresses individual pins. Toggled from the layers menu. */
     val heatmapEnabled: Boolean = false,
+    /** When true, draw a colored polyline per visible trip connecting that
+     *  trip's located sessions in chronological order. */
+    val polylinesEnabled: Boolean = false,
+    /** One entry per visible trip with two-plus located visits, in the same
+     *  order the screen should render them. Empty when polylines are off. */
+    val tripPolylines: List<TripPolyline> = emptyList(),
 )
 
 @HiltViewModel
@@ -106,12 +124,15 @@ class MapViewModel @Inject constructor(
     private val filters = MutableStateFlow(MapFilters())
 
     // typed combine maxes out at 5 flows; collapse the map-display prefs
-    // into a single Triple stream so we still fit.
+    // into a single MapPrefs stream so we still fit.
     private val mapPrefs = combine(
         appPreferences.mapType,
         appPreferences.mapClusteringEnabled,
         appPreferences.mapHeatmapEnabled,
-    ) { type, clustering, heatmap -> Triple(type, clustering, heatmap) }
+        appPreferences.mapPolylinesEnabled,
+    ) { type, clustering, heatmap, polylines ->
+        MapPrefs(type, clustering, heatmap, polylines)
+    }
 
     // Pair trips + vehicles so the outer combine still fits in 5 args.
     private val tripsAndVehicles = combine(
@@ -126,7 +147,7 @@ class MapViewModel @Inject constructor(
         filters,
         mapPrefs,
     ) { allSessions, (trips, vehicles), status, f, prefs ->
-        val (mapType, clusteringEnabled, heatmapEnabled) = prefs
+        val (mapType, clusteringEnabled, heatmapEnabled, polylinesEnabled) = prefs
 
         // Drop a vehicle filter that points to a deleted vehicle so the
         // sheet doesn't keep advertising a phantom selection.
@@ -160,6 +181,26 @@ class MapViewModel @Inject constructor(
         val hasUntripped = sessions.any { it.tripId == null }
         val untrippedVisible = null !in f.hiddenKeys
 
+        // Build one polyline per visible trip with 2+ located visits, in
+        // chronological order. Hidden trips skip — their pins are gone, so
+        // their route shouldn't draw either. Skipped entirely when polylines
+        // are off so we don't pay the sort cost. Trips without a stored
+        // pinColor still get an entry (the screen falls back to gray).
+        val tripPolylines: List<TripPolyline> = if (!polylinesEnabled) emptyList()
+            else tripsWithSessions
+                .asSequence()
+                .filter { it.id !in f.hiddenKeys }
+                .mapNotNull { trip ->
+                    val pts = sessions.asSequence()
+                        .filter { it.tripId == trip.id && it.hasCoordinates() }
+                        .sortedBy { it.sessionStart }
+                        .map { it.latitude!! to it.longitude!! }
+                        .toList()
+                    if (pts.size < 2) null
+                    else TripPolyline(trip.id, trip.pinColor, pts)
+                }
+                .toList()
+
         MapUi(
             stops = stops,
             totalDistinct = groups.size,
@@ -179,6 +220,8 @@ class MapViewModel @Inject constructor(
             mapType = mapType,
             clusteringEnabled = clusteringEnabled,
             heatmapEnabled = heatmapEnabled,
+            polylinesEnabled = polylinesEnabled,
+            tripPolylines = tripPolylines,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapUi())
 
@@ -188,6 +231,10 @@ class MapViewModel @Inject constructor(
 
     fun setHeatmapEnabled(enabled: Boolean) {
         viewModelScope.launch { appPreferences.setMapHeatmapEnabled(enabled) }
+    }
+
+    fun setPolylinesEnabled(enabled: Boolean) {
+        viewModelScope.launch { appPreferences.setMapPolylinesEnabled(enabled) }
     }
 
     fun setMapType(type: String) {
@@ -339,6 +386,15 @@ class MapViewModel @Inject constructor(
         val running: Boolean = false,
         val completed: Boolean = false,
         val failed: Int = 0,
+    )
+
+    /** Bundle of map display prefs streamed in by [mapPrefs]. Destructured
+     *  by the outer state combine to keep things readable. */
+    private data class MapPrefs(
+        val mapType: String,
+        val clusteringEnabled: Boolean,
+        val heatmapEnabled: Boolean,
+        val polylinesEnabled: Boolean,
     )
 
     companion object {

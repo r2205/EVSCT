@@ -15,11 +15,17 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
   (per-kWh, per-minute, flat, free, hybrid).
 - Odometer, energy delivered (kWh), total cost, charging duration, battery
   start/end %.
+- Optional **wait time** — minutes you spent queueing before the cable
+  plugged in. Doesn't affect kWh / cost; just lets the row show "1h 23m
+  +10m wait" so total stop time stays distinct from charge time.
 - Per-session **currency chip** (CAD / USD) — defaults to your preferred
   currency, but a US road-trip session can be tagged USD even when your
   default is CAD.
 - Posted vs. effective rates ($/kWh, $/min, max kW) so you can see when a
   station charges differently than advertised.
+- **Free-form tags** — type "work charge", "winter test", "kid's hockey
+  trip"; press Enter or comma to commit. Tags appear as `#pill` chips on
+  the row and become a filter chip in the log's Filter sheet.
 - Notes and an optional **receipt** — either a **photo** (with tap-to-
   fullscreen + pinch-to-zoom) or a **PDF** (opens in your system PDF
   viewer). A small "Photo / PDF" chooser appears when you tap to attach.
@@ -49,16 +55,22 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 ### The Charging log
 - Cards per session with a colored leading bar (amber DC fast, blue AC L2,
   purple AC L1), brand, city, cost in primary green, eff. $/kWh, vehicle and
-  trip pills, and a receipt icon when a photo or PDF is attached.
+  trip pills, a receipt icon when a photo or PDF is attached, and a row of
+  `#tag` chips when the session is tagged.
 - **Vehicle tabs** — filter to a specific car, or All. New sessions started
   from a vehicle tab pre-select that vehicle.
 - **Search** — free-text matching brand, city, prov, address, station,
-  notes.
+  notes, and tag names.
 - **Filter sheet** — by brand, by date range with quick presets (This
-  month / Last 3 mo. / Last year / custom from-to via date picker).
+  month / Last 3 mo. / Last year / custom from-to via date picker), and by
+  **tags** (multi-select chips, OR semantics, case-insensitive).
+- **Sort** — small dropdown in the top bar with Date (newest, default),
+  Cost (highest), Efficiency (cheapest $/kWh first), or Brand (A–Z).
+  Date breaks ties on every option, and sessions missing the chosen
+  field fall to the end.
 - **Multi-select** — long-press to enter selection mode, then bulk-assign
   selected sessions to a trip.
-- Top bar entries: Search · Stats · **Map** · Trips · Settings.
+- Top bar entries: Search · **Sort** · Stats · **Map** · Trips · Settings.
 
 ### Map view
 - Google Maps full-screen view with **one pin per distinct charging stop**
@@ -69,12 +81,20 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
   across multiple trips render as a neutral gray "shared" pin so the
   visual stays honest.
 - **Filter sheet** — toggle "Color pins by trip" off to render every pin
-  in red, hide individual trips with a checkbox list, or hide untripped
-  sessions.
+  in red, scope the map to a single vehicle (chip row appears when you
+  have ≥2 vehicles), hide individual trips with a checkbox list, or use
+  **Show all** / **Hide all** to flip the trip selection in one tap when
+  the trip list grows long.
 - **Layers menu** — basemap switcher (Default / Satellite / Hybrid /
-  Terrain) plus a **Heatmap** toggle. With heatmap on, pins are replaced
-  by a density overlay weighted by visit count, so your everyday home
-  charger glows brighter than a one-off road-trip stop.
+  Terrain) plus two display-mode toggles:
+  - **Heatmap** — pins are replaced by a density overlay weighted by
+    visit count, so your everyday home charger glows brighter than a
+    one-off road-trip stop.
+  - **Trip routes** — draws a colored polyline for each trip connecting
+    its sessions in chronological order, using the trip's pin color.
+    Lines are geodesic so cross-country routes curve naturally instead
+    of looking like flat-Earth shortcuts. Suppressed (and grayed in the
+    menu) while heatmap mode owns the canvas.
 - **First-open backfill** — the first time you open the screen, every
   stop with only a textual address is reverse-geocoded and the resolved
   coordinates saved back to those sessions. After that, the map opens

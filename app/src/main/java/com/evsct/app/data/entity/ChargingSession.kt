@@ -36,6 +36,11 @@ data class ChargingSession(
     /** Total session duration in seconds (null when not recorded). */
     val durationSeconds: Long? = null,
 
+    /** Optional minutes spent queued/waiting at the station before the
+     *  charge actually started. Doesn't enter kWh or cost calculations —
+     *  used only to surface a "stop time" stat distinct from charge time. */
+    val waitTimeMinutes: Int? = null,
+
     val odometerKm: Double? = null,
     val energyKwh: Double? = null,
 
@@ -68,6 +73,10 @@ data class ChargingSession(
     val tripId: Long? = null,
     val vehicleId: Long? = null,
     val notes: String? = null,
+    /** Free-form user tags, comma-joined. Empty/null when no tags are set.
+     *  Use [com.evsct.app.util.Tags] to parse to/from List<String> rather
+     *  than splitting at call sites. */
+    val tags: String? = null,
     /** Optional path under filesDir to an attached receipt image. */
     val receiptImagePath: String? = null,
 

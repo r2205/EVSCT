@@ -70,6 +70,7 @@ import com.google.maps.android.compose.MapEffect
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.TileOverlay
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.heatmaps.HeatmapTileProvider
@@ -178,6 +179,12 @@ fun MapScreen(
                                 viewModel.setHeatmapEnabled(enabled)
                                 showLayersMenu = false
                             },
+                            polylinesEnabled = state.polylinesEnabled,
+                            onTogglePolylines = { enabled ->
+                                viewModel.setPolylinesEnabled(enabled)
+                                showLayersMenu = false
+                            },
+                            polylinesAvailable = !state.heatmapEnabled,
                         )
                     }
                     IconButton(onClick = { showFilters = true }) {
@@ -235,6 +242,22 @@ fun MapScreen(
                     map.setOnMarkerClickListener(mgr)
                     clusterManager.value = mgr
                     clusterRenderer.value = renderer
+                }
+
+                // Trip route polylines. Drawn beneath markers so pins stay
+                // tappable, and suppressed when heatmap mode is on so the
+                // two display modes don't overlap into visual noise.
+                if (state.polylinesEnabled && !state.heatmapEnabled) {
+                    state.tripPolylines.forEach { polyline ->
+                        val color = TripPinColor.fromKey(polyline.pinColorKey)?.swatch
+                            ?: Color(0xFF6E6E6E)
+                        Polyline(
+                            points = polyline.points.map { (lat, lng) -> LatLng(lat, lng) },
+                            color = color,
+                            width = 8f,
+                            geodesic = true,
+                        )
+                    }
                 }
 
                 // Heatmap overlay. Built only when the user has flipped to

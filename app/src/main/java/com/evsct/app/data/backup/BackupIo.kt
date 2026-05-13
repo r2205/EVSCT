@@ -279,10 +279,12 @@ class BackupIo @Inject constructor(
                         tripId = raw.tripId?.let(tripIdMap::get),
                         vehicleId = raw.vehicleId?.let(vehicleIdMap::get),
                         notes = raw.notes,
+                        tags = raw.tags,
                         receiptImagePath = raw.receiptFile?.let(::sanitizedBasename)?.let { plannedReceipts[it] },
                         latitude = raw.latitude,
                         longitude = raw.longitude,
                         continuesPrevious = raw.continuesPrevious,
+                        waitTimeMinutes = raw.waitTimeMinutes,
                         createdAt = raw.createdAt,
                         updatedAt = raw.updatedAt,
                     )
@@ -371,6 +373,7 @@ class BackupIo @Inject constructor(
         put("id", id)
         put("sessionStart", sessionStart)
         putOptLong("durationSeconds", durationSeconds)
+        putOptLong("waitTimeMinutes", waitTimeMinutes?.toLong())
         putOptDouble("odometerKm", odometerKm)
         putOptDouble("energyKwh", energyKwh)
         putOptDouble("totalCost", totalCost)
@@ -391,6 +394,7 @@ class BackupIo @Inject constructor(
         putOptLong("tripId", tripId)
         putOptLong("vehicleId", vehicleId)
         putOptString("notes", notes)
+        putOptString("tags", tags)
         // Strip the "receipts/" prefix; the directory is implicit in the zip.
         putOptString("receiptFile", receiptImagePath?.removePrefix("$RECEIPT_DIR_IN_FILES/"))
         putOptDouble("latitude", latitude)
@@ -491,6 +495,7 @@ class BackupIo @Inject constructor(
                     id = s.getLong("id"),
                     sessionStart = s.getLong("sessionStart"),
                     durationSeconds = s.optLongOrNull("durationSeconds"),
+                    waitTimeMinutes = s.optLongOrNull("waitTimeMinutes")?.toInt(),
                     odometerKm = s.optDoubleOrNull("odometerKm"),
                     energyKwh = s.optDoubleOrNull("energyKwh"),
                     totalCost = s.optDoubleOrNull("totalCost"),
@@ -515,6 +520,7 @@ class BackupIo @Inject constructor(
                     tripId = s.optLongOrNull("tripId"),
                     vehicleId = s.optLongOrNull("vehicleId"),
                     notes = s.optStringOrNull("notes"),
+                    tags = s.optStringOrNull("tags"),
                     receiptFile = s.optStringOrNull("receiptFile"),
                     latitude = s.optDoubleOrNull("latitude"),
                     longitude = s.optDoubleOrNull("longitude"),
@@ -659,6 +665,7 @@ private data class RawSession(
     val id: Long,
     val sessionStart: Long,
     val durationSeconds: Long?,
+    val waitTimeMinutes: Int?,
     val odometerKm: Double?,
     val energyKwh: Double?,
     val totalCost: Double?,
@@ -679,6 +686,7 @@ private data class RawSession(
     val tripId: Long?,
     val vehicleId: Long?,
     val notes: String?,
+    val tags: String?,
     val receiptFile: String?,
     val latitude: Double?,
     val longitude: Double?,
