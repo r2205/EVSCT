@@ -2,6 +2,8 @@ package com.evsct.app.data.csv
 
 import android.content.Context
 import android.net.Uri
+import androidx.room.withTransaction
+import com.evsct.app.data.db.EvsctDatabase
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.SessionRepository
@@ -107,6 +109,7 @@ data class CsvImportResult(val imported: Int, val skipped: Int)
 @Singleton
 class CsvIo @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val database: EvsctDatabase,
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
     private val vehicleRepository: VehicleRepository,
@@ -143,8 +146,9 @@ class CsvIo @Inject constructor(
         if (rows.isEmpty()) return@withContext CsvImportResult(0, 0)
         val headers = rows.first().map { it.trim() }
 
-        if (replaceExisting) sessionRepository.deleteAll()
-
+        // Read existing trip/vehicle name lookups outside the transaction so
+        // the Flow .first() collectors don't run on the transaction connection
+        // (mirrors the pattern in BackupIo.restore).
         val tripIdByName = mutableMapOf<String, Long>()
         tripRepository.observeAll().first().forEach { tripIdByName[it.name] = it.id }
         val vehicleIdByName = mutableMapOf<String, Long>()
@@ -152,19 +156,27 @@ class CsvIo @Inject constructor(
 
         var imported = 0
         var skipped = 0
-        for (i in 1 until rows.size) {
-            val row = rows[i]
-            if (row.all { it.isBlank() }) continue
-            val parsed = CsvFormat.fromRow(headers, row)
-            if (parsed == null) { skipped++; continue }
-            val tripId = parsed.tripName?.takeIf { it.isNotBlank() }?.let { name ->
-                tripIdByName.getOrPut(name) { tripRepository.upsert(Trip(name = name)) }
+
+        // Atomic: either every row lands or none of it does. Without this a
+        // killed process or a single bad row mid-loop after deleteAll() leaves
+        // the user with a partially-wiped database and no rollback.
+        database.withTransaction {
+            if (replaceExisting) sessionRepository.deleteAll()
+
+            for (i in 1 until rows.size) {
+                val row = rows[i]
+                if (row.all { it.isBlank() }) continue
+                val parsed = CsvFormat.fromRow(headers, row)
+                if (parsed == null) { skipped++; continue }
+                val tripId = parsed.tripName?.takeIf { it.isNotBlank() }?.let { name ->
+                    tripIdByName.getOrPut(name) { tripRepository.upsert(Trip(name = name)) }
+                }
+                val vehicleId = parsed.vehicleName?.takeIf { it.isNotBlank() }?.let { name ->
+                    vehicleIdByName.getOrPut(name) { vehicleRepository.upsert(Vehicle(name = name)) }
+                }
+                sessionRepository.upsert(parsed.session.copy(tripId = tripId, vehicleId = vehicleId))
+                imported++
             }
-            val vehicleId = parsed.vehicleName?.takeIf { it.isNotBlank() }?.let { name ->
-                vehicleIdByName.getOrPut(name) { vehicleRepository.upsert(Vehicle(name = name)) }
-            }
-            sessionRepository.upsert(parsed.session.copy(tripId = tripId, vehicleId = vehicleId))
-            imported++
         }
         CsvImportResult(imported, skipped)
     }
