@@ -31,33 +31,33 @@ object Format {
     fun time(epoch: Long): String = timeFmt.format(zonedAt(epoch))
 
     fun money(value: Double?, currency: String = "CAD"): String =
-        value?.let { "${'$'}${moneyFmt.get().format(it)} $currency" } ?: "—"
+        value?.let { "${'$'}${moneyFmt.get()!!.format(it)} $currency" } ?: "—"
 
     fun rate(value: Double?, suffix: String): String =
-        value?.let { "${rateFmt.get().format(it)} $suffix" } ?: "—"
+        value?.let { "${rateFmt.get()!!.format(it)} $suffix" } ?: "—"
 
     /** Format a money rate like "$0.385/kWh" or "$0.12/km". */
     fun moneyRate(value: Double?, perUnit: String): String =
-        value?.let { "${'$'}${rateFmt.get().format(it)}/$perUnit" } ?: "—"
+        value?.let { "${'$'}${rateFmt.get()!!.format(it)}/$perUnit" } ?: "—"
 
-    fun km(value: Double?): String = value?.let { "${kmFmt.get().format(it)} km" } ?: "—"
+    fun km(value: Double?): String = value?.let { "${kmFmt.get()!!.format(it)} km" } ?: "—"
 
     /** Distance display in user-preferred unit. [valueKm] is always stored km. */
     fun distance(valueKm: Double?, useMiles: Boolean): String =
         valueKm?.let {
             val display = Units.kmToDisplay(it, useMiles)
-            "${kmFmt.get().format(display)} ${Units.distanceUnit(useMiles)}"
+            "${kmFmt.get()!!.format(display)} ${Units.distanceUnit(useMiles)}"
         } ?: "—"
 
     /** Cost-per-distance display, given $/km in storage units. */
     fun moneyRatePerDistance(valuePerKm: Double?, useMiles: Boolean): String =
         valuePerKm?.let {
             val perDisplay = if (useMiles) it * 1.609344 else it
-            "${'$'}${rateFmt.get().format(perDisplay)}/${Units.distanceUnit(useMiles)}"
+            "${'$'}${rateFmt.get()!!.format(perDisplay)}/${Units.distanceUnit(useMiles)}"
         } ?: "—"
 
-    fun kwh(value: Double?): String = value?.let { "${kwhFmt.get().format(it)} kWh" } ?: "—"
-    fun kw(value: Double?): String = value?.let { "${kmFmt.get().format(it)} kW" } ?: "—"
+    fun kwh(value: Double?): String = value?.let { "${kwhFmt.get()!!.format(it)} kWh" } ?: "—"
+    fun kw(value: Double?): String = value?.let { "${kmFmt.get()!!.format(it)} kW" } ?: "—"
     fun pct(value: Int?): String = value?.let { "$it%" } ?: "—"
 
     fun duration(seconds: Long?): String {
