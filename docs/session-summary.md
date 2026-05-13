@@ -603,6 +603,23 @@ of years where they have data) and recomputes the recap on each pick.
   `vehicle_name`, `latitude`, `longitude`, `continues_previous`.
   Round-trips via `CsvIo`. Trips and vehicles are recreated by name
   on import.
+  - **Save / Share parity with Full backup**: the CSV card has the
+    same two buttons. **Export to CSV…** is the SAF
+    `CreateDocument("text/csv")` flow. **Share CSV file…** routes
+    through `CsvIo.prepareShareFile`, which writes the same CSV to
+    `cacheDir/csv-share/` (clearing prior share files first) and the
+    screen wraps it with FileProvider and fires `ACTION_SEND`. Both
+    paths use the same private `writeCsvTo(Writer)` helper so the
+    output can't drift. The shared `LaunchedEffect` on `pendingShareFile`
+    picks the MIME type (`text/csv` vs `application/zip`) and chooser
+    title from the file extension, so one effect handles both the CSV
+    and the backup-zip share flows.
+  - **Import atomicity**: `import()` wraps `deleteAll()` plus the per-
+    row upsert loop in `database.withTransaction { … }`, so a killed
+    process or single bad row after the wipe rolls back instead of
+    leaving a half-populated database. Trip/vehicle name lookups are
+    read outside the transaction (Flow `.first()`) to match the
+    `BackupIo.restore` pattern.
   - **Formula injection defense**: any field that would start with
     `=`, `+`, `-`, `@`, tab, or CR is prefixed with `'` on export.
     Import strips a leading `'` only when followed by a trigger char,
@@ -679,7 +696,7 @@ Cards (top to bottom):
    Restore from backup….
 5. **Backup reminder** — enable, threshold days field, Android
    notification toggle.
-6. **Backup (CSV)** — Export to CSV.
+6. **Backup (CSV)** — Export to CSV… / Share CSV file….
 7. **Import (CSV)** — Import CSV with replace-existing toggle.
 8. **One-time XLSX import** — for the legacy log.
 
@@ -880,11 +897,54 @@ Run from Android Studio (Right-click → Run 'tests') or
   `ArrowBack`, `Label`, `TrendingUp`, `TrendingDown` all moved to
   `Icons.AutoMirrored.Filled.*`. The non-mirrored versions are
   deprecated and emit warnings; one-line import swaps fix it.
+- **`SimpleDateFormat` and `DecimalFormat` are not thread-safe**:
+  `Format` originally held shared static instances of both. The PDF
+  generator runs on `Dispatchers.IO` and calls `Format.money/kwh/distance`
+  concurrently with the UI thread — concurrent `.format()` can throw
+  or silently produce garbled strings. Fix: switch dates to
+  `DateTimeFormatter` (thread-safe by design, native since API 26 so
+  no desugaring at minSdk 30), and wrap `DecimalFormat` in
+  `ThreadLocal` so each thread gets its own instance. A JVM stress
+  test (`FormatThreadSafetyTest`) hammers every formatter from N×4
+  threads and asserts the output matches a single-threaded baseline —
+  reliably fails against the old implementation, passes against the
+  new one.
 
 ## Audit closeouts
 
-Mid-project we ran an end-to-end bug audit (15 findings) and a
-security audit (M1 + M2 + Mn1–Mn5). Highlights of what got fixed:
+Mid-project we ran an end-to-end bug audit (15 findings), a security
+audit (M1 + M2 + Mn1–Mn5), and a later second-pass bug audit. Highlights
+of what got fixed:
+
+- **Second-pass bug audit** (post-AGP-9, after the docs settled):
+  - **CSV import was non-atomic**: `import()` did `deleteAll()` then
+    upserted row-by-row outside any transaction. A process kill, single
+    bad row, or storage-full mid-loop left the database half-wiped with
+    no rollback. Wrapped the destructive part in
+    `database.withTransaction { … }`; trip/vehicle name lookups still
+    read outside the transaction to match `BackupIo.restore`.
+  - **`Format` was not thread-safe**: shared static `SimpleDateFormat` /
+    `DecimalFormat` instances raced between the UI thread and the
+    `Dispatchers.IO`-bound PDF generator. Switched dates to
+    `DateTimeFormatter` (thread-safe) and wrapped `DecimalFormat` in
+    `ThreadLocal`. Added `FormatThreadSafetyTest` as a regression guard.
+  - **XLSX battery percentage truncated instead of rounding**:
+    `(it * 100).toInt()` turned `0.856` into `85` instead of `86`,
+    losing up to a percentage point per imported field. Switched to
+    `.roundToInt()`.
+  - **`YearRecapPdf` could leak the native `PdfDocument`**: `close()`
+    only ran on a clean success. Wrapped the entire render in
+    `try { … } finally { doc.close() }` so the document always closes.
+  - **`BackupIo.extractInto` could clobber files on duplicate basenames**:
+    two zip entries reducing to the same basename used to overwrite
+    each other in the temp dir — and corrupted the first if the second
+    errored mid-write. The DB only references one file per basename, so
+    keep the first occurrence and skip later duplicates.
+  - **Date filter accepted `from > to` with no feedback**: picking
+    `From = today, To = yesterday` made the predicate impossible to
+    satisfy and the list silently went empty. Added inline error text
+    and disabled the Apply button when the range is inverted.
+
 
 - **Bug audit**:
   - Trip picker clipped trips off the right edge → horizontalScroll.
