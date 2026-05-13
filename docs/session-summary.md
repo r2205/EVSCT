@@ -58,8 +58,18 @@ context is in the repo even if the conversation is summarized later.
   on sessions. Marks consecutive-stall sessions that share a continuous
   drive with the next one. Used by the driving-efficiency calculator to
   pair "previous-leg-end" with "current-leg-start" odometer readings.
+- **v7 → v8**: added `waitTimeMinutes` (INTEGER, nullable) on sessions.
+  Optional minutes the user spent queueing before the cable plugged in;
+  doesn't enter kWh / cost calculations, only feeds the derived "stop
+  time" stat (`Derived.stopTimeSeconds` = charge + wait, in seconds).
+- **v8 → v9**: added `tags` (TEXT, nullable) on sessions. Free-form
+  user labels stored comma-joined. `util/Tags.kt` handles parsing,
+  sanitizing (commas in input are stripped so they can't break round-
+  trip), and case-insensitive dedupe.
 
-`fallbackToDestructiveMigration` is enabled as a last-resort safety net.
+`fallbackToDestructiveMigration(dropAllTables = true)` is enabled as a
+last-resort safety net (the explicit `dropAllTables` arg replaces the
+deprecated zero-arg overload).
 
 ## Feature inventory (organized by area)
 
@@ -118,6 +128,17 @@ context is in the repo even if the conversation is summarized later.
   drive after this session" that the driving-efficiency calculator
   uses to pair adjacent sessions. Prevents counting "we sat at the
   charger overnight" gaps as a leg.
+- **Wait time field**: optional "Wait time (min, optional)" integer
+  field placed under the duration block. Captures queue time before
+  charging started; stored as `waitTimeMinutes: Int?` and parsed
+  through `toIntOrNull()?.takeIf { it >= 0 }` so negatives never land
+  in the DB.
+- **Tags field**: a "Tags" section above Notes. Existing tags render
+  as `InputChip`s with an X to remove; an "Add tag…" `OutlinedTextField`
+  commits on Enter or on typing a comma — the comma path lets the
+  user type "work, winter, fast" without reaching for Done. Dedupes
+  case-insensitively via `Tags.add` so "Work" and "work" don't end
+  up as two chips.
 - **Receipt attachment**: photo or PDF, picked from a small "Photo /
   PDF" bottom-sheet chooser. Photos use the Photo Picker; PDFs use
   `OpenDocument` filtered to `application/pdf`. Storage preserves the
@@ -158,18 +179,33 @@ context is in the repo even if the conversation is summarized later.
 - Cards with a 6dp colored leading bar by charging type (amber /
   blue / purple), brand, city, cost in primary green, eff. $/kWh
   pill, vehicle pill (only on All tab), trip pill, receipt icon if
-  attached.
+  attached. The duration line appends `+Xm wait` when the session
+  carries a wait time; a wrapping FlowRow of `#tag` pills sits below
+  the meta line when tags are set.
 - **Vehicle tabs** — `ScrollableTabRow` with All + each vehicle.
   Hidden when ≤ 1 vehicle.
 - **Search** (toggle via top-bar magnifying glass): matches brand,
   city, prov, address, station, stall, notes.
 - **Filter sheet** (tune icon next to search): brand FilterChips +
   date range with presets (All time / This month / Last 3 mo. /
-  Last year) + custom From/To date pickers. Date filter honors the
-  device's local timezone (a bug we fixed mid-project — was applying
-  UTC bounds and excluding sessions logged late in the day).
+  Last year) + custom From/To date pickers + a Tags multi-select
+  FilterChip row populated from `tagsInUse` (every distinct tag the
+  user has ever set, case-insensitive deduped, A–Z). Date filter
+  honors the device's local timezone (a bug we fixed mid-project —
+  was applying UTC bounds and excluding sessions logged late in the
+  day). Tag matching is OR (a session matches if it carries any of
+  the selected tags) and case-insensitive.
 - **Active-filter chips** below search; tap to remove individually,
-  Clear All to wipe.
+  Clear All to wipe. Tag filter shows as `#tagname` (single) or
+  `N tags` (multiple); the filter-icon badge counts tags as one slot.
+- **Sort**: a Sort icon (`Icons.AutoMirrored.Filled.Sort`) in the top
+  bar opens a small `DropdownMenu` with four options — Date (newest)
+  default, Cost (highest), Efficiency ($/kWh, cheapest first), Brand
+  (A–Z). Each option uses date as the secondary key so ties resolve
+  to recency, and sessions missing the primary field fall to the
+  end via `nullsLast` / `nullsFirst` (descending needs the latter
+  to keep nulls at the bottom). Not persisted across launches —
+  matches the in-memory `vehicleFilter` pattern.
 - **Multi-select**: long-press to enter selection mode, tap to toggle.
   Selection-mode top bar shows count + clear / select-all / assign
   trip. Bulk-assign trip uses a single SQL UPDATE.
@@ -182,7 +218,7 @@ context is in the repo even if the conversation is summarized later.
 - **Empty state**: shared `EmptyState` composable on first launch with
   a "Add session" call to action. Same composable used on Vehicles,
   Trips, Stats, and Map for consistent zero-data guidance.
-- Top bar: Search · Stats · Map · Trips · Settings.
+- Top bar: Search · Sort · Stats · Map · Trips · Settings.
 
 ### Map view (`MapScreen`)
 
@@ -212,10 +248,20 @@ context is in the repo even if the conversation is summarized later.
   - "Cluster nearby pins" switch — disables clustering entirely so
     every pin renders individually regardless of zoom (useful for
     full-detail browsing of a road trip).
+  - "Show pins for vehicle" — single-select FilterChip row ("All
+    vehicles" + one chip per garage entry) hidden when fewer than two
+    vehicles exist. The selection is applied *before* stops and trip
+    options are computed so the trip list collapses to only the trips
+    that vehicle actually visited; stale ids (deleted underneath) are
+    dropped silently.
   - Checkbox list of trips and an "Untripped sessions" row. Hiding one
     trip on a multi-trip stop re-colors that stop to the remaining
     trip rather than staying gray.
-  - "Show all" / "Reset" actions when applicable.
+  - "Show all" *and* "Hide all" actions next to the trip list — each
+    appears only when it has work to do, so they don't both light up
+    when the filter is already at one extreme. Hide-all is the
+    "start from nothing, opt in just a few" workflow when the trip
+    list grows long.
   - A small dot on the filter icon indicates active filters.
 - **Layer switcher** in the top app bar — opens a small menu offering
   Default / Satellite / Hybrid / Terrain. Selection persists via
@@ -231,6 +277,18 @@ context is in the repo even if the conversation is summarized later.
   while heatmap mode is active so toggling clustering doesn't fight
   the overlay. Persisted as `mapHeatmapEnabled` (defaults off so the
   first-open experience stays the familiar pin view).
+- **Trip route polylines** — a "Trip routes" toggle sits next to the
+  Heatmap row in the Layers menu. When on, every visible trip with
+  two or more located visits draws a colored `Polyline` connecting
+  its sessions in chronological order, using the trip's existing
+  `pinColor` swatch (gray fallback when none). `geodesic = true` so
+  long-distance lines bend with the great circle instead of looking
+  like flat-Earth shortcuts. Polylines respect the same hidden-trip
+  and vehicle filters as the pins, and are suppressed when heatmap
+  mode is on — the layers menu grays the row out at the same time
+  (preserving its checkmark state, so flipping heatmap back off
+  restores the previous polyline preference). Persisted as
+  `mapPolylinesEnabled` (defaults off).
 - **Manual `ClusterManager`** (rather than the `Clustering(items, …)`
   convenience composable) so we can tune the algorithm and keep
   trip-colored markers. Set up inside `MapEffect(Unit)` once the
@@ -438,6 +496,12 @@ of years where they have data) and recomputes the recap on each pick.
   - v3 added per-session lat/lng
   - v4 added per-trip pinColor
   - v5 added per-session `continuesPrevious`
+  - **Post-v5 additive fields** (no version bump): `waitTimeMinutes`
+    and `tags` are read/written through the same JSON keys regardless
+    of version. v5 readers ignore unknown keys, and a future version
+    bump can promote them to a "v6 added wait time + tags" entry
+    without code changes. Pending decision; tracked in Outstanding
+    ideas.
   Restore wipes the DB and reinstalls inside one Room transaction;
   foreign keys remapped to fresh primary keys via in-flight ID maps so
   backups from another phone work cleanly. Red "Erase and restore"
@@ -569,6 +633,7 @@ bug we hit early when the list was too tall for some screens).
 - `mapType: Flow<String>` (NORMAL / SATELLITE / HYBRID / TERRAIN)
 - `mapClusteringEnabled: Flow<Boolean>` (default true)
 - `mapHeatmapEnabled: Flow<Boolean>` (default false)
+- `mapPolylinesEnabled: Flow<Boolean>` (default false)
 - `themeMode: Flow<String>` (SYSTEM / LIGHT / DARK)
 - `lastMapBackfillAt(): Long?` (one-shot read for the throttle)
 - `snapshot()` for one-shot reads (used by `BackupReminderNotifier`)
@@ -591,7 +656,16 @@ the unit pref as a parameter; aggregates pass the default-currency to
   mixed; renders single-currency at `titleMedium`. Built on top of
   `CurrencyTotals` so callers don't have to format manually.
 - **`MapTypeMenu`** — top-bar layer switcher reused by `MapScreen`
-  and `MapPickerScreen`.
+  and `MapPickerScreen`. Optional `heatmapEnabled` / `onToggleHeatmap`
+  and `polylinesEnabled` / `onTogglePolylines` callback pairs surface
+  display-mode rows beneath the basemap list; the picker passes nulls
+  for both pairs and the rows hide. A `polylinesAvailable: Boolean`
+  parameter (true by default) lets the screen gray the Trip-routes row
+  out when heatmap mode owns the canvas.
+- **`util/Tags.kt`** — comma-joined-string parsing for the new tags
+  column. `parse` / `serialize` / `add` / `remove` / `sanitize` handle
+  case-insensitive dedupe and strip the delimiter from user input so
+  it can't break round-trip storage.
 
 ## Unit tests
 
@@ -728,6 +802,21 @@ Run from Android Studio (Right-click → Run 'tests') or
   `EXTRA_SUBJECT` / `EXTRA_TITLE` as the *saved filename* and ignore
   the FileProvider's display name. Pass the actual filename — including
   the `.zip`/`.pdf` extension — on both extras to round-trip the name.
+- **`compareBy(comparator, selector)` can't infer `T` from the lambda
+  alone**: the two-arg overload needs both type params spelled out
+  (e.g. `compareBy<ChargingSession, Double?>(nullsLast()) { it.totalCost }`)
+  or the lambda body fails to type-check (`Unresolved reference 'totalCost'`).
+  The single-arg `compareBy { it.x }` infers fine; only the comparator-
+  taking variant trips this.
+- **Descending sort with nulls-last needs `nullsFirst`**:
+  `compareByDescending` swaps the operands before delegating to the
+  inner comparator, so `nullsLast` (which orders null > non-null in
+  ascending) ends up putting nulls *first* in descending. Use
+  `nullsFirst` for descending-with-nulls-at-the-end.
+- **AutoMirrored icons replace several `Icons.Default.*`**: `Sort`,
+  `ArrowBack`, `Label`, `TrendingUp`, `TrendingDown` all moved to
+  `Icons.AutoMirrored.Filled.*`. The non-mirrored versions are
+  deprecated and emit warnings; one-line import swaps fix it.
 
 ## Audit closeouts
 
@@ -778,15 +867,42 @@ security audit (M1 + M2 + Mn1–Mn5). Highlights of what got fixed:
     (the new KSP2 semver scheme).
   - Companion bumps surfaced by build failures: Room 2.6.1 → 2.8.4,
     Hilt 2.54 → 2.59.2.
-  - Conservative-mode flags written to `gradle.properties` to keep
-    today's behavior on AGP 9 (each emits a deprecation warning,
-    each is a future cleanup): `resvalues=true`,
-    `defaultTargetSdkToCompileSdkIfUnset=false`,
-    `enableAppCompileTimeRClass=false`, `usesSdkInManifest.disallowed=false`,
-    `uniquePackageNames=false`, `dependency.useConstraints=true`,
-    `r8.strictFullModeForKeepRules=false`,
-    `r8.optimizedResourceShrinking=false`, `builtInKotlin=false`,
-    `newDsl=false`.
+  - **Warning cleanup pass** trimmed the AGP-9 deprecation noise from
+    14 → 7 warnings. `gradle.properties` ended up with five flags
+    actually needed and one suppression:
+    - `android.builtInKotlin=false` and `android.newDsl=false` —
+      have to stay because Kotlin Gradle plugin 2.2.10 still casts
+      the AGP extension to the legacy `BaseExtension`. Removing
+      either fails the build (`extension already registered` /
+      `cannot be cast to BaseExtension`). Latest Kotlin (2.3.21,
+      April 2026) doesn't fix this; planning to revisit only when
+      something else in the chain forces a Kotlin bump.
+    - `android.uniquePackageNames=false`,
+      `android.dependency.useConstraints=true`,
+      `android.r8.strictFullModeForKeepRules=false` — pre-AGP-9
+      transitive-dep / R8 behavior, not yet flagged as deprecated.
+    - `android.generateSyncIssueWhenLibraryConstraintsAreEnabled=false`
+      added to silence the AGP-9 nudge for an already-deprecated
+      "very large projects" perf flag.
+    - Removed flags: `resvalues=true`,
+      `defaultTargetSdkToCompileSdkIfUnset=false`,
+      `enableAppCompileTimeRClass=false`,
+      `usesSdkInManifest.disallowed=false`,
+      `r8.optimizedResourceShrinking=false`. These were noisy
+      no-ops once the surrounding warnings settled.
+  - **Kotlin 2.x annotation-target opt-in**: `app/build.gradle.kts`
+    moved from AGP's deprecated `kotlinOptions {}` block to the Kotlin
+    plugin's `kotlin { compilerOptions { ... } }` DSL, with
+    `freeCompilerArgs.add("-Xannotation-default-target=param-property")`
+    to silence 12 KT-73255 warnings on Hilt `@Inject` constructor
+    params. Required `import org.jetbrains.kotlin.gradle.dsl.JvmTarget`
+    plus `jvmTarget.set(JvmTarget.JVM_17)`.
+  - **Room 2.8.4 fallbackToDestructiveMigration deprecation**: zero-arg
+    overload is gone; switched to `.fallbackToDestructiveMigration(
+    dropAllTables = true)` to preserve previous "wipe everything" semantics.
+  - The remaining 7 warnings all trace to upstream pins (6 to Kotlin
+    Gradle plugin 2.2.10 lagging AGP 9, 1 to AndroidX shipping
+    unstrippable `.so` files). Nothing left to clean from our side.
   - **No app code changes were required** for the upgrade itself —
     only build files and version pins.
 
@@ -811,11 +927,18 @@ security audit (M1 + M2 + Mn1–Mn5). Highlights of what got fixed:
   up in the filename); pro-rate cross-year trips for "longest trip"
   rather than overclaiming the whole-trip distance; multi-page PDF
   when top-brands or trips overflow.
-- **Toolchain cleanup backlog**: the ten conservative-mode flags
-  in `gradle.properties` (added by the AGP 9 Upgrade Assistant) all
-  preserve current behavior and emit deprecation warnings — flip
-  each on individually as we have time. See "Audit closeouts" → AGP
-  9 upgrade for the list.
+- **Bump backup `SCHEMA_VERSION` past 5**: the post-v5 additive
+  fields (`waitTimeMinutes`, `tags`) currently ride along under
+  `schemaVersion = 5` because they're forward-compatible (older
+  readers ignore unknown keys). A bump to 6 is the conventional
+  marker — would mean only same-or-newer installs can restore
+  newer backups. Worth doing the next time we touch `BackupIo.kt`.
+- **Drop the last AGP-9 conservative-mode flags**: five flags remain
+  in `gradle.properties` after the cleanup pass (see "Audit
+  closeouts" → AGP 9 upgrade). Two are pinned by Kotlin Gradle
+  plugin 2.2.10's BaseExtension cast and need a Kotlin bump to lift;
+  the other three are pre-AGP-9 transitive-dep / R8 behaviors not
+  yet flagged as deprecated. Revisit when we next bump Kotlin.
 
 ## Repo conventions
 
