@@ -289,12 +289,15 @@ private fun comparatorFor(sort: SortOption): Comparator<ChargingSession> {
         SortOption.DATE -> recencyTiebreaker
         // compareByDescending swaps the operands, so nullsFirst (which orders
         // null < non-null) is what actually pushes nulls to the END.
-        SortOption.COST -> compareByDescending(nullsFirst<Double>()) { it.totalCost }
-            .then(recencyTiebreaker)
-        SortOption.EFFICIENCY -> compareBy(nullsLast<Double>()) {
+        SortOption.COST -> compareByDescending<ChargingSession, Double?>(nullsFirst<Double>()) {
+            it.totalCost
+        }.then(recencyTiebreaker)
+        SortOption.EFFICIENCY -> compareBy<ChargingSession, Double?>(nullsLast<Double>()) {
             com.evsct.app.util.Derived.effectiveEnergyPricePerKwh(it)
         }.then(recencyTiebreaker)
-        SortOption.BRAND -> compareBy(nullsLast<String>(String.CASE_INSENSITIVE_ORDER)) {
+        SortOption.BRAND -> compareBy<ChargingSession, String?>(
+            nullsLast<String>(String.CASE_INSENSITIVE_ORDER),
+        ) {
             it.brand?.trim()?.takeIf { b -> b.isNotEmpty() }
         }.then(recencyTiebreaker)
     }
