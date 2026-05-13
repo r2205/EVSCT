@@ -25,98 +25,103 @@ internal fun writeYearRecapPdf(
     units: UserUnits,
 ) {
     val doc = PdfDocument()
-    val pageInfo = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, 1).create()
-    val page = doc.startPage(pageInfo)
-    val canvas = page.canvas
+    try {
+        val pageInfo = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, 1).create()
+        val page = doc.startPage(pageInfo)
+        val canvas = page.canvas
 
-    val left = MARGIN
-    val right = A4_WIDTH - MARGIN
-    val contentWidth = right - left
-    var y = MARGIN.toFloat()
+        val left = MARGIN
+        val right = A4_WIDTH - MARGIN
+        val contentWidth = right - left
+        var y = MARGIN.toFloat()
 
-    val titlePaint = paint(textSize = 22f, bold = true)
-    val subtitlePaint = paint(textSize = 10f, color = Color.DKGRAY)
-    val sectionPaint = paint(textSize = 13f, bold = true)
-    val labelPaint = paint(textSize = 10f, color = Color.DKGRAY)
-    val valuePaint = paint(textSize = 12f, bold = true)
-    val bodyPaint = paint(textSize = 11f)
-    val footerPaint = paint(textSize = 8.5f, color = Color.GRAY)
+        val titlePaint = paint(textSize = 22f, bold = true)
+        val subtitlePaint = paint(textSize = 10f, color = Color.DKGRAY)
+        val sectionPaint = paint(textSize = 13f, bold = true)
+        val labelPaint = paint(textSize = 10f, color = Color.DKGRAY)
+        val valuePaint = paint(textSize = 12f, bold = true)
+        val bodyPaint = paint(textSize = 11f)
+        val footerPaint = paint(textSize = 8.5f, color = Color.GRAY)
 
-    // --- Title block -----------------------------------------------------
-    canvas.drawText("EVSCT — ${ui.selectedYear} Recap", left.toFloat(), y + 18f, titlePaint)
-    y += 24f
-    val genStamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
-    canvas.drawText("Generated $genStamp", left.toFloat(), y + 12f, subtitlePaint)
-    y += 24f
+        // --- Title block -----------------------------------------------------
+        canvas.drawText("EVSCT — ${ui.selectedYear} Recap", left.toFloat(), y + 18f, titlePaint)
+        y += 24f
+        val genStamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
+        canvas.drawText("Generated $genStamp", left.toFloat(), y + 12f, subtitlePaint)
+        y += 24f
 
-    // --- Headlines: 4-column grid (Sessions / Cost / Energy / Distance) --
-    drawHeadlines(canvas, left.toFloat(), y, contentWidth.toFloat(), ui, units, labelPaint, valuePaint)
-    y += 56f
+        // --- Headlines: 4-column grid (Sessions / Cost / Energy / Distance) --
+        drawHeadlines(canvas, left.toFloat(), y, contentWidth.toFloat(), ui, units, labelPaint, valuePaint)
+        y += 56f
 
-    // --- Monthly cost bar chart ------------------------------------------
-    canvas.drawText("Monthly cost (${ui.costCurrency})", left.toFloat(), y + 12f, sectionPaint)
-    y += 20f
-    val chartHeight = 130f
-    drawMonthlyChart(
-        canvas = canvas,
-        x = left.toFloat(),
-        y = y,
-        width = contentWidth.toFloat(),
-        height = chartHeight,
-        values = ui.monthlyCost.map { it.second },
-        labels = ui.monthlyCost.map { it.first },
-        barColor = Color.parseColor("#2E7D32"),  // EV green
-    )
-    y += chartHeight + 16f
-
-    // --- Top brands ------------------------------------------------------
-    if (ui.topBrands.isNotEmpty()) {
-        canvas.drawText("Top brands by spend (${ui.costCurrency})", left.toFloat(), y + 12f, sectionPaint)
+        // --- Monthly cost bar chart ------------------------------------------
+        canvas.drawText("Monthly cost (${ui.costCurrency})", left.toFloat(), y + 12f, sectionPaint)
         y += 20f
-        ui.topBrands.forEach { (brand, amount) ->
-            canvas.drawText(brand, left.toFloat(), y + 11f, bodyPaint)
-            val moneyText = Format.money(amount, ui.costCurrency)
-            val w = bodyPaint.measureText(moneyText)
-            canvas.drawText(moneyText, right - w, y + 11f, bodyPaint)
-            y += 14f
-        }
-        y += 8f
-    }
+        val chartHeight = 130f
+        drawMonthlyChart(
+            canvas = canvas,
+            x = left.toFloat(),
+            y = y,
+            width = contentWidth.toFloat(),
+            height = chartHeight,
+            values = ui.monthlyCost.map { it.second },
+            labels = ui.monthlyCost.map { it.first },
+            barColor = Color.parseColor("#2E7D32"),  // EV green
+        )
+        y += chartHeight + 16f
 
-    // --- Longest trip ----------------------------------------------------
-    ui.longestTrip?.let { trip ->
-        canvas.drawText("Longest trip", left.toFloat(), y + 12f, sectionPaint)
-        y += 20f
-        canvas.drawText(trip.name, left.toFloat(), y + 11f, bodyPaint)
-        y += 14f
-        val parts = buildList {
-            add(Format.distance(trip.distanceKm, units.useMiles))
-            add("${trip.sessionCount} session" + if (trip.sessionCount == 1) "" else "s")
-            if (trip.totalCost != null && trip.currency != null) {
-                add(Format.money(trip.totalCost, trip.currency))
+        // --- Top brands ------------------------------------------------------
+        if (ui.topBrands.isNotEmpty()) {
+            canvas.drawText("Top brands by spend (${ui.costCurrency})", left.toFloat(), y + 12f, sectionPaint)
+            y += 20f
+            ui.topBrands.forEach { (brand, amount) ->
+                canvas.drawText(brand, left.toFloat(), y + 11f, bodyPaint)
+                val moneyText = Format.money(amount, ui.costCurrency)
+                val w = bodyPaint.measureText(moneyText)
+                canvas.drawText(moneyText, right - w, y + 11f, bodyPaint)
+                y += 14f
             }
+            y += 8f
         }
-        canvas.drawText(parts.joinToString(" · "), left.toFloat(), y + 11f, labelPaint)
-        y += 18f
+
+        // --- Longest trip ----------------------------------------------------
+        ui.longestTrip?.let { trip ->
+            canvas.drawText("Longest trip", left.toFloat(), y + 12f, sectionPaint)
+            y += 20f
+            canvas.drawText(trip.name, left.toFloat(), y + 11f, bodyPaint)
+            y += 14f
+            val parts = buildList {
+                add(Format.distance(trip.distanceKm, units.useMiles))
+                add("${trip.sessionCount} session" + if (trip.sessionCount == 1) "" else "s")
+                if (trip.totalCost != null && trip.currency != null) {
+                    add(Format.money(trip.totalCost, trip.currency))
+                }
+            }
+            canvas.drawText(parts.joinToString(" · "), left.toFloat(), y + 11f, labelPaint)
+            y += 18f
+        }
+
+        // --- Footer ----------------------------------------------------------
+        val footerY = (A4_HEIGHT - MARGIN).toFloat()
+        canvas.drawText(
+            "Generated by EVSCT. ${ui.sessionCount} sessions in ${ui.selectedYear}." +
+                if (ui.excludedByCurrency > 0) {
+                    " (${ui.excludedByCurrency} session" +
+                        (if (ui.excludedByCurrency == 1) "" else "s") +
+                        " in another currency excluded from cost.)"
+                } else "",
+            left.toFloat(),
+            footerY,
+            footerPaint,
+        )
+
+        doc.finishPage(page)
+        doc.writeTo(out)
+    } finally {
+        // Always close the native document, even if rendering or writeTo()
+        // threw partway through — otherwise we leak it.
+        doc.close()
     }
-
-    // --- Footer ----------------------------------------------------------
-    val footerY = (A4_HEIGHT - MARGIN).toFloat()
-    canvas.drawText(
-        "Generated by EVSCT. ${ui.sessionCount} sessions in ${ui.selectedYear}." +
-            if (ui.excludedByCurrency > 0) {
-                " (${ui.excludedByCurrency} session" +
-                    (if (ui.excludedByCurrency == 1) "" else "s") +
-                    " in another currency excluded from cost.)"
-            } else "",
-        left.toFloat(),
-        footerY,
-        footerPaint,
-    )
-
-    doc.finishPage(page)
-    doc.writeTo(out)
-    doc.close()
 }
 
 /* --- private layout helpers --- */
