@@ -33,6 +33,19 @@ data class SessionFilters(
         get() = query.isNotBlank() || brand != null || dateFrom != null || dateTo != null
 }
 
+/**
+ * Sort order for the charging log. Date is the default and matches what the
+ * DAO returns; other options re-sort in-memory after filters apply. Sessions
+ * missing the sort field fall to the end of the list so the ones with data
+ * stay actionable at the top.
+ */
+enum class SortOption(val label: String) {
+    DATE("Date (newest)"),
+    COST("Cost (highest)"),
+    EFFICIENCY("Efficiency ($/kWh)"),
+    BRAND("Brand (A–Z)"),
+}
+
 data class BackupNudge(
     val show: Boolean = false,
     val daysSinceLastBackup: Long? = null,
@@ -51,6 +64,7 @@ data class SessionListUi(
     val selectedIds: Set<Long> = emptySet(),
     val vehicleFilterId: Long? = null,
     val filters: SessionFilters = SessionFilters(),
+    val sortOption: SortOption = SortOption.DATE,
     val backupNudge: BackupNudge = BackupNudge(),
 ) {
     val isSelectionMode: Boolean get() = selectedIds.isNotEmpty()
@@ -68,7 +82,11 @@ class SessionListViewModel @Inject constructor(
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
     private val vehicleFilter = MutableStateFlow<Long?>(null)
     private val filters = MutableStateFlow(SessionFilters())
+    private val sortOption = MutableStateFlow(SortOption.DATE)
     private val backupNudgeDismissed = MutableStateFlow(false)
+
+    /** Bundle filter + sort so the outer combine still fits the 5-arg combine. */
+    private val filtersAndSort = combine(filters, sortOption) { f, s -> f to s }
 
     /** Bundle the slow-changing data into one Triple so the outer combine fits the
      *  built-in 5-arg overload comfortably. */
@@ -79,8 +97,9 @@ class SessionListViewModel @Inject constructor(
     ) { sessions, trips, vehicles -> Triple(sessions, trips, vehicles) }
 
     private val baseUi: kotlinx.coroutines.flow.Flow<Pair<SessionListUi, Int>> =
-        combine(coreData, selected, vehicleFilter, filters) { core, selectedIds, filter, f ->
+        combine(coreData, selected, vehicleFilter, filtersAndSort) { core, selectedIds, filter, fs ->
             val (allSessions, trips, vehicles) = core
+            val (f, sort) = fs
 
             // Drop a vehicle filter that points to a deleted vehicle.
             val effectiveVehicleFilter = filter?.takeIf { id -> vehicles.any { it.id == id } }
@@ -96,6 +115,7 @@ class SessionListViewModel @Inject constructor(
             val sessions = allSessions.asSequence()
                 .filter { effectiveVehicleFilter == null || it.vehicleId == effectiveVehicleFilter }
                 .filter { it.matches(f) }
+                .sortedWith(comparatorFor(sort))
                 .toList()
 
             val sessionIdSet = sessions.mapTo(mutableSetOf()) { it.id }
@@ -114,6 +134,7 @@ class SessionListViewModel @Inject constructor(
                 selectedIds = cleanedSelection,
                 vehicleFilterId = effectiveVehicleFilter,
                 filters = f,
+                sortOption = sort,
             ) to allSessions.size
         }
 
@@ -153,6 +174,10 @@ class SessionListViewModel @Inject constructor(
 
     fun clearFilters() {
         filters.value = SessionFilters()
+    }
+
+    fun setSortOption(option: SortOption) {
+        sortOption.value = option
     }
 
     fun toggleSelection(id: Long) {
@@ -250,4 +275,27 @@ private fun ChargingSession.matches(f: SessionFilters): Boolean {
         if (!haystack.contains(q, ignoreCase = true)) return false
     }
     return true
+}
+
+/**
+ * Comparator for the requested sort. The primary key is whatever the user
+ * picked; sessions missing the field sort to the end via nullsLast so rows
+ * the user can actually compare stay at the top. Date is the secondary key
+ * everywhere so ties always fall back to recency.
+ */
+private fun comparatorFor(sort: SortOption): Comparator<ChargingSession> {
+    val recencyTiebreaker = compareByDescending<ChargingSession> { it.sessionStart }
+    return when (sort) {
+        SortOption.DATE -> recencyTiebreaker
+        // compareByDescending swaps the operands, so nullsFirst (which orders
+        // null < non-null) is what actually pushes nulls to the END.
+        SortOption.COST -> compareByDescending(nullsFirst<Double>()) { it.totalCost }
+            .then(recencyTiebreaker)
+        SortOption.EFFICIENCY -> compareBy(nullsLast<Double>()) {
+            com.evsct.app.util.Derived.effectiveEnergyPricePerKwh(it)
+        }.then(recencyTiebreaker)
+        SortOption.BRAND -> compareBy(nullsLast<String>(String.CASE_INSENSITIVE_ORDER)) {
+            it.brand?.trim()?.takeIf { b -> b.isNotEmpty() }
+        }.then(recencyTiebreaker)
+    }
 }

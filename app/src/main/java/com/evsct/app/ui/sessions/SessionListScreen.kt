@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -49,6 +50,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
@@ -104,6 +107,7 @@ fun SessionListScreen(
     var showTripPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
     var showAddSheet by remember { mutableStateOf(false) }
 
     // Keep the search/filter strip visible whenever there are active filters,
@@ -140,6 +144,20 @@ fun SessionListScreen(
                             Icon(
                                 if (showSearch) Icons.Default.Close else Icons.Default.Search,
                                 contentDescription = if (showSearch) "Close search" else "Search",
+                            )
+                        }
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(Icons.Default.Sort, contentDescription = "Sort")
+                            }
+                            SortMenu(
+                                expanded = showSortMenu,
+                                current = state.sortOption,
+                                onSelect = { option ->
+                                    viewModel.setSortOption(option)
+                                    showSortMenu = false
+                                },
+                                onDismiss = { showSortMenu = false },
                             )
                         }
                         IconButton(onClick = onOpenStats) {
@@ -290,6 +308,30 @@ fun SessionListScreen(
             },
             onDismiss = { showFilterSheet = false },
         )
+    }
+}
+
+/** Tiny dropdown anchored to the Sort icon in the top app bar. Each entry
+ *  shows a trailing checkmark when it's the active sort. */
+@Composable
+private fun SortMenu(
+    expanded: Boolean,
+    current: SortOption,
+    onSelect: (SortOption) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        SortOption.entries.forEach { option ->
+            DropdownMenuItem(
+                text = { Text(option.label) },
+                onClick = { onSelect(option) },
+                trailingIcon = {
+                    if (option == current) {
+                        Icon(Icons.Default.Check, contentDescription = "Selected")
+                    }
+                },
+            )
+        }
     }
 }
 
