@@ -67,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.BuildConfig
 import com.evsct.app.data.prefs.AppPreferences
 import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -678,12 +679,15 @@ private fun AboutCard(context: Context) {
     }
 }
 
-/** Render `git log %cI`-style ISO offset dates as "May 13, 2026". Falls back
- *  to the raw string when parsing fails so a future format quirk degrades
- *  gracefully instead of hiding the field. */
+/** Render `git log %cI`-style ISO offset dates as e.g.
+ *  "May 13, 2026 19:32 UTC", normalised to UTC so two devices in different
+ *  timezones see the same string for the same commit. Falls back to the raw
+ *  string when parsing fails so a future format quirk degrades gracefully
+ *  instead of hiding the field. */
 private fun formatCommitDate(raw: String): String =
     if (raw == "unknown" || raw.isBlank()) ""
     else runCatching {
         OffsetDateTime.parse(raw)
-            .format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+            .withOffsetSameInstant(ZoneOffset.UTC)
+            .format(DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm 'UTC'"))
     }.getOrDefault(raw)
