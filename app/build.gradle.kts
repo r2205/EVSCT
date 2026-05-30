@@ -68,6 +68,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            // Sign release with the auto-generated debug keystore so a release
+            // build is installable locally (./gradlew installRelease) for
+            // performance testing. This is NOT a distributable signing config —
+            // a real Play release would point this at a proper upload keystore.
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
