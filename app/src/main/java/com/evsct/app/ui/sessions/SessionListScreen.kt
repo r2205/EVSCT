@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -80,6 +78,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -623,6 +623,7 @@ private fun SessionRow(
     onLongClick: () -> Unit,
 ) {
     val typeAccent = chargingTypeAccent(session.chargingType)
+    val barColor = typeAccent.bar
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -633,14 +634,20 @@ private fun SessionRow(
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ) else CardDefaults.cardColors(),
     ) {
-        Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-            // Leading colored bar by charging type
-            Box(
-                modifier = Modifier
-                    .width(6.dp)
-                    .fillMaxHeight()
-                    .background(typeAccent.bar),
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                // Leading colored accent bar by charging type, painted directly
+                // rather than laid out as a fillMaxHeight() sibling. The sibling
+                // approach forced the Row into an IntrinsicSize.Min pass — an
+                // extra measure of every child on every row — which was
+                // measurable jank when flinging the log. drawBehind paints the
+                // 6dp stripe at the row's full height for free.
+                .drawBehind {
+                    drawRect(color = barColor, size = Size(6.dp.toPx(), size.height))
+                }
+                .padding(start = 6.dp),
+        ) {
             if (isSelectionMode) {
                 Box(
                     modifier = Modifier
@@ -756,7 +763,7 @@ private fun SessionRow(
                         }
                     }
                 }
-                val tags = Tags.parse(session.tags)
+                val tags = remember(session.tags) { Tags.parse(session.tags) }
                 if (tags.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     SessionTagsRow(tags)
@@ -854,10 +861,17 @@ private fun VehiclePill(name: String) {
 
 private data class TypeAccent(val bar: Color, val container: Color, val onContainer: Color)
 
+// Shared per-type instances. chargingTypeAccent() runs for every visible row
+// (and again inside each row's TypeBadge), so returning constants avoids
+// allocating a fresh TypeAccent on every call while scrolling.
+private val DcFastAccent = TypeAccent(EvAccents.DcFast, EvAccents.DcFastContainer, Color(0xFF3B2400))
+private val AcL2Accent = TypeAccent(EvAccents.AcL2, EvAccents.AcL2Container, Color(0xFF002B57))
+private val AcL1Accent = TypeAccent(EvAccents.AcL1, EvAccents.AcL1Container, Color(0xFF200052))
+
 private fun chargingTypeAccent(type: ChargingType): TypeAccent = when (type) {
-    ChargingType.DC_FAST -> TypeAccent(EvAccents.DcFast, EvAccents.DcFastContainer, Color(0xFF3B2400))
-    ChargingType.AC_L2 -> TypeAccent(EvAccents.AcL2, EvAccents.AcL2Container, Color(0xFF002B57))
-    ChargingType.AC_L1 -> TypeAccent(EvAccents.AcL1, EvAccents.AcL1Container, Color(0xFF200052))
+    ChargingType.DC_FAST -> DcFastAccent
+    ChargingType.AC_L2 -> AcL2Accent
+    ChargingType.AC_L1 -> AcL1Accent
 }
 
 private fun ChargingType.shortLabel(): String = when (this) {
