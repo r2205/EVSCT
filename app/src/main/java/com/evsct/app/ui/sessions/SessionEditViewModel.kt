@@ -208,6 +208,12 @@ class SessionEditViewModel @Inject constructor(
     private var originalOdometerKm: Double? = null
     private var originalOdometerText: String = ""
 
+    /** Loaded row's creation timestamp. The save path rebuilds the entity
+     *  from form state, and the data-class default would stamp createdAt
+     *  with "now" on every edit — progressively corrupting creation dates
+     *  (which round-trip into backups). Null for brand-new sessions. */
+    private var originalCreatedAt: Long? = null
+
     /** Geocode query (address, city, province) at load time. When the user
      *  edits the address fields the stored lat/lng become stale — the pin on
      *  the map would otherwise stay at the old location. save() compares
@@ -314,6 +320,7 @@ class SessionEditViewModel @Inject constructor(
         }.orEmpty()
         originalOdometerKm = s.odometerKm
         originalOdometerText = odoText
+        originalCreatedAt = s.createdAt
         originalGeocodeQuery = geocodeQueryFor(
             address = s.locationAddress,
             stationName = s.stationName,
@@ -658,6 +665,7 @@ class SessionEditViewModel @Inject constructor(
                 receiptImagePath = null,
                 latitude = saveLat,
                 longitude = saveLng,
+                createdAt = originalCreatedAt ?: System.currentTimeMillis(),
             )
             val savedId = sessionRepository.upsert(session)
 
@@ -710,18 +718,22 @@ class SessionEditViewModel @Inject constructor(
             // address. The navigation has already happened — we just patch
             // the row's coordinates if Geocoder returns a hit. If it
             // doesn't, lat/lng stay null and the map's backfill will retry
-            // on next visit.
+            // on next visit. Runs in appScope: popping the screen clears
+            // this ViewModel within the exit transition, and viewModelScope
+            // cancellation would kill the geocode before it could land.
             if (addressChanged && newQuery != null) {
-                val located = locationAutofill.geocode(
-                    address = s.address.takeIf { it.isNotBlank() }
-                        ?: s.stationName.takeIf { it.isNotBlank() },
-                    city = s.city.takeIf { it.isNotBlank() },
-                    province = s.province.takeIf { it.isNotBlank() },
-                )
-                val lat = located?.latitude
-                val lng = located?.longitude
-                if (lat != null && lng != null) {
-                    sessionRepository.setCoordinates(listOf(savedId), lat, lng)
+                appScope.launch {
+                    val located = locationAutofill.geocode(
+                        address = s.address.takeIf { it.isNotBlank() }
+                            ?: s.stationName.takeIf { it.isNotBlank() },
+                        city = s.city.takeIf { it.isNotBlank() },
+                        province = s.province.takeIf { it.isNotBlank() },
+                    )
+                    val lat = located?.latitude
+                    val lng = located?.longitude
+                    if (lat != null && lng != null) {
+                        sessionRepository.setCoordinates(listOf(savedId), lat, lng)
+                    }
                 }
             }
         }.invokeOnCompletion { commitInFlight = false }
@@ -783,12 +795,15 @@ class SessionEditViewModel @Inject constructor(
      *  averages a stop's visits, so without this a single re-pick would be
      *  diluted by older sessions' stale coords. */
     fun applyPickedLocation(lat: Double, lng: Double) {
+        // Commit the picked coordinates synchronously. The reverse-geocode
+        // below is a network call that can take seconds — a Save tapped
+        // before it returns must snapshot the picked coords, not the
+        // pre-pick state (which would silently discard the pick).
+        _state.update { it.copy(latitude = lat, longitude = lng) }
         viewModelScope.launch {
             val located = locationAutofill.reverseGeocodeAt(lat, lng)
             _state.update {
                 it.copy(
-                    latitude = lat,
-                    longitude = lng,
                     city = located?.city ?: it.city,
                     province = located?.provinceState ?: it.province,
                     address = located?.address ?: it.address,

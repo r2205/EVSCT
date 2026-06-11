@@ -66,6 +66,11 @@ class VehicleEditViewModel @Inject constructor(
     private val touchedImagePaths = mutableSetOf<String>()
     @Volatile private var imageCleanupHandled = false
 
+    /** Loaded row's creation timestamp — save() rebuilds the entity, and the
+     *  data-class default would overwrite createdAt with "now" on every
+     *  edit. Null for brand-new vehicles. */
+    private var originalCreatedAt: Long? = null
+
     /** Re-entry guard for save()/deleteAndExit() — both suspend on Room and
      *  then pop the back stack, so a double-tap would otherwise insert two
      *  vehicles and pop the navigator twice. Volatile because the reset runs
@@ -86,6 +91,7 @@ class VehicleEditViewModel @Inject constructor(
                 val v = repository.findById(vehicleId)
                 if (v != null) {
                     originalImagePath = v.imagePath
+                    originalCreatedAt = v.createdAt
                     v.imagePath?.let { touchedImagePaths += it }
                     val rangeText = v.nominalRangeKm?.let {
                         Units.kmToDisplay(it.toDouble(), units.useMiles).roundToInt().toString()
@@ -178,6 +184,7 @@ class VehicleEditViewModel @Inject constructor(
                 notes = s.notes.takeIf { it.isNotBlank() },
                 imagePath = s.imagePath,
                 isDefault = s.isDefault,
+                createdAt = originalCreatedAt ?: System.currentTimeMillis(),
             )
             repository.upsert(vehicle)
             reconcileImageFiles(finalPath = vehicle.imagePath)

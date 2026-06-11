@@ -234,7 +234,12 @@ class SessionListViewModel @Inject constructor(
     }
 
     fun assignTripToSelection(tripId: Long?) {
-        val ids = selected.value
+        // Act on the displayed selection (raw set ∩ visible rows), not the
+        // raw set. Filters applied after selecting can hide rows without
+        // clearing them from the raw set — the top bar says "3 selected",
+        // and reassigning the hidden ones too would silently corrupt their
+        // trip tags.
+        val ids = state.value.selectedIds
         if (ids.isEmpty()) return
         viewModelScope.launch {
             sessionRepository.assignTrip(ids, tripId)

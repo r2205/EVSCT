@@ -13,9 +13,13 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.evsct.app.MainActivity
 import com.evsct.app.R
+import com.evsct.app.data.prefs.AppPreferences
+import com.evsct.app.di.AppScope
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * Posts (and updates and cancels) the persistent "Charging in progress"
@@ -26,13 +30,18 @@ import javax.inject.Singleton
  *
  * Holds the currently-tracked session id in memory so we can no-op redundant
  * updates and so [updateIfTracking] from the edit screen only acts when the
- * notification is actually live for the same session. Process death drops the
- * in-memory id; the system notification stays in the shade and tapping it
- * still routes back to the right session via the pending intent's extras.
+ * notification is actually live for the same session. The id is mirrored to
+ * DataStore and restored (best-effort, async) at next startup, so process
+ * death while a charge is tracked no longer orphans the ongoing
+ * notification — without that, the post-kill save's [cancelIfFor] would
+ * no-op and the setOngoing entry stayed stuck in the shade until the next
+ * tracked charge.
  */
 @Singleton
 class InProgressChargeNotifier @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val appPreferences: AppPreferences,
+    @AppScope private val appScope: CoroutineScope,
 ) {
     companion object {
         const val CHANNEL_ID = "charging_in_progress"
@@ -42,13 +51,27 @@ class InProgressChargeNotifier @Inject constructor(
 
     @Volatile private var trackedSessionId: Long? = null
 
+    init {
+        appScope.launch {
+            val persisted = appPreferences.trackedChargeSessionId() ?: return@launch
+            // A post() that raced ahead of this read wins; cancel() can't
+            // race it because cancel paths require a non-null tracked id.
+            if (trackedSessionId == null) trackedSessionId = persisted
+        }
+    }
+
     /** Begin (or refresh) the persistent notification for [sessionId]. Safe
      *  to call repeatedly with updated brand/city as the user types — the
      *  posted notification is just replaced. */
     fun post(sessionId: Long, brand: String?, city: String?, sessionStart: Long) {
+        // Track first, notify second: the in-app tracking features (live
+        // elapsed chip, elapsed-time fallback into the duration on save)
+        // must work even when POST_NOTIFICATIONS is denied — the permission
+        // only gates the shade shortcut.
+        trackedSessionId = sessionId
+        persistTrackedId(sessionId)
         if (!hasNotificationPermission()) return
         ensureChannel()
-        trackedSessionId = sessionId
         val notification = build(sessionId, brand, city, sessionStart)
         try {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
@@ -69,7 +92,12 @@ class InProgressChargeNotifier @Inject constructor(
     /** Drop the notification regardless of which session it's for. */
     fun cancel() {
         trackedSessionId = null
+        persistTrackedId(null)
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+    }
+
+    private fun persistTrackedId(id: Long?) {
+        appScope.launch { appPreferences.setTrackedChargeSessionId(id) }
     }
 
     /** Drop the notification only when it's currently tracking [sessionId].
