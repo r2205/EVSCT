@@ -34,7 +34,9 @@ import androidx.compose.ui.unit.dp
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.map.TripPinColor
+import com.evsct.app.util.Format
 import com.evsct.app.util.Units
+import java.util.Locale
 
 /**
  * Shared dialog for creating or editing a trip. When [trip] is null the
@@ -49,14 +51,20 @@ fun TripEditDialog(
     val units = LocalUserUnits.current
     val unitLabel = Units.distanceUnit(units.useMiles)
 
+    // Locale.US pins the decimal separator to '.' — the default locale would
+    // seed "1234,5" on comma-decimal devices, which the old dot-only parse
+    // rejected, silently nulling both odometers on any save (even a rename).
     fun displayText(km: Double?): String = km?.let {
         val display = Units.kmToDisplay(it, units.useMiles)
-        if (display % 1.0 == 0.0) display.toLong().toString() else "%.1f".format(display)
+        if (display % 1.0 == 0.0) display.toLong().toString()
+        else "%.1f".format(Locale.US, display)
     }.orEmpty()
 
     var name by remember { mutableStateOf(trip?.name.orEmpty()) }
-    var startText by remember { mutableStateOf(displayText(trip?.startOdometerKm)) }
-    var endText by remember { mutableStateOf(displayText(trip?.endOdometerKm)) }
+    val initialStartText = remember { displayText(trip?.startOdometerKm) }
+    val initialEndText = remember { displayText(trip?.endOdometerKm) }
+    var startText by remember { mutableStateOf(initialStartText) }
+    var endText by remember { mutableStateOf(initialEndText) }
     var notes by remember { mutableStateOf(trip?.notes.orEmpty()) }
     var pinColorKey by remember { mutableStateOf(trip?.pinColor) }
     var showColorPicker by remember { mutableStateOf(false) }
@@ -83,7 +91,7 @@ fun TripEditDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = startText,
-                        onValueChange = { startText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        onValueChange = { startText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
                         label = { Text("Start $unitLabel") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -91,7 +99,7 @@ fun TripEditDialog(
                     )
                     OutlinedTextField(
                         value = endText,
-                        onValueChange = { endText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        onValueChange = { endText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
                         label = { Text("End $unitLabel") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -124,10 +132,15 @@ fun TripEditDialog(
             TextButton(
                 enabled = name.isNotBlank(),
                 onClick = {
-                    val startKm = startText.toDoubleOrNull()?.let {
+                    // Untouched fields keep the stored km verbatim — the
+                    // display↔km round-trip is lossy in miles mode and would
+                    // drift the stored value on every no-op save.
+                    val startKm = if (startText == initialStartText) trip?.startOdometerKm
+                    else Format.parseDecimal(startText)?.let {
                         Units.displayToKm(it, units.useMiles)
                     }
-                    val endKm = endText.toDoubleOrNull()?.let {
+                    val endKm = if (endText == initialEndText) trip?.endOdometerKm
+                    else Format.parseDecimal(endText)?.let {
                         Units.displayToKm(it, units.useMiles)
                     }
                     val merged = (trip ?: Trip(name = name.trim())).copy(

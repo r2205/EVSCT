@@ -9,6 +9,7 @@ import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.di.AppScope
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.Format
 import com.evsct.app.util.Units
 import com.evsct.app.util.VehicleImageStore
 import kotlin.math.roundToInt
@@ -64,6 +65,12 @@ class VehicleEditViewModel @Inject constructor(
     private var originalImagePath: String? = null
     private val touchedImagePaths = mutableSetOf<String>()
     @Volatile private var imageCleanupHandled = false
+
+    /** Re-entry guard for save()/deleteAndExit() — both suspend on Room and
+     *  then pop the back stack, so a double-tap would otherwise insert two
+     *  vehicles and pop the navigator twice. Volatile because the reset runs
+     *  in invokeOnCompletion, off the main thread. */
+    @Volatile private var commitInFlight = false
 
     init {
         viewModelScope.launch {
@@ -139,6 +146,8 @@ class VehicleEditViewModel @Inject constructor(
     }
 
     fun save(onSaved: () -> Unit) {
+        if (commitInFlight) return
+        commitInFlight = true
         viewModelScope.launch {
             val s = _state.value
             val vehicle = Vehicle(
@@ -154,8 +163,8 @@ class VehicleEditViewModel @Inject constructor(
                 make = s.make.takeIf { it.isNotBlank() },
                 model = s.model.takeIf { it.isNotBlank() },
                 trim = s.trim.takeIf { it.isNotBlank() },
-                batteryCapacityKwh = s.batteryKwh.toDoubleOrNull(),
-                nominalRangeKm = s.rangeText.toDoubleOrNull()?.let {
+                batteryCapacityKwh = Format.parseDecimal(s.batteryKwh),
+                nominalRangeKm = Format.parseDecimal(s.rangeText)?.let {
                     Units.displayToKm(it, s.useMiles).roundToInt()
                 },
                 vin = s.vin.takeIf { it.isNotBlank() },
@@ -166,10 +175,12 @@ class VehicleEditViewModel @Inject constructor(
             repository.upsert(vehicle)
             reconcileImageFiles(finalPath = vehicle.imagePath)
             onSaved()
-        }
+        }.invokeOnCompletion { commitInFlight = false }
     }
 
     fun deleteAndExit(onDeleted: () -> Unit) {
+        if (commitInFlight) return
+        commitInFlight = true
         viewModelScope.launch {
             if (vehicleId > 0) {
                 repository.findById(vehicleId)?.let {
@@ -178,7 +189,7 @@ class VehicleEditViewModel @Inject constructor(
             }
             reconcileImageFiles(finalPath = null)
             onDeleted()
-        }
+        }.invokeOnCompletion { commitInFlight = false }
     }
 
     /** Drop every image file we touched during this edit except [finalPath]. */

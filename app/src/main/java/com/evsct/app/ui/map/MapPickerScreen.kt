@@ -62,6 +62,14 @@ fun MapPickerScreen(
 ) {
     val mapType by viewModel.mapType.collectAsStateWithLifecycle()
     var showLayersMenu by remember { mutableStateOf(false) }
+    // Both callbacks pop the back stack; a double-tap during the exit
+    // transition would pop twice and remove the session-edit screen too.
+    var exited by remember { mutableStateOf(false) }
+    fun exitOnce(action: () -> Unit) {
+        if (exited) return
+        exited = true
+        action()
+    }
     val cameraPositionState = rememberCameraPositionState {
         position = if (initialLat != null && initialLng != null) {
             // Seed at the existing coords so the user can fine-tune.
@@ -86,7 +94,7 @@ fun MapPickerScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
                 navigationIcon = {
-                    IconButton(onClick = onCancel) {
+                    IconButton(onClick = { exitOnce(onCancel) }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cancel")
                     }
                 },
@@ -117,13 +125,13 @@ fun MapPickerScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     OutlinedButton(
-                        onClick = onCancel,
+                        onClick = { exitOnce(onCancel) },
                         modifier = Modifier.weight(1f),
                     ) { Text("Cancel") }
                     Button(
                         onClick = {
                             val target = cameraPositionState.position.target
-                            onConfirm(target.latitude, target.longitude)
+                            exitOnce { onConfirm(target.latitude, target.longitude) }
                         },
                         modifier = Modifier.weight(1f),
                     ) { Text("Use this location") }

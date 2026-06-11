@@ -4,13 +4,19 @@
          and DataStore prefs only — media files are covered by the in-app
          manual zip export. -->
     <cloud-backup>
+        <!-- evsct.db alone is stale under WAL — recent commits sit in the
+             -wal file until checkpointed, so back up all three. -->
         <include domain="database" path="evsct.db" />
+        <include domain="database" path="evsct.db-wal" />
+        <include domain="database" path="evsct.db-shm" />
         <include domain="file" path="datastore/" />
     </cloud-backup>
     <!-- Device-to-device transfer has no size limit, so carry everything
          (vehicle profile photos and session receipt files included). -->
     <device-transfer>
         <include domain="database" path="evsct.db" />
+        <include domain="database" path="evsct.db-wal" />
+        <include domain="database" path="evsct.db-shm" />
         <include domain="file" path="datastore/" />
         <include domain="file" path="vehicles/" />
         <include domain="file" path="receipts/" />

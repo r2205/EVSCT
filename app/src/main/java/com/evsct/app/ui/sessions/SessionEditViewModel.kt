@@ -20,11 +20,13 @@ import com.evsct.app.di.AppScope
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.AutofillResult
 import com.evsct.app.util.DurationFormat
+import com.evsct.app.util.Format
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.LocationAutofill
 import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Tags
 import com.evsct.app.util.Units
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -184,6 +186,12 @@ class SessionEditViewModel @Inject constructor(
      *  whether to roll back speculative file copies. */
     @Volatile private var receiptCleanupHandled = false
 
+    /** Re-entry guard for save()/deleteAndExit(). Both suspend on Room and
+     *  then pop the back stack, so a double-tap would otherwise insert two
+     *  rows (id == 0 inserts twice) and pop the navigator twice. Volatile
+     *  because the reset runs in invokeOnCompletion, off the main thread. */
+    @Volatile private var commitInFlight = false
+
     /** The session's stored odometer in km at load time, plus the formatted
      *  display text we put into the form. Used by save() and the validation
      *  hints to short-circuit the lossy display→km round-trip when the user
@@ -290,9 +298,12 @@ class SessionEditViewModel @Inject constructor(
         val odoText = s.odometerKm?.let {
             val display = Units.kmToDisplay(it, units.useMiles)
             // Trim trailing .0 for whole numbers to match the rest of the app's
-            // text fields, otherwise leave one decimal of precision.
+            // text fields, otherwise leave one decimal of precision. Locale.US
+            // pins the decimal separator to '.' — the default locale would
+            // seed "62,1" on comma-decimal devices, which the save-path parse
+            // rejects, silently nulling the odometer on the next edit.
             if (display % 1.0 == 0.0) display.toLong().toString()
-            else "%.1f".format(display)
+            else "%.1f".format(Locale.US, display)
         }.orEmpty()
         originalOdometerKm = s.odometerKm
         originalOdometerText = odoText
@@ -377,7 +388,7 @@ class SessionEditViewModel @Inject constructor(
 
         // Odometer text is in the user's preferred unit, but stored values
         // are km; normalize both to km before comparing.
-        val odoEntered = form.odometerText.toDoubleOrNull()
+        val odoEntered = Format.parseDecimal(form.odometerText)
         val odoKm = currentOdometerKm(form)
         val prevOdoKm = previous?.odometerKm
         if (odoKm != null && prevOdoKm != null && odoKm < prevOdoKm) {
@@ -391,12 +402,12 @@ class SessionEditViewModel @Inject constructor(
             )
         }
 
-        val cost = form.costText.toDoubleOrNull()
-        val energy = form.energyText.toDoubleOrNull()
+        val cost = Format.parseDecimal(form.costText)
+        val energy = Format.parseDecimal(form.energyText)
         val durationSec = DurationFormat.parse(form.durationText)
 
         val effPricePerKwh = if (cost != null && energy != null && energy > 0) cost / energy else null
-        val postedPrice = form.postedEnergyPriceText.toDoubleOrNull()
+        val postedPrice = Format.parseDecimal(form.postedEnergyPriceText)
         if (effPricePerKwh != null && postedPrice != null && postedPrice > 0) {
             val deviation = kotlin.math.abs(effPricePerKwh - postedPrice) / postedPrice
             if (deviation > 0.25) {
@@ -410,7 +421,7 @@ class SessionEditViewModel @Inject constructor(
 
         val effPerMin = if (cost != null && durationSec != null && durationSec > 0)
             cost / (durationSec / 60.0) else null
-        val postedTimeRate = form.postedTimeRateText.toDoubleOrNull()
+        val postedTimeRate = Format.parseDecimal(form.postedTimeRateText)
         if (effPerMin != null && postedTimeRate != null && postedTimeRate > 0) {
             val deviation = kotlin.math.abs(effPerMin - postedTimeRate) / postedTimeRate
             if (deviation > 0.25) {
@@ -424,7 +435,7 @@ class SessionEditViewModel @Inject constructor(
 
         val avgPower = if (energy != null && durationSec != null && durationSec > 0)
             energy / (durationSec / 3600.0) else null
-        val postedMaxKw = form.postedMaxPowerText.toDoubleOrNull()
+        val postedMaxKw = Format.parseDecimal(form.postedMaxPowerText)
         if (avgPower != null && postedMaxKw != null && postedMaxKw > 0 && avgPower > postedMaxKw * 1.05) {
             out += ValidationHint(
                 title = "Avg power exceeds posted max",
@@ -564,7 +575,7 @@ class SessionEditViewModel @Inject constructor(
      *  efficiency calcs that depend on prev/curr odometer differences). */
     private fun currentOdometerKm(form: SessionEditUi): Double? =
         if (form.odometerText == originalOdometerText) originalOdometerKm
-        else form.odometerText.toDoubleOrNull()?.let { Units.displayToKm(it, form.useMiles) }
+        else Format.parseDecimal(form.odometerText)?.let { Units.displayToKm(it, form.useMiles) }
 
     /** Build the same ", "-joined address query the map screen uses for its
      *  reverse-geocode backfill, so the two stay consistent. */
@@ -580,6 +591,8 @@ class SessionEditViewModel @Inject constructor(
     ).joinToString(", ").takeIf { it.isNotBlank() }
 
     fun save(onSaved: () -> Unit) {
+        if (commitInFlight) return
+        commitInFlight = true
         viewModelScope.launch {
             val s = _state.value
             val odometerKm = currentOdometerKm(s)
@@ -612,12 +625,12 @@ class SessionEditViewModel @Inject constructor(
                 durationSeconds = durationSeconds,
                 waitTimeMinutes = s.waitTimeText.toIntOrNull()?.takeIf { it >= 0 },
                 odometerKm = odometerKm,
-                energyKwh = s.energyText.toDoubleOrNull(),
-                totalCost = s.costText.toDoubleOrNull(),
+                energyKwh = Format.parseDecimal(s.energyText),
+                totalCost = Format.parseDecimal(s.costText),
                 currency = s.currency.ifBlank { "CAD" },
-                postedEnergyPricePerKwh = s.postedEnergyPriceText.toDoubleOrNull(),
-                postedTimeRatePerMin = s.postedTimeRateText.toDoubleOrNull(),
-                postedMaxPowerKw = s.postedMaxPowerText.toDoubleOrNull(),
+                postedEnergyPricePerKwh = Format.parseDecimal(s.postedEnergyPriceText),
+                postedTimeRatePerMin = Format.parseDecimal(s.postedTimeRateText),
+                postedMaxPowerKw = Format.parseDecimal(s.postedMaxPowerText),
                 batteryStartPct = s.batteryStartText.toIntOrNull(),
                 batteryEndPct = s.batteryEndText.toIntOrNull(),
                 chargingType = s.chargingType,
@@ -703,7 +716,7 @@ class SessionEditViewModel @Inject constructor(
                     sessionRepository.setCoordinates(listOf(savedId), lat, lng)
                 }
             }
-        }
+        }.invokeOnCompletion { commitInFlight = false }
     }
 
     /** Delete every receipt file we touched during this edit session whose
@@ -807,6 +820,8 @@ class SessionEditViewModel @Inject constructor(
     fun clearTransientMessage() = _state.update { it.copy(transientMessage = null) }
 
     fun deleteAndExit(onDeleted: () -> Unit) {
+        if (commitInFlight) return
+        commitInFlight = true
         viewModelScope.launch {
             if (sessionId > 0) {
                 sessionRepository.findById(sessionId)?.let {
@@ -821,7 +836,7 @@ class SessionEditViewModel @Inject constructor(
             // session_receipts rows for the deleted session.
             reconcileReceiptFiles(finalPaths = emptySet())
             onDeleted()
-        }
+        }.invokeOnCompletion { commitInFlight = false }
     }
 
     override fun onCleared() {

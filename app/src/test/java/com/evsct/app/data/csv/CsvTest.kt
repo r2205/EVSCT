@@ -85,6 +85,37 @@ class CsvTest {
     }
 
     @Test
+    fun `parseAll keeps rows separate when a field starts with a quote char`() {
+        // A field whose *content* begins with a literal " encodes to a field
+        // that opens with three quote chars ("""x"). The old trailing-quote
+        // parity tracker counted the opening quote into the escaped pair,
+        // desynced, and swallowed the row-terminating newline — merging rows.
+        val rows = Csv.parseAll("a,\"\"\"x\"\nb,c")
+        assertEquals(2, rows.size)
+        assertEquals(listOf("a", "\"x"), rows[0])
+        assertEquals(listOf("b", "c"), rows[1])
+    }
+
+    @Test
+    fun `parseAll keeps rows separate when a field is a lone quote char`() {
+        val rows = Csv.parseAll("\"\"\"\"\nb")
+        assertEquals(2, rows.size)
+        assertEquals(listOf("\""), rows[0])
+        assertEquals(listOf("b"), rows[1])
+    }
+
+    @Test
+    fun `multi-row round-trip with leading-quote field content`() {
+        val row1 = listOf("\"broken stall", "Calgary", "note with \"quotes\"")
+        val row2 = listOf("plain", "Banff", "ok")
+        val text = Csv.encodeRow(row1) + "\n" + Csv.encodeRow(row2)
+        val rows = Csv.parseAll(text)
+        assertEquals(2, rows.size)
+        assertEquals(row1, rows[0])
+        assertEquals(row2, rows[1])
+    }
+
+    @Test
     fun `encode then parse a row preserves field boundaries`() {
         val fields = listOf("Tesla", "Calgary, AB", "notes with \"quotes\"", "=hi")
         val encoded = Csv.encodeRow(fields)

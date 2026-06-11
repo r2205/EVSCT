@@ -15,6 +15,7 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -102,9 +103,28 @@ class LocationAutofill @Inject constructor(
         suspend fun lookup(query: String, max: Int): List<Address> = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 suspendCancellableCoroutine { cont ->
-                    geocoder.getFromLocationName(query, max) { addresses ->
-                        if (cont.isActive) cont.resume(addresses)
-                    }
+                    // A lambda here would SAM-implement only onGeocode; the
+                    // default no-op onError would leave the coroutine suspended
+                    // forever on any geocoder failure. Resume with IOException
+                    // so this branch reports errors the same way the pre-33
+                    // synchronous call does.
+                    geocoder.getFromLocationName(
+                        query,
+                        max,
+                        object : Geocoder.GeocodeListener {
+                            override fun onGeocode(addresses: MutableList<Address>) {
+                                if (cont.isActive) cont.resume(addresses)
+                            }
+
+                            override fun onError(errorMessage: String?) {
+                                if (cont.isActive) {
+                                    cont.resumeWithException(
+                                        IOException(errorMessage ?: "Geocoding failed")
+                                    )
+                                }
+                            }
+                        },
+                    )
                 }
             } else {
                 @Suppress("DEPRECATION")
@@ -281,9 +301,28 @@ class LocationAutofill @Inject constructor(
         val geocoder = Geocoder(context, Locale.getDefault())
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             suspendCancellableCoroutine { cont ->
-                geocoder.getFromLocation(lat, lng, 1) { addresses ->
-                    if (cont.isActive) cont.resume(addresses)
-                }
+                // Full listener for the same reason as in geocode(): a lambda
+                // leaves onError as a no-op and the coroutine hangs forever on
+                // geocoder failure. IOException matches the pre-33 contract,
+                // which every caller already catches.
+                geocoder.getFromLocation(
+                    lat,
+                    lng,
+                    1,
+                    object : Geocoder.GeocodeListener {
+                        override fun onGeocode(addresses: MutableList<Address>) {
+                            if (cont.isActive) cont.resume(addresses)
+                        }
+
+                        override fun onError(errorMessage: String?) {
+                            if (cont.isActive) {
+                                cont.resumeWithException(
+                                    IOException(errorMessage ?: "Reverse geocoding failed")
+                                )
+                            }
+                        }
+                    },
+                )
             }
         } else {
             @Suppress("DEPRECATION")
