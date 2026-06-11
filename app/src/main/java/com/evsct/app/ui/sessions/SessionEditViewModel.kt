@@ -192,6 +192,13 @@ class SessionEditViewModel @Inject constructor(
      *  because the reset runs in invokeOnCompletion, off the main thread. */
     @Volatile private var commitInFlight = false
 
+    /** Latched once a commit has succeeded and navigation-out was requested.
+     *  commitInFlight alone isn't enough: the save coroutine can finish (and
+     *  re-arm) before the exit transition does, letting a late tap start a
+     *  second commit on a screen that's already leaving. Never reset — a
+     *  failed commit doesn't set it, so retries still work. */
+    @Volatile private var exitRequested = false
+
     /** The session's stored odometer in km at load time, plus the formatted
      *  display text we put into the form. Used by save() and the validation
      *  hints to short-circuit the lossy display→km round-trip when the user
@@ -591,7 +598,7 @@ class SessionEditViewModel @Inject constructor(
     ).joinToString(", ").takeIf { it.isNotBlank() }
 
     fun save(onSaved: () -> Unit) {
-        if (commitInFlight) return
+        if (commitInFlight || exitRequested) return
         commitInFlight = true
         viewModelScope.launch {
             val s = _state.value
@@ -696,6 +703,7 @@ class SessionEditViewModel @Inject constructor(
             // session is now in the list. cancelIfFor is a no-op for
             // backfill saves where the notifier was never tracking.
             inProgressChargeNotifier.cancelIfFor(savedId)
+            exitRequested = true
             onSaved()
 
             // Re-geocode in the background when the user changed the
@@ -820,7 +828,7 @@ class SessionEditViewModel @Inject constructor(
     fun clearTransientMessage() = _state.update { it.copy(transientMessage = null) }
 
     fun deleteAndExit(onDeleted: () -> Unit) {
-        if (commitInFlight) return
+        if (commitInFlight || exitRequested) return
         commitInFlight = true
         viewModelScope.launch {
             if (sessionId > 0) {
@@ -835,6 +843,7 @@ class SessionEditViewModel @Inject constructor(
             // speculative copies). FK CASCADE has already removed the
             // session_receipts rows for the deleted session.
             reconcileReceiptFiles(finalPaths = emptySet())
+            exitRequested = true
             onDeleted()
         }.invokeOnCompletion { commitInFlight = false }
     }

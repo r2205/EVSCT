@@ -72,6 +72,13 @@ class VehicleEditViewModel @Inject constructor(
      *  in invokeOnCompletion, off the main thread. */
     @Volatile private var commitInFlight = false
 
+    /** Latched once a commit has succeeded and navigation-out was requested.
+     *  commitInFlight alone isn't enough: the save coroutine can finish (and
+     *  re-arm) before the exit transition does, letting a late tap start a
+     *  second commit on a screen that's already leaving. Never reset — a
+     *  failed commit doesn't set it, so retries still work. */
+    @Volatile private var exitRequested = false
+
     init {
         viewModelScope.launch {
             val units = appPreferences.userUnits.first()
@@ -146,7 +153,7 @@ class VehicleEditViewModel @Inject constructor(
     }
 
     fun save(onSaved: () -> Unit) {
-        if (commitInFlight) return
+        if (commitInFlight || exitRequested) return
         commitInFlight = true
         viewModelScope.launch {
             val s = _state.value
@@ -174,12 +181,13 @@ class VehicleEditViewModel @Inject constructor(
             )
             repository.upsert(vehicle)
             reconcileImageFiles(finalPath = vehicle.imagePath)
+            exitRequested = true
             onSaved()
         }.invokeOnCompletion { commitInFlight = false }
     }
 
     fun deleteAndExit(onDeleted: () -> Unit) {
-        if (commitInFlight) return
+        if (commitInFlight || exitRequested) return
         commitInFlight = true
         viewModelScope.launch {
             if (vehicleId > 0) {
@@ -188,6 +196,7 @@ class VehicleEditViewModel @Inject constructor(
                 }
             }
             reconcileImageFiles(finalPath = null)
+            exitRequested = true
             onDeleted()
         }.invokeOnCompletion { commitInFlight = false }
     }
