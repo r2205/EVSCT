@@ -32,7 +32,13 @@ data class CurrencyTotals(val byCurrency: Map<String, Double>) {
         ): CurrencyTotals {
             val m = mutableMapOf<String, Double>()
             sessions.forEach { s ->
+                // 0.0 means "free" (see ChargingSession.totalCost). A free
+                // session contributes nothing and must not open a currency
+                // bucket: one free USD-tagged row would otherwise flip
+                // isMixed and suppress every derived rate ($/kWh, $/km)
+                // for an all-CAD log.
                 val v = valueOf(s) ?: return@forEach
+                if (v == 0.0) return@forEach
                 m.merge(s.currency, v) { a, b -> a + b }
             }
             return CurrencyTotals(m)

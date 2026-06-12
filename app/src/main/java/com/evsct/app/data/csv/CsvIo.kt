@@ -9,6 +9,7 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
+import com.evsct.app.ui.map.TripPinColor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedReader
 import java.io.File
@@ -207,9 +208,14 @@ class CsvIo @Inject constructor(
 
         // Read existing trip/vehicle name lookups outside the transaction so
         // the Flow .first() collectors don't run on the transaction connection
-        // (mirrors the pattern in BackupIo.restore).
+        // (mirrors the pattern in BackupIo.restore). Pin colors are pre-read
+        // for the same reason — see the trip-creation comment below.
         val tripIdByName = mutableMapOf<String, Long>()
-        tripRepository.observeAll().first().forEach { tripIdByName[it.name] = it.id }
+        val usedPinColors = mutableListOf<String>()
+        tripRepository.observeAll().first().forEach { trip ->
+            tripIdByName[trip.name] = trip.id
+            trip.pinColor?.let { usedPinColors += it }
+        }
         val vehicleIdByName = mutableMapOf<String, Long>()
         vehicleRepository.observeAll().first().forEach { vehicleIdByName[it.name] = it.id }
 
@@ -228,7 +234,17 @@ class CsvIo @Inject constructor(
                 val parsed = CsvFormat.fromRow(headers, row)
                 if (parsed == null) { skipped++; continue }
                 val tripId = parsed.tripName?.takeIf { it.isNotBlank() }?.let { name ->
-                    tripIdByName.getOrPut(name) { tripRepository.upsert(Trip(name = name)) }
+                    tripIdByName.getOrPut(name) {
+                        // Assign the pin color here from the pre-read list
+                        // rather than letting TripRepository.upsert auto-pick:
+                        // its auto-pick collects a DAO Flow, which must not run
+                        // inside withTransaction (the exact pattern the comment
+                        // above avoids) — and its read of committed state would
+                        // hand several new trips in one import the same color.
+                        val color = TripPinColor.nextDefault(usedPinColors).name
+                        usedPinColors += color
+                        tripRepository.upsert(Trip(name = name, pinColor = color))
+                    }
                 }
                 val vehicleId = parsed.vehicleName?.takeIf { it.isNotBlank() }?.let { name ->
                     vehicleIdByName.getOrPut(name) { vehicleRepository.upsert(Vehicle(name = name)) }

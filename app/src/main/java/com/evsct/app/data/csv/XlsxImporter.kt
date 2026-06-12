@@ -22,7 +22,7 @@ import org.apache.poi.ss.usermodel.DateUtil
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 
-data class XlsxImportResult(val imported: Int, val skipped: Int, val errors: List<String>)
+data class XlsxImportResult(val imported: Int, val skipped: Int)
 
 // Decompression caps for the legacy XLSX importer. A real charging-log
 // sheet is comfortably under these — they exist to short-circuit
@@ -51,7 +51,6 @@ class XlsxImporter @Inject constructor(
         ZipSecureFile.setMaxEntrySize(MAX_XLSX_ENTRY_BYTES)
         ZipSecureFile.setMaxTextSize(MAX_XLSX_ENTRY_BYTES)
 
-        val errors = mutableListOf<String>()
         var imported = 0
         var skipped = 0
         val sessions = mutableListOf<ChargingSession>()
@@ -78,7 +77,7 @@ class XlsxImporter @Inject constructor(
             }
         }
         if (sessions.isNotEmpty()) sessionRepository.insertAll(sessions)
-        XlsxImportResult(imported, skipped, errors)
+        XlsxImportResult(imported, skipped)
     }
 
     private sealed interface ParsedRow {

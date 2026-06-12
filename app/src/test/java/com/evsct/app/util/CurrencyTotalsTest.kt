@@ -25,6 +25,30 @@ class CurrencyTotalsTest {
     }
 
     @Test
+    fun `zero cost (free session) is skipped`() {
+        // 0.0 means "free" per ChargingSession.totalCost — the doc contract
+        // is "empty when all null/zero costs".
+        val totals = CurrencyTotals.from(listOf(session(cost = 0.0, currency = "CAD")))
+        assertTrue(totals.isEmpty)
+    }
+
+    @Test
+    fun `free session in another currency does not flip isMixed`() {
+        // A $0.00 USD row alongside paid CAD rows must not open a USD
+        // bucket — that would null singleTotal and kill $-per-kWh and
+        // $-per-km everywhere downstream.
+        val totals = CurrencyTotals.from(
+            listOf(
+                session(cost = 10.0, currency = "CAD"),
+                session(cost = 0.0, currency = "USD"),
+            ),
+        )
+        assertFalse(totals.isMixed)
+        assertEquals("CAD", totals.singleCurrency)
+        assertEquals(10.0, totals.singleTotal)
+    }
+
+    @Test
     fun `single currency aggregates and exposes singleTotal`() {
         val totals = CurrencyTotals.from(
             listOf(

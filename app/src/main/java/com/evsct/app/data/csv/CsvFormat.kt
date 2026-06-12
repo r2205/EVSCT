@@ -3,10 +3,11 @@ package com.evsct.app.data.csv
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.TimeZone
 
 object CsvFormat {
     val HEADERS = listOf(
@@ -41,12 +42,21 @@ object CsvFormat {
         "continues_previous",
     )
 
-    private val isoDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getDefault() }
-    private val isoTime = SimpleDateFormat("HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getDefault() }
-    private val isoDateTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getDefault() }
+    // DateTimeFormatter is thread-safe (unlike the SimpleDateFormats these
+    // replaced, which shared mutable state across threads) and the zone is
+    // read per call instead of being frozen at class-load time, so exports
+    // stay correct if the device changes timezone mid-process. Locale.US
+    // pins digit shapes so the CSV stays machine-readable everywhere. The
+    // parse pattern uses single-letter fields (1–2 digit widths) so
+    // hand-edited values like "2024-1-5 9:30:00" still import; the old
+    // lenient SimpleDateFormat rolled impossible dates over instead of
+    // rejecting the row — strict resolution now skips them as malformed.
+    private val isoDate = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US)
+    private val isoTime = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
+    private val isoDateTimeParse = DateTimeFormatter.ofPattern("yyyy-M-d H:m:s", Locale.US)
 
     fun toRow(session: ChargingSession, tripName: String?, vehicleName: String?): List<String?> {
-        val date = Date(session.sessionStart)
+        val date = Instant.ofEpochMilli(session.sessionStart).atZone(ZoneId.systemDefault())
         return listOf(
             session.id.toString(),
             isoDate.format(date),
@@ -96,7 +106,12 @@ object CsvFormat {
         }
         val date = get("date") ?: return null
         val time = get("time") ?: "00:00:00"
-        val epoch = runCatching { isoDateTime.parse("$date $time")?.time }.getOrNull() ?: return null
+        val epoch = runCatching {
+            LocalDateTime.parse("$date $time", isoDateTimeParse)
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+        }.getOrNull() ?: return null
 
         val type = get("charging_type")?.let { runCatching { ChargingType.valueOf(it) }.getOrNull() } ?: ChargingType.DC_FAST
         val pricing = get("pricing_model")?.let { runCatching { PricingModel.valueOf(it) }.getOrNull() } ?: PricingModel.PER_KWH
