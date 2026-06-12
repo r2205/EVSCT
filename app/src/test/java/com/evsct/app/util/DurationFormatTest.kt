@@ -31,11 +31,15 @@ class DurationFormatTest {
     @Test
     fun `negative inputs are rejected`() {
         // toLongOrNull accepts a sign; a duration field must not store
-        // negative seconds ("-5m 00s" used to render in the log).
+        // negative seconds ("-5m 00s" used to render in the log). "-0" is
+        // the sneaky case: its parsed value is 0, so a value-based guard
+        // misses it — parts must be digits-only.
         assertNull(DurationFormat.parse("-5"))
         assertNull(DurationFormat.parse("-1:30"))
         assertNull(DurationFormat.parse("1:-30"))
         assertNull(DurationFormat.parse("-0:11:00"))
+        assertNull(DurationFormat.parse("-0"))
+        assertNull(DurationFormat.parse("+5"))
     }
 
     @Test

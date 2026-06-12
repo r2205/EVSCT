@@ -30,21 +30,24 @@ object DurationFormat {
                 (s.toLongOrNull() ?: 0L)
         }
 
-        // Colon-separated: h:m:s, h:m, or m. toLongOrNull accepts a sign,
-        // so reject negative parts — "-1:30" must not store −1800 s (the
-        // pretty regex above is digits-only and can't produce negatives).
+        // Colon-separated: h:m:s or h:m. Parts must be pure digits —
+        // checking the parsed values for negativity isn't enough because
+        // toLongOrNull drops the sign of "-0", letting "-0:11:00" through.
+        // (The pretty regex above is digits-only by construction.)
         if (':' in t) {
-            val parts = t.split(":").map { it.trim().toLongOrNull() ?: return null }
-            if (parts.any { it < 0 }) return null
-            return when (parts.size) {
-                3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
-                2 -> parts[0] * 3600 + parts[1] * 60
+            val parts = t.split(":").map { it.trim() }
+            if (parts.any { p -> p.isEmpty() || !p.all(Char::isDigit) }) return null
+            val nums = parts.map { it.toLongOrNull() ?: return null }
+            return when (nums.size) {
+                3 -> nums[0] * 3600 + nums[1] * 60 + nums[2]
+                2 -> nums[0] * 3600 + nums[1] * 60
                 else -> null
             }
         }
 
-        // Bare integer: minutes. Same sign guard — "-5" is not a duration.
-        return t.toLongOrNull()?.takeIf { it >= 0 }?.let { it * 60 }
+        // Bare integer: minutes — digits only, same reasoning.
+        if (!t.all(Char::isDigit)) return null
+        return t.toLongOrNull()?.let { it * 60 }
     }
 
     fun pretty(seconds: Long?): String {
