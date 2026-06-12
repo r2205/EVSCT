@@ -54,7 +54,17 @@ class LocationAutofill @Inject constructor(
     suspend fun fetch(): AutofillResult = withContext(Dispatchers.IO) {
         if (!hasPermission()) return@withContext AutofillResult.MissingPermission
 
-        val location = getCurrentLocation() ?: return@withContext AutofillResult.NoLocation
+        // Resolve the provider here (rather than inside getCurrentLocation)
+        // so "location services are off" surfaces as NoProvider — with its
+        // "turn on location" message — instead of being collapsed into the
+        // same null as a fix timeout.
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            ?: return@withContext AutofillResult.NoProvider
+        val provider = pickProvider(lm)
+            ?: return@withContext AutofillResult.NoProvider
+
+        val location = getCurrentLocation(lm, provider)
+            ?: return@withContext AutofillResult.NoLocation
 
         if (!Geocoder.isPresent()) return@withContext AutofillResult.GeocoderUnavailable
 
@@ -149,11 +159,15 @@ class LocationAutofill @Inject constructor(
         candidates.firstOrNull(::matchesExpectedCity)?.let { return@withContext it.toGeocoded() }
 
         // 2. Same query plus a country qualifier — usually nudges Geocoder
-        //    away from a famous-but-wrong match in another town.
+        //    away from a famous-but-wrong match in another town. Keep step
+        //    1's candidates for the step-4 fallback when this retry comes
+        //    back empty (routine Geocoder flakiness) — overwriting with an
+        //    empty list used to return no pin at all where the documented
+        //    intent is to surrender to an imperfect match.
         if (countryHint != null) {
-            val withCountry = "$baseQuery, $countryHint"
-            candidates = lookup(withCountry, max = 5)
-            candidates.firstOrNull(::matchesExpectedCity)?.let { return@withContext it.toGeocoded() }
+            val withCountry = lookup("$baseQuery, $countryHint", max = 5)
+            withCountry.firstOrNull(::matchesExpectedCity)?.let { return@withContext it.toGeocoded() }
+            if (withCountry.isNotEmpty()) candidates = withCountry
         }
 
         // 3. Address-level lookup keeps failing; ask for the city alone so
@@ -198,11 +212,7 @@ class LocationAutofill @Inject constructor(
         )
     }
 
-    private suspend fun getCurrentLocation(): Location? {
-        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-            ?: return null
-        val provider = pickProvider(lm) ?: return null
-
+    private suspend fun getCurrentLocation(lm: LocationManager, provider: String): Location? {
         // Try last known first — instant if recent.
         try {
             @Suppress("MissingPermission")
@@ -223,8 +233,14 @@ class LocationAutofill @Inject constructor(
         // app requests one. getCurrentLocation against PASSIVE just times
         // out, so the user sees "Could not get a location fix" even though
         // location is on. Better to return null and surface NoProvider.
+        // FUSED_PROVIDER is only documented (and guaranteed functional)
+        // from API 31 — on Android 11 it can appear in getProviders(true)
+        // yet never compute a fix through getCurrentLocation, riding out
+        // the 15 s timeout while working GPS/NETWORK providers sit unused.
+        val fusedUsable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            LocationManager.FUSED_PROVIDER in providers
         return when {
-            LocationManager.FUSED_PROVIDER in providers -> LocationManager.FUSED_PROVIDER
+            fusedUsable -> LocationManager.FUSED_PROVIDER
             LocationManager.GPS_PROVIDER in providers -> LocationManager.GPS_PROVIDER
             LocationManager.NETWORK_PROVIDER in providers -> LocationManager.NETWORK_PROVIDER
             else -> null

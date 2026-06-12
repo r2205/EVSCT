@@ -779,7 +779,10 @@ the unit pref as a parameter; aggregates pass the default-currency to
 
 `app/src/test/java/com/evsct/app/`:
 - **`util/CurrencyTotalsTest.kt`** — single/mixed currency rendering,
-  empty case, `singleCurrency` invariants.
+  empty case, `singleCurrency` invariants, and free-session handling
+  (zero costs don't open buckets or flip `isMixed`).
+- **`util/DurationFormatTest.kt`** — bare-integer / colon / pretty
+  parse forms, negative-input rejection, garbage rejection.
 - **`util/EfficiencyAnalysisTest.kt`** — SoC formula correctness,
   exclusion reasons, `continuesPrevious` gating, capacity-missing
   case, decoupled-from-trip pairing.
@@ -999,7 +1002,9 @@ Highlights of what got fixed:
 - **Third-pass bug sweep** (June 2026, on branch
   `claude/adoring-hopper-57uot7` across three commits — high-severity,
   navigation-transition, and medium-severity batches; the 9 low
-  findings are deferred and tracked under "Outstanding ideas"):
+  findings were fixed in a follow-up branch,
+  `claude/low-severity-sweep-fixes` — see the low-severity batch at
+  the end of this list):
   - **`Csv.parseAll` merged rows when a field's content started with a
     quote char**: the cross-line quote tracker counted a field's
     *opening* quote into its trailing-run parity check, so a note like
@@ -1085,6 +1090,35 @@ Highlights of what got fixed:
     entity from form state, stamping the data-class "now" default
     through every update (corrupting creation dates, which round-trip
     into backups). Both now carry the loaded row's `createdAt`.
+  - **Low-severity batch** (follow-up branch):
+    - Free ($0.00) sessions no longer open currency buckets in
+      `CurrencyTotals.from` — one free USD-tagged row used to flip
+      `isMixed` and suppress $/kWh / $/km for an all-CAD log,
+      contradicting the class KDoc. Tests added.
+    - `AutofillResult.NoProvider` is reachable: `fetch()` resolves the
+      provider itself, so location-services-off shows "turn on
+      location" instead of "couldn't get a fix". `FUSED_PROVIDER` is
+      also only preferred on API 31+ — undocumented pre-S, it could
+      appear enabled on Android 11 yet never compute a fix.
+    - `DurationFormat.parse` rejects negative inputs ("-5", "-1:30");
+      new `DurationFormatTest`.
+    - `LocationAutofill.geocode`'s country-qualified retry no longer
+      clobbers step-1 candidates with an empty list, so the
+      documented last-resort fallback actually fires.
+    - `CsvFormat` date/time moved from shared `SimpleDateFormat`s
+      (not thread-safe; timezone frozen at class load) to
+      `DateTimeFormatter` with a per-call zone. The parse pattern
+      accepts unpadded hand-edited values ("2024-1-5 9:30:00");
+      strict resolution now rejects impossible dates as malformed
+      rows instead of silently rolling them over.
+    - `CsvIo.import` no longer collects a DAO Flow inside
+      `withTransaction`: pin colors are pre-read outside and assigned
+      explicitly, which also gives several new trips in one import
+      distinct colors instead of duplicates.
+    - The git-info build script honors its documented "unknown"
+      fallback when the `git` binary is missing (`runCatching` at the
+      `.get()` sites — `Provider.orElse` can't catch exec failures).
+    - `XlsxImportResult`'s never-populated `errors` field removed.
 
 - **Second-pass bug audit** (post-AGP-9, after the docs settled):
   - **CSV import was non-atomic**: `import()` did `deleteAll()` then
@@ -1232,38 +1266,6 @@ Highlights of what got fixed:
   plugin 2.2.10's BaseExtension cast and need a Kotlin bump to lift;
   the other three are pre-AGP-9 transitive-dep / R8 behaviors not
   yet flagged as deprecated. Revisit when we next bump Kotlin.
-- **Low-severity findings deferred from the third-pass sweep** (the
-  highs and mediums are fixed — see "Audit closeouts"):
-  - Free ($0.00) sessions create currency buckets in
-    `CurrencyTotals.from`, so one free session tagged in the other
-    currency flips `isMixed` and suppresses $/kWh and $/km — contrary
-    to the class KDoc ("all null/zero costs" should leave it empty).
-  - `AutofillResult.NoProvider` is unreachable: `getCurrentLocation()`
-    collapses a null provider into the same null as a fix timeout, so
-    users with location services off see "couldn't get a fix" instead
-    of "turn on location".
-  - `DurationFormat.parse` accepts negatives ("-5" → −300 s, rendered
-    "-5m 00s" in lists).
-  - `LocationAutofill.geocode` step-4 fallback reads the
-    `candidates` variable after step 2 overwrote it — when the
-    country-qualified retry returns empty, the documented
-    surrender-to-first-hit fallback returns nothing instead.
-  - `FUSED_PROVIDER` is preferred by `pickProvider` but only
-    guaranteed functional from API 31; on Android 11 it can appear
-    enabled yet never compute a fix (needs device verification).
-  - `CsvFormat`'s shared `SimpleDateFormat`s aren't thread-safe and
-    freeze the timezone at class load — inconsistent with the
-    ThreadLocal pattern `Format` deliberately adopted.
-  - `CsvIo.import` calls `TripRepository.upsert` inside
-    `withTransaction`, which internally collects a DAO Flow — the
-    exact pattern the import's own comment avoids; also means several
-    new trips created in one import can get duplicate pin colors.
-  - The git-info helpers in `app/build.gradle.kts` hard-fail
-    configuration when the `git` binary is absent — `Provider.orElse`
-    can't catch an exec failure, contradicting the documented
-    "unknown" fallback.
-  - `XlsxImporter`'s `errors` list is never populated, so its result
-    reporting is dead code.
 
 ## Repo conventions
 

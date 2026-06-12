@@ -24,9 +24,10 @@ val mapsApiKey: String = run {
 
 // --- Git info baked into BuildConfig for the in-app About card. providers.exec
 // is configuration-cache safe and only re-runs when the underlying git output
-// actually changes. Each helper falls back to "unknown" when git isn't on the
-// PATH or there's no .git directory (e.g. a fresh extract of a downloaded zip)
-// so the build never fails just because version info is missing.
+// actually changes. isIgnoreExitValue covers the no-.git case (non-zero exit,
+// blank stdout → "unknown" via the maps below); a missing git *binary* throws
+// at provider evaluation instead — Provider.orElse can't catch that, so the
+// .get() call sites wrap in runCatching to honor the same "unknown" fallback.
 fun gitOutput(vararg command: String): Provider<String> =
     providers.exec {
         commandLine(*command)
@@ -60,9 +61,12 @@ android {
         // Surface the current commit in the About card. .get() at config
         // time is fine — Gradle's configuration cache replays the captured
         // strings on subsequent invocations and only re-runs the git execs
-        // when the underlying inputs actually change.
-        buildConfigField("String", "GIT_SHA", "\"${gitDescribe.get()}\"")
-        buildConfigField("String", "GIT_COMMIT_DATE", "\"${gitCommitDate.get()}\"")
+        // when the underlying inputs actually change. runCatching guards
+        // the git-binary-missing case, where provider evaluation throws.
+        val gitShaValue = runCatching { gitDescribe.get() }.getOrDefault("unknown")
+        val gitCommitDateValue = runCatching { gitCommitDate.get() }.getOrDefault("unknown")
+        buildConfigField("String", "GIT_SHA", "\"$gitShaValue\"")
+        buildConfigField("String", "GIT_COMMIT_DATE", "\"$gitCommitDateValue\"")
     }
 
     buildTypes {
