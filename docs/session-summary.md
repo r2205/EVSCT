@@ -990,6 +990,12 @@ Run from Android Studio (Right-click → Run 'tests') or
   re-geocode almost never landed. Use the injected `@AppScope` scope
   for post-navigation side effects (the same scope `onCleared()`
   already used for file cleanup).
+- **Validate input shape, not parsed values**: `toLongOrNull` accepts
+  a sign and silently drops it for "-0", so a negativity check on the
+  *parsed* number lets "-0:11:00" through. When rejecting malformed
+  user input, test the raw string (digits-only) rather than properties
+  of the parsed result — the parse can normalize away exactly the
+  evidence you're checking for.
 
 ## Audit closeouts
 
@@ -999,12 +1005,12 @@ audit (M1 + M2 + Mn1–Mn5), and a later second-pass bug audit. In June
 5 high, 8 medium, 9 low) and closed out everything high and medium.
 Highlights of what got fixed:
 
-- **Third-pass bug sweep** (June 2026, on branch
-  `claude/adoring-hopper-57uot7` across three commits — high-severity,
-  navigation-transition, and medium-severity batches; the 9 low
-  findings were fixed in a follow-up branch,
-  `claude/low-severity-sweep-fixes` — see the low-severity batch at
-  the end of this list):
+- **Third-pass bug sweep** (June 2026; all 22 findings are fixed and
+  merged to `main` — the 5 high + 8 medium batches landed via PR #22
+  (branch `claude/adoring-hopper-57uot7`, which also carried the
+  navigation-transition fix), and the 9 low findings via PR #23
+  (branch `claude/low-severity-sweep-fixes`) — see the low-severity
+  batch at the end of this list):
   - **`Csv.parseAll` merged rows when a field's content started with a
     quote char**: the cross-line quote tracker counted a field's
     *opening* quote into its trailing-run parity check, so a note like
@@ -1101,7 +1107,11 @@ Highlights of what got fixed:
       also only preferred on API 31+ — undocumented pre-S, it could
       appear enabled on Android 11 yet never compute a fix.
     - `DurationFormat.parse` rejects negative inputs ("-5", "-1:30");
-      new `DurationFormatTest`.
+      new `DurationFormatTest`. The first cut checked the *parsed*
+      values for `< 0` and shipped with a hole the test caught on a
+      real run: `"-0".toLongOrNull()` drops the sign and returns 0,
+      letting "-0:11:00" through. The final fix requires colon parts
+      and the bare-minutes form to be pure digits.
     - `LocationAutofill.geocode`'s country-qualified retry no longer
       clobbers step-1 candidates with an empty list, so the
       documented last-resort fallback actually fires.
@@ -1273,8 +1283,10 @@ Highlights of what got fixed:
 - Apache 2.0 LICENSE in the repo root (David Robson, 2025/2026).
 - All commits include the Claude Code session URL in the trailer.
 - Default branch: `main`. Earlier work happened on
-  `claude/get-started-AEDLP`, which has since been merged. Both live
-  on `r2205/evsct` on GitHub.
+  `claude/get-started-AEDLP`, which has since been merged. The
+  third-pass bug sweep landed through `claude/adoring-hopper-57uot7`
+  (PR #22) and `claude/low-severity-sweep-fixes` (PR #23), both
+  merged. Everything lives on `r2205/evsct` on GitHub.
 - **History rewrite**: `DC Fast Charging.xlsx` was originally
   committed to `main` early in the project, but contained somewhat
   personal data. We later purged it from history with `git
