@@ -9,6 +9,7 @@ import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.di.AppScope
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.Format
 import com.evsct.app.util.Units
 import com.evsct.app.util.VehicleImageStore
 import kotlin.math.roundToInt
@@ -65,6 +66,24 @@ class VehicleEditViewModel @Inject constructor(
     private val touchedImagePaths = mutableSetOf<String>()
     @Volatile private var imageCleanupHandled = false
 
+    /** Loaded row's creation timestamp — save() rebuilds the entity, and the
+     *  data-class default would overwrite createdAt with "now" on every
+     *  edit. Null for brand-new vehicles. */
+    private var originalCreatedAt: Long? = null
+
+    /** Re-entry guard for save()/deleteAndExit() — both suspend on Room and
+     *  then pop the back stack, so a double-tap would otherwise insert two
+     *  vehicles and pop the navigator twice. Volatile because the reset runs
+     *  in invokeOnCompletion, off the main thread. */
+    @Volatile private var commitInFlight = false
+
+    /** Latched once a commit has succeeded and navigation-out was requested.
+     *  commitInFlight alone isn't enough: the save coroutine can finish (and
+     *  re-arm) before the exit transition does, letting a late tap start a
+     *  second commit on a screen that's already leaving. Never reset — a
+     *  failed commit doesn't set it, so retries still work. */
+    @Volatile private var exitRequested = false
+
     init {
         viewModelScope.launch {
             val units = appPreferences.userUnits.first()
@@ -72,6 +91,7 @@ class VehicleEditViewModel @Inject constructor(
                 val v = repository.findById(vehicleId)
                 if (v != null) {
                     originalImagePath = v.imagePath
+                    originalCreatedAt = v.createdAt
                     v.imagePath?.let { touchedImagePaths += it }
                     val rangeText = v.nominalRangeKm?.let {
                         Units.kmToDisplay(it.toDouble(), units.useMiles).roundToInt().toString()
@@ -139,6 +159,8 @@ class VehicleEditViewModel @Inject constructor(
     }
 
     fun save(onSaved: () -> Unit) {
+        if (commitInFlight || exitRequested) return
+        commitInFlight = true
         viewModelScope.launch {
             val s = _state.value
             val vehicle = Vehicle(
@@ -154,22 +176,26 @@ class VehicleEditViewModel @Inject constructor(
                 make = s.make.takeIf { it.isNotBlank() },
                 model = s.model.takeIf { it.isNotBlank() },
                 trim = s.trim.takeIf { it.isNotBlank() },
-                batteryCapacityKwh = s.batteryKwh.toDoubleOrNull(),
-                nominalRangeKm = s.rangeText.toDoubleOrNull()?.let {
+                batteryCapacityKwh = Format.parseDecimal(s.batteryKwh),
+                nominalRangeKm = Format.parseDecimal(s.rangeText)?.let {
                     Units.displayToKm(it, s.useMiles).roundToInt()
                 },
                 vin = s.vin.takeIf { it.isNotBlank() },
                 notes = s.notes.takeIf { it.isNotBlank() },
                 imagePath = s.imagePath,
                 isDefault = s.isDefault,
+                createdAt = originalCreatedAt ?: System.currentTimeMillis(),
             )
             repository.upsert(vehicle)
             reconcileImageFiles(finalPath = vehicle.imagePath)
+            exitRequested = true
             onSaved()
-        }
+        }.invokeOnCompletion { commitInFlight = false }
     }
 
     fun deleteAndExit(onDeleted: () -> Unit) {
+        if (commitInFlight || exitRequested) return
+        commitInFlight = true
         viewModelScope.launch {
             if (vehicleId > 0) {
                 repository.findById(vehicleId)?.let {
@@ -177,8 +203,9 @@ class VehicleEditViewModel @Inject constructor(
                 }
             }
             reconcileImageFiles(finalPath = null)
+            exitRequested = true
             onDeleted()
-        }
+        }.invokeOnCompletion { commitInFlight = false }
     }
 
     /** Drop every image file we touched during this edit except [finalPath]. */

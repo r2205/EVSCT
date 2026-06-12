@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
+    <!-- Room runs SQLite in WAL mode, so recent commits live in evsct.db-wal
+         until a checkpoint that may never happen before the process is
+         killed. Backing up only evsct.db would silently roll the user back
+         to the last checkpoint on restore. -->
     <include domain="database" path="evsct.db" />
+    <include domain="database" path="evsct.db-wal" />
+    <include domain="database" path="evsct.db-shm" />
     <!-- Jetpack DataStore Preferences is a Proto file under filesDir/datastore/,
          not a SharedPreferences XML. -->
     <include domain="file" path="datastore/" />

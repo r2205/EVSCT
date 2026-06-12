@@ -83,23 +83,31 @@ object Csv {
         val rows = mutableListOf<List<String>>()
         val cur = StringBuilder()
         var inQuotes = false
-        for (c in text) {
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
             when {
                 inQuotes -> {
                     cur.append(c)
                     if (c == '"') {
-                        // toggle handled in line parser; we need to track quotes across newlines
-                        var quoteCount = 0
-                        for (j in cur.length - 1 downTo 0) {
-                            if (cur[j] == '"') quoteCount++ else break
+                        if (i + 1 < text.length && text[i + 1] == '"') {
+                            // Escaped quote — consume both chars, stay quoted.
+                            // Lookahead (rather than counting trailing quotes)
+                            // so a field whose content *starts* with a quote
+                            // can't desync the quoted state and swallow the
+                            // row-terminating newline.
+                            cur.append('"')
+                            i++
+                        } else {
+                            inQuotes = false
                         }
-                        if (quoteCount % 2 == 1) inQuotes = false
                     }
                 }
                 c == '"' -> { cur.append(c); inQuotes = true }
                 c == '\n' -> { rows += parseLine(cur.toString().trimEnd('\r')); cur.clear() }
                 else -> cur.append(c)
             }
+            i++
         }
         if (cur.isNotEmpty()) rows += parseLine(cur.toString().trimEnd('\r'))
         return rows

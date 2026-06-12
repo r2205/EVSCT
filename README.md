@@ -13,6 +13,13 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 ### Logging a session
 - Date/time, charging type (DC Fast / AC L2 / AC L1), and pricing model
   (per-kWh, per-minute, flat, free, hybrid).
+- **Track a charge live** — "Start charge" logs the session the moment
+  you plug in and posts a persistent "Charging in progress" notification
+  with a running stopwatch; tap it to jump back to the entry and fill in
+  cost / kWh when you unplug. Save without typing a duration and the
+  tracked elapsed time fills it in automatically. (Android 13+ asks for
+  notification permission the first time; declining only hides the shade
+  shortcut — tracking still works in-app.)
 - Odometer, energy delivered (kWh), total cost, charging duration, battery
   start/end %.
 - Optional **wait time** — minutes you spent queueing before the cable
@@ -165,10 +172,12 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
   (1–365, default 30), and optionally toggle on Android system
   notifications. The reminder fires even when the app is closed (a
   lightweight background check wakes the OS at the right time;
-  battery cost is essentially zero).
+  battery cost is essentially zero). If you've never backed up at all,
+  it starts nudging once you have five sessions' worth of data.
 - **Backup (CSV)** — **Save** every session to a flat CSV for Excel /
   Google Sheets analysis, or **Share** the CSV out via Drive / email /
-  Messages / etc.
+  Messages / etc. Every logged field is included — tags and wait time
+  round-trip too.
 - **Import (CSV)** — Round-trips with the CSV export, with a "replace
   existing" toggle.
 - **One-time XLSX import** — for the legacy `DC Fast Charging.xlsx`

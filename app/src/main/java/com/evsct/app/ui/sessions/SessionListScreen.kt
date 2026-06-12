@@ -1,6 +1,11 @@
 package com.evsct.app.ui.sessions
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -81,8 +86,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
@@ -112,6 +119,40 @@ fun SessionListScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showAddSheet by remember { mutableStateOf(false) }
+
+    // POST_NOTIFICATIONS is runtime-granted on Android 13+ and nothing else
+    // in the quick-track flow requests it, so without this prompt the
+    // "Charging in progress" shade shortcut silently never appears. The
+    // charge starts regardless of the outcome — the permission only gates
+    // the notification, not the in-app tracking.
+    val context = LocalContext.current
+    var pendingTrackRequest by remember { mutableStateOf(false) }
+    var pendingTrackVehicleId by remember { mutableStateOf<Long?>(null) }
+    val trackPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ ->
+        if (pendingTrackRequest) {
+            pendingTrackRequest = false
+            viewModel.startTrackedSession(pendingTrackVehicleId) { id ->
+                onStartTrackedSession(id)
+            }
+        }
+    }
+
+    fun startTrackedSession(vehicleId: Long?) {
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            pendingTrackRequest = true
+            pendingTrackVehicleId = vehicleId
+            trackPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.startTrackedSession(vehicleId) { id -> onStartTrackedSession(id) }
+        }
+    }
 
     // Keep the search/filter strip visible whenever there are active filters,
     // so the user can always see and remove them.
@@ -278,9 +319,7 @@ fun SessionListScreen(
         AddSessionChooserSheet(
             onTrackNow = {
                 showAddSheet = false
-                viewModel.startTrackedSession(state.vehicleFilterId) { id ->
-                    onStartTrackedSession(id)
-                }
+                startTrackedSession(state.vehicleFilterId)
             },
             onAddPast = {
                 showAddSheet = false

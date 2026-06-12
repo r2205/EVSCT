@@ -67,4 +67,24 @@ object Format {
         val s = seconds % 60
         return if (h > 0) "%dh %02dm".format(h, m) else "%dm %02ds".format(m, s)
     }
+
+    /**
+     * Parse user-typed decimal input from a text field. KeyboardType.Decimal
+     * keyboards surface the locale's separator, so comma-locale users type
+     * "12,5" where the app renders "12.5" — toDoubleOrNull() rejects that
+     * and the value would silently save as null. Accepts both separators:
+     * a lone comma is treated as the decimal point; a comma alongside a dot
+     * is treated as a thousands separator ("1,234.5"). Returns null for
+     * blank or unparseable input.
+     */
+    fun parseDecimal(text: String): Double? {
+        val t = text.trim()
+        if (t.isEmpty()) return null
+        val normalized = when {
+            ',' in t && '.' in t -> t.replace(",", "")
+            ',' in t -> t.replace(',', '.')
+            else -> t
+        }
+        return normalized.toDoubleOrNull()
+    }
 }

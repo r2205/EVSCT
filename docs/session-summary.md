@@ -246,6 +246,21 @@ deprecated zero-arg overload).
   trip. Bulk-assign trip uses a single SQL UPDATE.
 - **System back** in selection mode → clears selection; with active
   filters → clears them.
+- **Start-charge quick-track** — the + FAB opens a chooser ("Track a
+  charge now" / "Add a past session"). Track-now persists a fresh
+  session immediately (vehicle from the active tab or the default,
+  currency from prefs, every other field null) and posts a persistent
+  "Charging in progress" notification (`InProgressChargeNotifier`,
+  LOW-importance channel, live chronometer via `setUsesChronometer`)
+  that deep-links back to the session's edit screen — including from
+  the Android Auto shade. The edit screen seeds an empty duration
+  field with the live elapsed time, and save() falls back to elapsed
+  when the duration is blank. On Android 13+ the flow requests
+  `POST_NOTIFICATIONS` on first use and proceeds regardless of the
+  answer — the permission only gates the shade entry, not the in-app
+  tracking (the notifier records the tracked id before the permission
+  check). The tracked id is mirrored to DataStore so process death
+  doesn't orphan the ongoing notification.
 - **Backup nudge banner** (tertiary-tone): respects the user's
   configurable threshold (default 30 days) and the master enable
   toggle. State stored in `AppPreferences` DataStore (`last_backup_at`
@@ -600,9 +615,14 @@ of years where they have data) and recomputes the recap on each pick.
   - Zip-slip guard via `sanitizedBasename` on JSON-declared paths.
 - **CSV export/import** (kept for spreadsheet analysis use case):
   flat session table with columns including `trip_name`,
-  `vehicle_name`, `latitude`, `longitude`, `continues_previous`.
-  Round-trips via `CsvIo`. Trips and vehicles are recreated by name
-  on import.
+  `vehicle_name`, `latitude`, `longitude`, `continues_previous`,
+  `wait_minutes`, and `tags` (the last two added in the third-pass
+  sweep — they were silently dropped before; older exports without
+  them still import unchanged). Round-trips via `CsvIo`. Trips and
+  vehicles are recreated by name on import. The multi-line parser
+  (`Csv.parseAll`) tracks quoted state with lookahead escaped-quote
+  handling — the earlier trailing-quote parity heuristic merged rows
+  when a field's content began with a quote char.
   - **Save / Share parity with Full backup**: the CSV card has the
     same two buttons. **Export to CSV…** is the SAF
     `CreateDocument("text/csv")` flow. **Share CSV file…** routes
@@ -644,7 +664,10 @@ of years where they have data) and recomputes the recap on each pick.
 - `BackupReminderNotifier` posts/cancels a notification on a
   `backup_reminder` channel. The notifier itself only knows how to
   fire/clear a notification *right now* — scheduling lives one layer
-  up in `BackupReminderScheduler`.
+  up in `BackupReminderScheduler`. The notifier mirrors the banner's
+  never-backed-up rule (nudges once the user has ≥5 sessions and no
+  recorded backup) — before the third-pass sweep it required a prior
+  backup, so that cohort never got the OS notification at all.
 - **Background scheduling** (`BackupReminderScheduler` +
   `BackupReminderWorker`): WorkManager-driven check that wakes the
   app briefly when a backup is overdue, even with the app fully
@@ -716,6 +739,11 @@ bug we hit early when the list was too tall for some screens).
 - `mapPolylinesEnabled: Flow<Boolean>` (default false)
 - `themeMode: Flow<String>` (SYSTEM / LIGHT / DARK)
 - `lastMapBackfillAt(): Long?` (one-shot read for the throttle)
+- `trackedChargeSessionId(): Long?` + setter — mirrors the
+  in-progress charge notifier's tracked session id across process
+  death so the ongoing notification can still be cancelled (and the
+  edit screen's live tracking resumed) after Android kills the app
+  mid-charge
 - `snapshot()` for one-shot reads (used by `BackupReminderNotifier`)
 
 Units/currency are surfaced via a CompositionLocal
@@ -756,7 +784,14 @@ the unit pref as a parameter; aggregates pass the default-currency to
   exclusion reasons, `continuesPrevious` gating, capacity-missing
   case, decoupled-from-trip pairing.
 - **`data/csv/CsvTest.kt`** — formula-injection escape on export,
-  trigger-char stripping on import, asymmetric round-trip.
+  trigger-char stripping on import, asymmetric round-trip, and
+  (third-pass sweep) leading-quote field content: rows must stay
+  separate when a field's value starts with `"` or *is* a lone `"`,
+  plus a multi-row encode→parseAll round-trip.
+- **`util/FormatParseDecimalTest.kt`** — `Format.parseDecimal`
+  accepts dot and comma decimal separators, treats comma+dot as
+  thousands ("1,234.5"), trims whitespace, and returns null on
+  blank/garbage.
 
 Run from Android Studio (Right-click → Run 'tests') or
 `./gradlew :app:testDebugUnitTest` from the terminal once
@@ -910,11 +945,146 @@ Run from Android Studio (Right-click → Run 'tests') or
   reliably fails against the old implementation, passes against the
   new one.
 
+- **Geocoder's API-33 listener overloads are a SAM trap**: passing a
+  lambda to `getFromLocationName` / `getFromLocation` implements only
+  `GeocodeListener.onGeocode`; `onError` stays a default no-op, so a
+  geocoder failure (no network, backend error — routine) never resumes
+  a wrapping `suspendCancellableCoroutine` and the call hangs forever.
+  Always implement the full listener and resume `onError` with an
+  exception that matches the pre-33 synchronous contract.
+- **Navigation calls during transitions corrupt the NavHost**: a
+  `NavBackStackEntry` leaves RESUMED the moment its exit transition
+  starts, and the incoming entry only reaches RESUMED when the
+  transition settles. A tap landing mid-transition (double-tap on
+  Save, or a tap hitting the incoming screen's control at the same
+  coordinates — our repro was Save-then-Settings-gear, which line up
+  exactly) fires `navigate()`/`popBackStack()` from an unsettled state
+  and can blank the NavHost. Guard every navigation lambda with an
+  is-RESUMED check (`dropUnlessResumed`, or a hand-rolled equivalent
+  for lambdas with parameters).
+- **A coroutine-completion-reset guard re-arms too early**: a
+  `commitInFlight`-style flag cleared in `invokeOnCompletion` re-arms
+  as soon as the save coroutine finishes — which is *before* the exit
+  transition ends, so a late tap can start a second commit on a screen
+  that's already leaving. Latch a separate never-reset flag once
+  navigation-out has been requested; only failed commits leave it
+  unset so retries still work.
+- **Auto Backup `<include>` rules are exclusive — and Room runs WAL**:
+  listing only `evsct.db` backs up a stale snapshot because committed
+  writes sit in `evsct.db-wal` until a checkpoint (~4 MB or a clean
+  close that never happens when Android kills the process). Include
+  `-wal` and `-shm` alongside the db in `backup_rules.xml` and both
+  `data_extraction_rules.xml` sections.
+- **Kotlin's `String.format` uses the default locale, and
+  `KeyboardType.Decimal` surfaces the locale's separator**: seeding a
+  text field with `"%.1f".format(x)` renders "62,1" on comma-decimal
+  devices while `toDoubleOrNull()` only accepts dots — so the value
+  silently nulls on the next save. Pin field seeding to `Locale.US`
+  and parse user decimals comma-tolerantly (`Format.parseDecimal`).
+- **Work that must outlive a popped screen can't run in
+  `viewModelScope`**: `popBackStack()` clears the ViewModel within the
+  exit transition, cancelling in-flight coroutines — our post-save
+  re-geocode almost never landed. Use the injected `@AppScope` scope
+  for post-navigation side effects (the same scope `onCleared()`
+  already used for file cleanup).
+
 ## Audit closeouts
 
 Mid-project we ran an end-to-end bug audit (15 findings), a security
-audit (M1 + M2 + Mn1–Mn5), and a later second-pass bug audit. Highlights
-of what got fixed:
+audit (M1 + M2 + Mn1–Mn5), and a later second-pass bug audit. In June
+2026 a third-pass sweep reviewed every layer in parallel (22 findings:
+5 high, 8 medium, 9 low) and closed out everything high and medium.
+Highlights of what got fixed:
+
+- **Third-pass bug sweep** (June 2026, on branch
+  `claude/adoring-hopper-57uot7` across three commits — high-severity,
+  navigation-transition, and medium-severity batches; the 9 low
+  findings are deferred and tracked under "Outstanding ideas"):
+  - **`Csv.parseAll` merged rows when a field's content started with a
+    quote char**: the cross-line quote tracker counted a field's
+    *opening* quote into its trailing-run parity check, so a note like
+    `"broken stall` desynced the quoted state, swallowed the
+    row-terminating newline, and corrupted the import (data loss under
+    "replace existing"). Rewritten with lookahead-based escaped-quote
+    handling; covered by three new `CsvTest` cases and verified
+    against 20k randomized encode→parse round-trips.
+  - **Geocoder calls could hang forever on Android 13+**: the
+    TIRAMISU+ paths passed a lambda, which SAM-implements only
+    `GeocodeListener.onGeocode` — `onError` stayed a default no-op and
+    any geocoder failure left the `suspendCancellableCoroutine`
+    suspended forever (GPS autofill spinner of doom). `onError` now
+    resumes with `IOException`, matching the pre-33 contract every
+    caller already catches.
+  - **Double-tap on Save inserted duplicate rows**: no re-entry guard
+    existed anywhere in the save path. Added `commitInFlight` (reset
+    via `invokeOnCompletion`) plus an `exitRequested` latch to
+    `SessionEditViewModel` and `VehicleEditViewModel` — the latch
+    matters because the save coroutine can finish (re-arming the
+    in-flight flag) before the exit transition does. `MapPickerScreen`
+    got a fire-once guard on its three exit buttons.
+  - **Mid-transition taps corrupted the NavHost into a blank screen**:
+    found in on-device testing — save a session, then immediately tap
+    where the list's Settings gear sits (same coordinates as the edit
+    screen's Save checkmark) and `navigate()` fired during the pop
+    transition, blanking the app. Every navigation lambda in
+    `EvsctNavGraph` is now wrapped in an `ifResumed` guard on its
+    `NavBackStackEntry` (the `dropUnlessResumed` pattern generalized
+    to any lambda arity), so taps landing during enter/exit
+    transitions are dropped.
+  - **Android Auto Backup silently rolled restores back**: the backup
+    rules included only `evsct.db`, but Room defaults to WAL mode, so
+    recent commits live in `evsct.db-wal` until a checkpoint that may
+    never happen before process death. Both rule files now include
+    `evsct.db-wal` and `evsct.db-shm` (the in-app zip backup was never
+    affected — it serializes through DAOs).
+  - **Comma-decimal locales silently wiped values**: field seeding
+    used default-locale `"%.1f".format(...)` (→ "62,1" on fr/de/es
+    devices) while every parse was dot-only `toDoubleOrNull()`, so
+    editing an odometer — or even saving a trip rename — nulled stored
+    values. Added `Format.parseDecimal` (accepts comma decimal
+    separators; comma+dot treated as thousands), switched all UI
+    decimal parse sites to it, pinned field seeding to `Locale.US`,
+    and gave `TripEditDialog` the same untouched-field short-circuit
+    the session form already had (also killing its lossy km↔mi
+    drift on no-op saves). New `FormatParseDecimalTest`.
+  - **Charge tracking was dead on Android 13+ without notification
+    permission**: `InProgressChargeNotifier.post()` returned before
+    recording the tracked id, so the in-app features (live elapsed
+    chip, elapsed-time fallback into the duration on save) died with
+    the denied permission — which nothing in the quick-track flow ever
+    requested. Now tracks first / notifies second, and the
+    Start-charge flow requests `POST_NOTIFICATIONS` (proceeding
+    regardless of the answer).
+  - **Process death orphaned the ongoing notification**: the tracked
+    id lived only in memory while every cancel path was conditional
+    (`cancelIfFor`), so kill-app-mid-charge left the `setOngoing`
+    entry stuck in the shade. The id is now mirrored to DataStore
+    (`trackedChargeSessionId`) and restored best-effort at next start.
+  - **Bulk "Assign trip" applied to invisibly-stale selections**: the
+    top bar displayed `selected ∩ visible` but the action used the raw
+    set, so rows hidden by a search/filter applied after selecting got
+    silently reassigned. The action now uses the displayed set.
+  - **CSV silently dropped `waitTimeMinutes` and `tags`**: the format
+    was never updated for the two newer fields. Added `wait_minutes`
+    and `tags` columns; older exports import unchanged (absent columns
+    read null).
+  - **Backup reminder never fired for never-backed-up users**: the
+    scheduler explicitly armed a check for that cohort but the
+    notifier unconditionally required a prior backup, so the worker
+    chain re-armed forever without posting. The notifier now mirrors
+    the in-app banner's rule (≥ `BACKUP_NUDGE_MIN_SESSIONS`).
+  - **Post-save re-geocode almost never landed**: it ran in
+    `viewModelScope` *after* `popBackStack()`, so the VM clear
+    cancelled it mid-flight and edited addresses lost their pin until
+    the 24h-throttled map backfill. Moved to the `@AppScope` scope.
+  - **Fast save after a map pick dropped the picked coordinates**:
+    `applyPickedLocation` only wrote lat/lng to form state after the
+    reverse-geocode returned. Coordinates now apply synchronously;
+    only the address backfill stays async.
+  - **Edits overwrote `createdAt`**: both edit ViewModels rebuilt the
+    entity from form state, stamping the data-class "now" default
+    through every update (corrupting creation dates, which round-trip
+    into backups). Both now carry the loaded row's `createdAt`.
 
 - **Second-pass bug audit** (post-AGP-9, after the docs settled):
   - **CSV import was non-atomic**: `import()` did `deleteAll()` then
@@ -1062,6 +1232,38 @@ of what got fixed:
   plugin 2.2.10's BaseExtension cast and need a Kotlin bump to lift;
   the other three are pre-AGP-9 transitive-dep / R8 behaviors not
   yet flagged as deprecated. Revisit when we next bump Kotlin.
+- **Low-severity findings deferred from the third-pass sweep** (the
+  highs and mediums are fixed — see "Audit closeouts"):
+  - Free ($0.00) sessions create currency buckets in
+    `CurrencyTotals.from`, so one free session tagged in the other
+    currency flips `isMixed` and suppresses $/kWh and $/km — contrary
+    to the class KDoc ("all null/zero costs" should leave it empty).
+  - `AutofillResult.NoProvider` is unreachable: `getCurrentLocation()`
+    collapses a null provider into the same null as a fix timeout, so
+    users with location services off see "couldn't get a fix" instead
+    of "turn on location".
+  - `DurationFormat.parse` accepts negatives ("-5" → −300 s, rendered
+    "-5m 00s" in lists).
+  - `LocationAutofill.geocode` step-4 fallback reads the
+    `candidates` variable after step 2 overwrote it — when the
+    country-qualified retry returns empty, the documented
+    surrender-to-first-hit fallback returns nothing instead.
+  - `FUSED_PROVIDER` is preferred by `pickProvider` but only
+    guaranteed functional from API 31; on Android 11 it can appear
+    enabled yet never compute a fix (needs device verification).
+  - `CsvFormat`'s shared `SimpleDateFormat`s aren't thread-safe and
+    freeze the timezone at class load — inconsistent with the
+    ThreadLocal pattern `Format` deliberately adopted.
+  - `CsvIo.import` calls `TripRepository.upsert` inside
+    `withTransaction`, which internally collects a DAO Flow — the
+    exact pattern the import's own comment avoids; also means several
+    new trips created in one import can get duplicate pin colors.
+  - The git-info helpers in `app/build.gradle.kts` hard-fail
+    configuration when the `git` binary is absent — `Provider.orElse`
+    can't catch an exec failure, contradicting the documented
+    "unknown" fallback.
+  - `XlsxImporter`'s `errors` list is never populated, so its result
+    reporting is dead code.
 
 ## Repo conventions
 

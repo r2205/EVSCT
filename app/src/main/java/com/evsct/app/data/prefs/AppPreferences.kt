@@ -43,6 +43,11 @@ class AppPreferences @Inject constructor(
          *  pass. Used to throttle re-runs across process death so we don't
          *  re-geocode the same unresolvable addresses every cold start. */
         private val LAST_MAP_BACKFILL_AT = longPreferencesKey("last_map_backfill_at")
+        /** Session id the in-progress charge notification is tracking.
+         *  Mirrored from [com.evsct.app.util.InProgressChargeNotifier]'s
+         *  in-memory state so process death doesn't orphan the ongoing
+         *  notification — the notifier restores this at next startup. */
+        private val TRACKED_CHARGE_SESSION_ID = longPreferencesKey("tracked_charge_session_id")
         /** User's preferred Google Maps base layer (NORMAL / SATELLITE /
          *  HYBRID / TERRAIN). Stored as the [com.google.maps.android.compose.MapType]
          *  enum name. */
@@ -131,6 +136,18 @@ class AppPreferences @Inject constructor(
 
     suspend fun recordMapBackfillAttempt(epochMillis: Long = System.currentTimeMillis()) {
         dataStore.edit { it[LAST_MAP_BACKFILL_AT] = epochMillis }
+    }
+
+    /** Session id the in-progress charge notification was tracking, or null
+     *  when no charge is being tracked. */
+    suspend fun trackedChargeSessionId(): Long? =
+        dataStore.data.first()[TRACKED_CHARGE_SESSION_ID]?.takeIf { it > 0 }
+
+    suspend fun setTrackedChargeSessionId(id: Long?) {
+        dataStore.edit { prefs ->
+            if (id == null) prefs.remove(TRACKED_CHARGE_SESSION_ID)
+            else prefs[TRACKED_CHARGE_SESSION_ID] = id
+        }
     }
 
     /** Selected Google Maps base layer. Falls back to NORMAL on unset or
