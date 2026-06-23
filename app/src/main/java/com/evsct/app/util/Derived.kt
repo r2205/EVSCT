@@ -15,6 +15,12 @@ object Derived {
         return if (secs > 0) cost / (secs / 60.0) else null
     }
 
+    fun effectiveTimeRatePerHour(s: ChargingSession): Double? {
+        val cost = s.totalCost ?: return null
+        val secs = s.durationSeconds ?: return null
+        return if (secs > 0) cost / (secs / 3600.0) else null
+    }
+
     fun effectiveAvgPowerKw(s: ChargingSession): Double? {
         val kwh = s.energyKwh ?: return null
         val secs = s.durationSeconds ?: return null

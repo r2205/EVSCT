@@ -66,6 +66,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.BuildConfig
 import com.evsct.app.data.prefs.AppPreferences
+import com.evsct.app.data.prefs.CardTimeRate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -192,8 +193,10 @@ fun SettingsScreen(
             UnitsCurrencyCard(
                 useMiles = state.units.useMiles,
                 defaultCurrency = state.units.defaultCurrency,
+                cardTimeRate = state.units.cardTimeRate,
                 onUseMilesChange = viewModel::setUseMiles,
                 onDefaultCurrencyChange = viewModel::setDefaultCurrency,
+                onCardTimeRateChange = viewModel::setCardTimeRate,
             )
 
             ThemeCard(
@@ -515,8 +518,10 @@ private fun BackupReminderCard(
 private fun UnitsCurrencyCard(
     useMiles: Boolean,
     defaultCurrency: String,
+    cardTimeRate: CardTimeRate,
     onUseMilesChange: (Boolean) -> Unit,
     onDefaultCurrencyChange: (String) -> Unit,
+    onCardTimeRateChange: (CardTimeRate) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -571,6 +576,28 @@ private fun UnitsCurrencyCard(
             Text(
                 "Each session keeps the currency it was saved with. The default " +
                     "is used for new sessions and for totals on the dashboard.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Text("Time rate on cards", style = MaterialTheme.typography.labelLarge)
+            val rateOptions = listOf(
+                CardTimeRate.OFF to "Off",
+                CardTimeRate.PER_MINUTE to "$/min",
+                CardTimeRate.PER_HOUR to "$/hr",
+            )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                rateOptions.forEachIndexed { index, (mode, label) ->
+                    SegmentedButton(
+                        selected = cardTimeRate == mode,
+                        onClick = { onCardTimeRateChange(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = rateOptions.size),
+                    ) { Text(label) }
+                }
+            }
+            Text(
+                "Show each charge's cost per minute or hour on its card, " +
+                    "computed from cost ÷ charging time.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

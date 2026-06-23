@@ -18,9 +18,14 @@ data class BackupReminderSettings(
     val notifyEnabled: Boolean = false,
 )
 
+/** How (and whether) the time-based cost rate is shown on session cards.
+ *  PER_MINUTE / PER_HOUR pick the unit; OFF hides it entirely. */
+enum class CardTimeRate { OFF, PER_MINUTE, PER_HOUR }
+
 data class UserUnits(
     val useMiles: Boolean = false,
     val defaultCurrency: String = "CAD",
+    val cardTimeRate: CardTimeRate = CardTimeRate.PER_MINUTE,
 )
 
 /**
@@ -39,6 +44,9 @@ class AppPreferences @Inject constructor(
         private val REMINDER_NOTIFY = booleanPreferencesKey("backup_reminder_notify")
         private val USE_MILES = booleanPreferencesKey("use_miles")
         private val DEFAULT_CURRENCY = stringPreferencesKey("default_currency")
+        /** [CardTimeRate] enum name controlling the time-cost rate shown on
+         *  session cards. */
+        private val CARD_TIME_RATE = stringPreferencesKey("card_time_rate")
         /** Epoch millis of the last attempted map address-backfill geocode
          *  pass. Used to throttle re-runs across process death so we don't
          *  re-geocode the same unresolvable addresses every cold start. */
@@ -100,6 +108,9 @@ class AppPreferences @Inject constructor(
             defaultCurrency = prefs[DEFAULT_CURRENCY]
                 ?.takeIf { it in SUPPORTED_CURRENCIES }
                 ?: "CAD",
+            cardTimeRate = prefs[CARD_TIME_RATE]
+                ?.let { name -> runCatching { CardTimeRate.valueOf(name) }.getOrNull() }
+                ?: CardTimeRate.PER_MINUTE,
         )
     }
 
@@ -127,6 +138,10 @@ class AppPreferences @Inject constructor(
     suspend fun setDefaultCurrency(currency: String) {
         if (currency !in SUPPORTED_CURRENCIES) return
         dataStore.edit { it[DEFAULT_CURRENCY] = currency }
+    }
+
+    suspend fun setCardTimeRate(mode: CardTimeRate) {
+        dataStore.edit { it[CARD_TIME_RATE] = mode.name }
     }
 
     /** Most recent epoch millis the map screen attempted its address-backfill

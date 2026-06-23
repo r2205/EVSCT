@@ -71,6 +71,20 @@ fun TripEditDialog(
 
     val resolvedColor = TripPinColor.fromKey(pinColorKey)
 
+    // Untouched fields keep the stored km verbatim — the display↔km round-trip
+    // is lossy in miles mode and would drift the stored value on every no-op
+    // save. Computed here (not just in onClick) so the same values feed the
+    // ordering check below.
+    val startKm = if (startText == initialStartText) trip?.startOdometerKm
+    else Format.parseDecimal(startText)?.let { Units.displayToKm(it, units.useMiles) }
+    val endKm = if (endText == initialEndText) trip?.endOdometerKm
+    else Format.parseDecimal(endText)?.let { Units.displayToKm(it, units.useMiles) }
+
+    // Distance is End − Start, so Start cannot be more than End. Block the save
+    // when both are filled but ordered the wrong way (which would yield a
+    // negative distance).
+    val odometerError = startKm != null && endKm != null && startKm > endKm
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (trip == null) "New trip" else "Edit trip") },
@@ -94,6 +108,7 @@ fun TripEditDialog(
                         onValueChange = { startText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
                         label = { Text("Start $unitLabel") },
                         singleLine = true,
+                        isError = odometerError,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f),
                     )
@@ -102,8 +117,16 @@ fun TripEditDialog(
                         onValueChange = { endText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
                         label = { Text("End $unitLabel") },
                         singleLine = true,
+                        isError = odometerError,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f),
+                    )
+                }
+                if (odometerError) {
+                    Text(
+                        "Start $unitLabel cannot be more than End $unitLabel.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
                 OutlinedTextField(
@@ -130,19 +153,8 @@ fun TripEditDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = name.isNotBlank(),
+                enabled = name.isNotBlank() && !odometerError,
                 onClick = {
-                    // Untouched fields keep the stored km verbatim — the
-                    // display↔km round-trip is lossy in miles mode and would
-                    // drift the stored value on every no-op save.
-                    val startKm = if (startText == initialStartText) trip?.startOdometerKm
-                    else Format.parseDecimal(startText)?.let {
-                        Units.displayToKm(it, units.useMiles)
-                    }
-                    val endKm = if (endText == initialEndText) trip?.endOdometerKm
-                    else Format.parseDecimal(endText)?.let {
-                        Units.displayToKm(it, units.useMiles)
-                    }
                     val merged = (trip ?: Trip(name = name.trim())).copy(
                         name = name.trim(),
                         startOdometerKm = startKm,
