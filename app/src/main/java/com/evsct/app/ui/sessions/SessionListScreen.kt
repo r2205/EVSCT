@@ -94,6 +94,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
+import com.evsct.app.data.prefs.CardTimeRate
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.theme.EvAccents
@@ -649,7 +650,7 @@ private fun VehicleTabs(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SessionRow(
     session: ChargingSession,
@@ -661,6 +662,7 @@ private fun SessionRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    val units = LocalUserUnits.current
     val typeAccent = chargingTypeAccent(session.chargingType)
     val barColor = typeAccent.bar
     Card(
@@ -781,15 +783,35 @@ private fun SessionRow(
                     )
                 }
                 val effPrice = Derived.effectiveEnergyPricePerKwh(session)
-                if (effPrice != null || tripName != null || vehicleName != null) {
+                val timeRate = when (units.cardTimeRate) {
+                    CardTimeRate.PER_MINUTE ->
+                        Derived.effectiveTimeRatePerMin(session)?.let { Format.moneyPerTime(it, "min") }
+                    CardTimeRate.PER_HOUR ->
+                        Derived.effectiveTimeRatePerHour(session)?.let { Format.moneyPerTime(it, "hr") }
+                    CardTimeRate.OFF -> null
+                }
+                if (effPrice != null || timeRate != null || tripName != null || vehicleName != null) {
                     Spacer(Modifier.height(6.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    // FlowRow (not Row) so the rate chips and pills wrap to a
+                    // second line instead of clipping when several are shown at
+                    // once (e.g. both eff. rates plus vehicle + trip pills on
+                    // the "All" tab).
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        itemVerticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (effPrice != null) {
                             Text(
                                 "Eff. ${Format.moneyRate(effPrice, "kWh")}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (timeRate != null) {
+                            Text(
+                                "Eff. $timeRate",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

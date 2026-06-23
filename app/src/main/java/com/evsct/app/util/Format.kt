@@ -40,6 +40,12 @@ object Format {
     fun moneyRate(value: Double?, perUnit: String): String =
         value?.let { "${'$'}${rateFmt.get()!!.format(it)}/$perUnit" } ?: "—"
 
+    /** Cost-per-time display like "$0.27/min" or "$27.00/hr". Time rates read
+     *  as ordinary currency, so use 2-decimal money precision instead of the
+     *  3-decimal energy-rate precision [moneyRate] uses. */
+    fun moneyPerTime(value: Double?, perUnit: String): String =
+        value?.let { "${'$'}${moneyFmt.get()!!.format(it)}/$perUnit" } ?: "—"
+
     fun km(value: Double?): String = value?.let { "${kmFmt.get()!!.format(it)} km" } ?: "—"
 
     /** Distance display in user-preferred unit. [valueKm] is always stored km. */

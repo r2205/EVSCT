@@ -13,6 +13,7 @@ import com.evsct.app.data.csv.XlsxImportResult
 import com.evsct.app.data.csv.XlsxImporter
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.BackupReminderSettings
+import com.evsct.app.data.prefs.CardTimeRate
 import com.evsct.app.data.prefs.UserUnits
 import com.evsct.app.util.BackupReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -67,6 +68,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setDefaultCurrency(currency: String) = viewModelScope.launch {
         appPreferences.setDefaultCurrency(currency)
+    }
+
+    fun setCardTimeRate(mode: CardTimeRate) = viewModelScope.launch {
+        appPreferences.setCardTimeRate(mode)
     }
 
     fun setThemeMode(mode: String) = viewModelScope.launch {
