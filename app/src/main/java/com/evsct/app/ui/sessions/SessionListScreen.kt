@@ -798,7 +798,6 @@ private fun SessionRow(
                     // the "All" tab).
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        itemVerticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
