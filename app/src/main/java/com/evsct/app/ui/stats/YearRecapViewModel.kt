@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.evsct.app.R
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.TripWithStats
 import com.evsct.app.data.prefs.AppPreferences
@@ -34,6 +35,33 @@ import kotlinx.coroutines.withContext
  *  data is too sparse to compute year totals. Mirrors the gas-savings card
  *  in [StatsViewModel] so both surfaces tell the same story. */
 private const val FALLBACK_KM_PER_KWH = 4.0
+
+/** Stops visited across more than one trip render gray, matching the live
+ *  map's "shared" pin. */
+private const val MAP_SHARED_GRAY = "#757575"
+
+/** Untripped stops use the report's EV green rather than the live map's red,
+ *  so the recap map stays on-palette with the rest of the document. */
+private const val MAP_UNTRIPPED_GREEN = "#2E7D32"
+
+/** A distinct, located charging stop within the recap period, ready to plot
+ *  as an SVG pin. Coordinates are the average of the visits that share the
+ *  stop (mirrors the live map's [com.evsct.app.ui.map.MapStop]). [colorHex]
+ *  is the trip color, the shared-stop gray, or the untripped green. */
+data class RecapMapStop(
+    val lat: Double,
+    val lng: Double,
+    val colorHex: String,
+    val label: String,
+    val visits: Int,
+)
+
+/** A trip's located visits in chronological order, for an SVG route line. */
+data class RecapTripPath(
+    val colorHex: String,
+    /** (lat, lng) in chronological order; always 2+ points. */
+    val points: List<Pair<Double, Double>>,
+)
 
 data class LongestTripSummary(
     val name: String,
@@ -70,6 +98,13 @@ data class YearRecapUi(
     /** Trip with the highest distance among trips with at least one
      *  session in [selectedYear]. Whole-trip distance, not in-year only. */
     val longestTrip: LongestTripSummary? = null,
+    /** Distinct located charging stops in the period, deduped + trip-colored
+     *  like the live map. Empty when no in-year session has coordinates. */
+    val mapStops: List<RecapMapStop> = emptyList(),
+    /** One route line per trip with 2+ located in-year visits. */
+    val mapTripPaths: List<RecapTripPath> = emptyList(),
+    /** (label, colorHex) pairs for the map legend, in display order. */
+    val mapLegend: List<Pair<String, String>> = emptyList(),
     /** Display name of the vehicle the recap is scoped to, or null when
      *  scoped to all vehicles. Used to suffix the exported PDF filename
      *  so multi-vehicle users don't get N identical "evsct-recap-2024.pdf"
@@ -89,14 +124,14 @@ private fun emptyMonthly(): List<Pair<String, Double>> {
 
 /** Default filename for a recap export. Includes a slugified vehicle name
  *  when the recap is scoped to a single vehicle so multi-vehicle users get
- *  distinct files. */
-internal fun defaultRecapFilename(year: Int, vehicleName: String?): String {
-    if (vehicleName.isNullOrBlank()) return "evsct-recap-$year.pdf"
+ *  distinct files. [ext] is the extension without a dot ("pdf", "html"). */
+internal fun defaultRecapFilename(year: Int, vehicleName: String?, ext: String = "pdf"): String {
+    if (vehicleName.isNullOrBlank()) return "evsct-recap-$year.$ext"
     val slug = vehicleName
         .replace(Regex("[^A-Za-z0-9]+"), "-")
         .trim('-')
         .ifBlank { "vehicle" }
-    return "evsct-recap-$year-$slug.pdf"
+    return "evsct-recap-$year-$slug.$ext"
 }
 
 @HiltViewModel
@@ -143,6 +178,38 @@ class YearRecapViewModel @Inject constructor(
 
     fun setYear(year: Int) { selectedYear.value = year }
 
+    /** Parsed once and reused: the bundled North America outline drawn behind
+     *  the recap map pins. Derived from Natural Earth 1:50m admin-1 data
+     *  (public domain), simplified and trimmed to US states + CA provinces. A
+     *  missing or unparseable asset yields an empty basemap and the renderer
+     *  simply draws pins with no borders. */
+    @Volatile private var cachedBasemap: NaBasemap? = null
+
+    private fun loadBasemap(): NaBasemap {
+        cachedBasemap?.let { return it }
+        val text = runCatching {
+            context.resources.openRawResource(R.raw.na_basemap)
+                .bufferedReader().use { it.readText() }
+        }.getOrNull()
+        return (text?.let { parseNaBasemap(it) } ?: NaBasemap(emptyList())).also { cachedBasemap = it }
+    }
+
+    /** The bundled EVSCT lockup (logo + wordmark), inlined into the HTML
+     *  report header as raw SVG. Null if the asset can't be read, in which
+     *  case the report falls back to a plain text heading. */
+    @Volatile private var cachedLogo: String? = null
+    @Volatile private var logoLoaded = false
+
+    private fun loadLogo(): String? {
+        if (logoLoaded) return cachedLogo
+        cachedLogo = runCatching {
+            context.resources.openRawResource(R.raw.evsct_lockup)
+                .bufferedReader().use { it.readText() }
+        }.getOrNull()
+        logoLoaded = true
+        return cachedLogo
+    }
+
     /** Save the recap to a SAF-picked Uri. The screen wires a CreateDocument
      *  launcher; this method runs the actual write. */
     fun saveAsPdf(uri: Uri) = viewModelScope.launch {
@@ -174,6 +241,53 @@ class YearRecapViewModel @Inject constructor(
                 }
                 val target = File(shareDir, defaultRecapFilename(ui.selectedYear, ui.vehicleName))
                 target.outputStream().use { writeYearRecapPdf(it, ui, units) }
+                target
+            }
+        }.onSuccess { file ->
+            transient.update { it.copy(busy = false, pendingShareFile = file) }
+        }.onFailure { e ->
+            transient.update { it.copy(busy = false, message = "Share failed: ${e.message}") }
+        }
+    }
+
+    /** Save the recap as a self-contained HTML file to a SAF-picked Uri.
+     *  Twin of [saveAsPdf]; the screen wires a separate CreateDocument
+     *  launcher for the text/html mime type. */
+    fun saveAsHtml(uri: Uri) = viewModelScope.launch {
+        transient.update { it.copy(busy = true, message = null) }
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val out = context.contentResolver.openOutputStream(uri, "wt")
+                    ?: throw java.io.IOException("Could not open output for writing.")
+                val basemap = loadBasemap()
+                val logo = loadLogo()
+                out.use { writeYearRecapHtml(it, computed.value, appPreferences.userUnits.first(), basemap, logo) }
+            }
+        }.onSuccess {
+            transient.update { it.copy(busy = false, message = "Recap saved.") }
+        }.onFailure { e ->
+            transient.update { it.copy(busy = false, message = "Save failed: ${e.message}") }
+        }
+    }
+
+    /** Build the recap HTML in the shared recap-share cache subdir and post
+     *  the file for an ACTION_SEND chooser dispatch. Twin of [shareAsPdf];
+     *  the share dir is cleared on every prepare so the two formats never
+     *  leave a stale file behind. */
+    fun shareAsHtml() = viewModelScope.launch {
+        transient.update { it.copy(busy = true, message = null) }
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val ui = computed.value
+                val units = appPreferences.userUnits.first()
+                val shareDir = File(context.cacheDir, "recap-share").apply {
+                    mkdirs()
+                    listFiles()?.forEach { it.delete() }
+                }
+                val target = File(shareDir, defaultRecapFilename(ui.selectedYear, ui.vehicleName, "html"))
+                val basemap = loadBasemap()
+                val logo = loadLogo()
+                target.outputStream().use { writeYearRecapHtml(it, ui, units, basemap, logo) }
                 target
             }
         }.onSuccess { file ->
@@ -224,6 +338,7 @@ class YearRecapViewModel @Inject constructor(
         val monthlyCost = monthlySeries(costSessions, effectiveYear) { it.totalCost ?: 0.0 }
         val monthlyKwh = monthlySeries(inYear, effectiveYear) { it.energyKwh ?: 0.0 }
         val longest = longestTripIn(trips, effectiveYear, sessions)
+        val map = recapMapData(inYear, trips)
 
         return YearRecapUi(
             isLoading = false,
@@ -239,8 +354,91 @@ class YearRecapViewModel @Inject constructor(
             monthlyCost = monthlyCost,
             monthlyKwh = monthlyKwh,
             longestTrip = longest,
+            mapStops = map.stops,
+            mapTripPaths = map.paths,
+            mapLegend = map.legend,
         )
     }
+
+    /** Trip color, the shared-stop gray, or the untripped green. */
+    private fun tripColorHex(pinColor: String?): String =
+        com.evsct.app.ui.map.TripPinColor.fromKey(pinColor)?.hex ?: MAP_SHARED_GRAY
+
+    private data class RecapMap(
+        val stops: List<RecapMapStop>,
+        val paths: List<RecapTripPath>,
+        val legend: List<Pair<String, String>>,
+    )
+
+    /**
+     * Build the recap map: distinct located stops (deduped by brand+address+
+     * city like the live map), each colored by its trip, plus a route line per
+     * trip with 2+ located visits. Mirrors [com.evsct.app.ui.map.MapViewModel]'s
+     * stop logic but scoped to the recap period and flattened for SVG output.
+     */
+    private fun recapMapData(
+        inYear: List<ChargingSession>,
+        trips: List<TripWithStats>,
+    ): RecapMap {
+        val located = inYear.filter { it.latitude != null && it.longitude != null }
+        if (located.isEmpty()) return RecapMap(emptyList(), emptyList(), emptyList())
+
+        val tripById = trips.associateBy { it.trip.id }
+        val groups = located.groupBy(::recapStopKey).filterKeys { it.isNotBlank() }
+
+        // Track which trip buckets actually appear on the map so the legend
+        // lists only relevant entries.
+        var anyUntripped = false
+        var anyShared = false
+        val legendTrips = linkedMapOf<Long, Pair<String, String>>()  // id -> (name, hex)
+
+        val stops = groups.mapNotNull { (_, group) ->
+            val avgLat = group.mapNotNull { it.latitude }.average()
+            val avgLng = group.mapNotNull { it.longitude }.average()
+            val tripIds = group.map { it.tripId }.distinct()
+            val colorHex = when {
+                tripIds.size == 1 && tripIds.single() == null -> { anyUntripped = true; MAP_UNTRIPPED_GREEN }
+                tripIds.size == 1 -> {
+                    val id = tripIds.single()!!
+                    val t = tripById[id]
+                    val hex = tripColorHex(t?.trip?.pinColor)
+                    if (t != null) legendTrips[id] = t.trip.name to hex
+                    hex
+                }
+                else -> { anyShared = true; MAP_SHARED_GRAY }
+            }
+            val newest = group.maxByOrNull { it.sessionStart } ?: return@mapNotNull null
+            val label = listOfNotNull(
+                newest.brand?.takeIf { it.isNotBlank() },
+                newest.locationCity?.takeIf { it.isNotBlank() },
+            ).joinToString(", ").ifBlank { "Charging stop" }
+            RecapMapStop(avgLat, avgLng, colorHex, label, group.size)
+        }
+
+        val paths = trips.mapNotNull { t ->
+            val pts = located.asSequence()
+                .filter { it.tripId == t.trip.id }
+                .sortedBy { it.sessionStart }
+                .map { it.latitude!! to it.longitude!! }
+                .toList()
+            if (pts.size < 2) null else RecapTripPath(tripColorHex(t.trip.pinColor), pts)
+        }
+
+        val legend = buildList {
+            addAll(legendTrips.values.sortedBy { it.first.lowercase() })
+            if (anyShared) add("Multiple trips" to MAP_SHARED_GRAY)
+            if (anyUntripped) add("Untripped" to MAP_UNTRIPPED_GREEN)
+        }
+
+        return RecapMap(stops, paths, legend)
+    }
+
+    /** Mirrors MapViewModel.stopKey: brand + address + city, lowercased. */
+    private fun recapStopKey(s: ChargingSession): String = listOfNotNull(
+        s.brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+        s.locationAddress?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+        s.locationCity?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+    ).joinToString("|")
 
     private fun monthlySeries(
         sessions: List<ChargingSession>,

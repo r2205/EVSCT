@@ -1,6 +1,7 @@
 package com.evsct.app.ui.map
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 
 /**
@@ -24,6 +25,10 @@ enum class TripPinColor(
     MAGENTA("Magenta", Color(0xFFD81B60), BitmapDescriptorFactory.HUE_MAGENTA),
     ROSE("Rose", Color(0xFFEC407A), BitmapDescriptorFactory.HUE_ROSE),
     ;
+
+    /** "#RRGGBB" form of [swatch], for embedding in the HTML recap map where
+     *  pins are SVG circles rather than Maps markers. */
+    val hex: String get() = String.format("#%06X", 0xFFFFFF and swatch.toArgb())
 
     companion object {
         fun fromKey(key: String?): TripPinColor? =
