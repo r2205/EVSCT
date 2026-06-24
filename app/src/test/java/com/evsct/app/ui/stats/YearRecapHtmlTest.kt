@@ -13,9 +13,10 @@ class YearRecapHtmlTest {
         ui: YearRecapUi,
         units: UserUnits = UserUnits(),
         basemap: NaBasemap? = null,
+        logoSvg: String? = null,
     ): String {
         val out = ByteArrayOutputStream()
-        writeYearRecapHtml(out, ui, units, basemap)
+        writeYearRecapHtml(out, ui, units, basemap, logoSvg)
         return out.toString(Charsets.UTF_8.name())
     }
 
@@ -154,6 +155,37 @@ class YearRecapHtmlTest {
         )
         assertTrue("Bob &amp; Sue&#39;s EV" in html)
         assertFalse("Bob & Sue's EV" in html)
+    }
+
+    @Test
+    fun `embeds the logo svg in the header and drops the redundant brand prefix`() {
+        val logo = "<svg id=\"evsct-logo\"><rect/></svg>"
+        val html = render(
+            YearRecapUi(
+                isLoading = false, selectedYear = 2025, sessionCount = 1,
+                monthlyCost = months(), monthlyKwh = months(),
+            ),
+            logoSvg = logo,
+        )
+        assertTrue("<div class=\"logo\">$logo</div>" in html, "logo svg inlined in header")
+        // The lockup carries the brand, so the heading shouldn't repeat it.
+        assertTrue("<h1>2025 Recap</h1>" in html, "heading drops the EVSCT prefix with a logo")
+        assertFalse("<h1>EVSCT — 2025 Recap" in html)
+        // Logo precedes the heading.
+        assertTrue(html.indexOf(logo) < html.indexOf("<h1>"), "logo appears before the heading")
+    }
+
+    @Test
+    fun `keeps the text brand heading when no logo is supplied`() {
+        val html = render(
+            YearRecapUi(
+                isLoading = false, selectedYear = 2025, sessionCount = 1,
+                monthlyCost = months(), monthlyKwh = months(),
+            ),
+            logoSvg = null,
+        )
+        assertTrue("<h1>EVSCT — 2025 Recap</h1>" in html)
+        assertFalse("class=\"logo\"" in html, "no logo container without a logo")
     }
 
     @Test

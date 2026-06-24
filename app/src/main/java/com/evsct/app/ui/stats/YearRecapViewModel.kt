@@ -194,6 +194,22 @@ class YearRecapViewModel @Inject constructor(
         return (text?.let { parseNaBasemap(it) } ?: NaBasemap(emptyList())).also { cachedBasemap = it }
     }
 
+    /** The bundled EVSCT lockup (logo + wordmark), inlined into the HTML
+     *  report header as raw SVG. Null if the asset can't be read, in which
+     *  case the report falls back to a plain text heading. */
+    @Volatile private var cachedLogo: String? = null
+    @Volatile private var logoLoaded = false
+
+    private fun loadLogo(): String? {
+        if (logoLoaded) return cachedLogo
+        cachedLogo = runCatching {
+            context.resources.openRawResource(R.raw.evsct_lockup)
+                .bufferedReader().use { it.readText() }
+        }.getOrNull()
+        logoLoaded = true
+        return cachedLogo
+    }
+
     /** Save the recap to a SAF-picked Uri. The screen wires a CreateDocument
      *  launcher; this method runs the actual write. */
     fun saveAsPdf(uri: Uri) = viewModelScope.launch {
@@ -244,7 +260,8 @@ class YearRecapViewModel @Inject constructor(
                 val out = context.contentResolver.openOutputStream(uri, "wt")
                     ?: throw java.io.IOException("Could not open output for writing.")
                 val basemap = loadBasemap()
-                out.use { writeYearRecapHtml(it, computed.value, appPreferences.userUnits.first(), basemap) }
+                val logo = loadLogo()
+                out.use { writeYearRecapHtml(it, computed.value, appPreferences.userUnits.first(), basemap, logo) }
             }
         }.onSuccess {
             transient.update { it.copy(busy = false, message = "Recap saved.") }
@@ -269,7 +286,8 @@ class YearRecapViewModel @Inject constructor(
                 }
                 val target = File(shareDir, defaultRecapFilename(ui.selectedYear, ui.vehicleName, "html"))
                 val basemap = loadBasemap()
-                target.outputStream().use { writeYearRecapHtml(it, ui, units, basemap) }
+                val logo = loadLogo()
+                target.outputStream().use { writeYearRecapHtml(it, ui, units, basemap, logo) }
                 target
             }
         }.onSuccess { file ->

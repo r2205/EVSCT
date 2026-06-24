@@ -55,6 +55,7 @@ internal fun writeYearRecapHtml(
     ui: YearRecapUi,
     units: UserUnits,
     basemap: NaBasemap? = null,
+    logoSvg: String? = null,
 ) {
     val genStamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
     val titleSuffix = ui.vehicleName?.takeIf { it.isNotBlank() }?.let { " · ${esc(it)}" } ?: ""
@@ -69,8 +70,16 @@ internal fun writeYearRecapHtml(
         append("</head>\n<body>\n")
 
         // --- Header ----------------------------------------------------------
+        // The bundled lockup (logo + "EVSCT" wordmark) carries the brand, so
+        // the heading drops the "EVSCT —" prefix to avoid saying it twice.
+        // Inlined as raw SVG markup — vector, crisp, and no external request.
         append("<header>\n")
-        append("<h1>EVSCT — ${ui.selectedYear} Recap$titleSuffix</h1>\n")
+        if (!logoSvg.isNullOrBlank()) {
+            append("<div class=\"logo\">").append(logoSvg).append("</div>\n")
+        }
+        val heading = if (logoSvg.isNullOrBlank()) "EVSCT — ${ui.selectedYear} Recap"
+        else "${ui.selectedYear} Recap"
+        append("<h1>$heading$titleSuffix</h1>\n")
         append("<p class=\"sub\">Generated ${esc(genStamp)}</p>\n")
         append("</header>\n")
 
@@ -392,6 +401,10 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 header { margin-bottom: 16px; }
+.logo { margin-bottom: 10px; }
+/* CSS height overrides the SVG's own width/height attributes; viewBox keeps
+   the aspect ratio so the lockup scales cleanly to letterhead size. */
+.logo svg { height: 50px; width: auto; max-width: 100%; display: block; border-radius: 6px; }
 h1 { font-size: 1.5rem; margin: 0 0 2px; color: var(--green); }
 h2 { font-size: 1.05rem; margin: 0 0 12px; }
 .sub { color: var(--muted); margin: 0; font-size: 0.85rem; }
