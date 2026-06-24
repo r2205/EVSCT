@@ -6,6 +6,32 @@ import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.ln
+import kotlin.math.tan
+
+/** The bundled North America outline (US states + Canadian provinces), as a
+ *  list of rings. Each ring is a list of (lat, lng) vertices. Parsed once
+ *  from res/raw and passed into the renderer so the renderer stays free of
+ *  Android dependencies (and therefore unit-testable). */
+data class NaBasemap(val rings: List<List<Pair<Double, Double>>>)
+
+/** Parse the compact basemap asset: one ring per line, each a space-separated
+ *  list of "lat,lng" tokens. Malformed tokens and sub-triangle rings are
+ *  skipped so a partial asset can't throw. */
+fun parseNaBasemap(text: String): NaBasemap {
+    val rings = text.lineSequence().mapNotNull { line ->
+        val ring = line.trim().split(' ').mapNotNull { tok ->
+            val comma = tok.indexOf(',')
+            if (comma <= 0) return@mapNotNull null
+            val lat = tok.substring(0, comma).toDoubleOrNull()
+            val lng = tok.substring(comma + 1).toDoubleOrNull()
+            if (lat == null || lng == null) null else lat to lng
+        }
+        if (ring.size >= 3) ring else null
+    }.toList()
+    return NaBasemap(rings)
+}
 
 /**
  * Render [ui] as a single, self-contained HTML document and stream it to
@@ -28,6 +54,7 @@ internal fun writeYearRecapHtml(
     out: OutputStream,
     ui: YearRecapUi,
     units: UserUnits,
+    basemap: NaBasemap? = null,
 ) {
     val genStamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
     val titleSuffix = ui.vehicleName?.takeIf { it.isNotBlank() }?.let { " · ${esc(it)}" } ?: ""
@@ -62,6 +89,9 @@ internal fun writeYearRecapHtml(
                     "${ui.excludedByCurrency} session$plural in another currency excluded.</p>\n"
             )
         }
+
+        // --- Map -------------------------------------------------------------
+        append(mapSection(ui, basemap))
 
         // --- Monthly chart + table ------------------------------------------
         append("<section class=\"card\">\n")
@@ -206,6 +236,113 @@ private fun monthlyChartSvg(ui: YearRecapUi): String {
     }
 }
 
+/**
+ * Inline-SVG map of the period's charging stops over the bundled North America
+ * outline. The basemap rings and the pins are projected (Web Mercator) through
+ * one transform so they line up, and the viewBox is fit to the pins so the map
+ * zooms to where the user actually charged. Returns "" when no in-year session
+ * had coordinates. No external tiles — the report stays offline.
+ */
+private fun mapSection(ui: YearRecapUi, basemap: NaBasemap?): String {
+    val stops = ui.mapStops
+    if (stops.isEmpty()) return ""
+
+    // World coordinates: x = longitude, y = -mercator(latitude) so north is up.
+    fun wx(lng: Double) = lng
+    fun wy(lat: Double): Double {
+        val l = lat.coerceIn(-85.0, 85.0)
+        return -Math.toDegrees(ln(tan(PI / 4 + Math.toRadians(l) / 2)))
+    }
+
+    // Bounding box over the pins and route points, in world coords.
+    var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE
+    var minY = Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
+    fun include(lat: Double, lng: Double) {
+        val x = wx(lng); val y = wy(lat)
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+    }
+    stops.forEach { include(it.lat, it.lng) }
+    ui.mapTripPaths.forEach { p -> p.points.forEach { include(it.first, it.second) } }
+
+    // Floor the span so a single stop (or a tight cluster) still gets a
+    // sensible window instead of an infinite zoom; keep the true center.
+    val cx = (minX + maxX) / 2
+    val cy = (minY + maxY) / 2
+    var spanX = (maxX - minX).coerceAtLeast(MAP_MIN_SPAN) * (1.0 + MAP_PAD)
+    var spanY = (maxY - minY).coerceAtLeast(MAP_MIN_SPAN) * (1.0 + MAP_PAD)
+    // Clamp aspect so the panel never gets absurdly thin in one dimension.
+    val ratio = spanX / spanY
+    if (ratio < MAP_MIN_RATIO) spanX = spanY * MAP_MIN_RATIO
+    else if (ratio > MAP_MAX_RATIO) spanY = spanX / MAP_MAX_RATIO
+    minX = cx - spanX / 2; maxX = cx + spanX / 2
+    minY = cy - spanY / 2; maxY = cy + spanY / 2
+
+    val scale = MAP_VIEW / maxOf(spanX, spanY)
+    fun sx(lng: Double) = (wx(lng) - minX) * scale
+    fun sy(lat: Double) = (wy(lat) - minY) * scale
+    val vbW = spanX * scale
+    val vbH = spanY * scale
+    val pinR = MAP_VIEW / 95.0
+    val pinStroke = pinR * 0.22
+    val coastStroke = MAP_VIEW / 650.0
+    val routeStroke = MAP_VIEW / 280.0
+
+    val sb = StringBuilder()
+    sb.append("<section class=\"card\">\n<h2>Charging map</h2>\n")
+    sb.append("<svg class=\"map\" viewBox=\"0 0 ${fmt(vbW)} ${fmt(vbH)}\" ")
+    sb.append("role=\"img\" aria-label=\"Map of charging stops\">\n")
+
+    // Basemap: stroke each ring that overlaps the view bbox. Rings entirely
+    // outside are culled so a zoomed-in map stays small.
+    basemap?.rings?.forEach { ring ->
+        var rMinX = Double.MAX_VALUE; var rMaxX = -Double.MAX_VALUE
+        var rMinY = Double.MAX_VALUE; var rMaxY = -Double.MAX_VALUE
+        ring.forEach { (lat, lng) ->
+            val x = wx(lng); val y = wy(lat)
+            if (x < rMinX) rMinX = x
+            if (x > rMaxX) rMaxX = x
+            if (y < rMinY) rMinY = y
+            if (y > rMaxY) rMaxY = y
+        }
+        if (rMaxX < minX || rMinX > maxX || rMaxY < minY || rMinY > maxY) return@forEach
+        sb.append("<path class=\"coast\" stroke-width=\"${fmt(coastStroke)}\" d=\"")
+        ring.forEachIndexed { i, (lat, lng) ->
+            sb.append(if (i == 0) "M" else "L").append(fmt(sx(lng))).append(' ').append(fmt(sy(lat))).append(' ')
+        }
+        sb.append("Z\"/>")
+    }
+
+    // Route lines, under the pins.
+    ui.mapTripPaths.forEach { path ->
+        sb.append("<polyline class=\"route\" stroke=\"${path.colorHex}\" stroke-width=\"${fmt(routeStroke)}\" points=\"")
+        path.points.forEach { (lat, lng) -> sb.append(fmt(sx(lng))).append(',').append(fmt(sy(lat))).append(' ') }
+        sb.append("\"/>")
+    }
+
+    // Pins, with a hover tooltip (no JS needed).
+    stops.forEach { stop ->
+        val tip = "${stop.label} · ${stop.visits} visit" + if (stop.visits == 1) "" else "s"
+        sb.append("<circle class=\"pin\" cx=\"${fmt(sx(stop.lng))}\" cy=\"${fmt(sy(stop.lat))}\" ")
+        sb.append("r=\"${fmt(pinR)}\" fill=\"${stop.colorHex}\" stroke-width=\"${fmt(pinStroke)}\">")
+        sb.append("<title>${esc(tip)}</title></circle>")
+    }
+    sb.append("\n</svg>\n")
+
+    if (ui.mapLegend.isNotEmpty()) {
+        sb.append("<div class=\"legend\">\n")
+        ui.mapLegend.forEach { (label, hex) ->
+            sb.append("<span class=\"legend-item\"><span class=\"dot\" style=\"background:$hex\"></span>")
+            sb.append(esc(label)).append("</span>\n")
+        }
+        sb.append("</div>\n")
+    }
+    sb.append("</section>\n")
+    return sb.toString()
+}
+
 /** Format a Double for SVG/CSS output with a '.' decimal separator,
  *  regardless of the device locale (a comma here would break the markup). */
 private fun fmt(v: Double): String = String.format(Locale.US, "%.1f", v)
@@ -226,6 +363,15 @@ private fun esc(s: String): String = buildString(s.length) {
 
 private const val CHART_W = 600.0
 private const val CHART_PLOT_H = 180.0
+
+/** Map SVG: the longer viewBox dimension is normalized to this many units, so
+ *  pin/stroke sizes can be expressed as simple fractions of it. */
+private const val MAP_VIEW = 1000.0
+/** Minimum world-space span (≈ degrees) so a lone pin isn't infinitely zoomed. */
+private const val MAP_MIN_SPAN = 0.6
+private const val MAP_PAD = 0.15
+private const val MAP_MIN_RATIO = 0.5
+private const val MAP_MAX_RATIO = 2.2
 
 private val STYLE = """
 :root {
@@ -288,6 +434,17 @@ th { color: var(--muted); font-weight: 600; }
 .bar-fill { display: block; height: 100%; background: var(--green); }
 .bar-value { font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .trip-name { font-weight: 600; margin: 0 0 2px; }
+.map {
+  width: 100%; height: auto; display: block;
+  background: #eef2f5; border: 1px solid var(--line); border-radius: 8px;
+  margin: 4px 0 12px;
+}
+.map .coast { fill: none; stroke: #b8c0c8; stroke-linejoin: round; }
+.map .route { fill: none; stroke-linejoin: round; stroke-linecap: round; opacity: 0.9; }
+.map .pin { stroke: #ffffff; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.8rem; color: var(--muted); }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 footer { color: var(--muted); font-size: 0.75rem; margin-top: 20px; text-align: center; }
 @media (max-width: 480px) {
   .headline { grid-template-columns: repeat(2, 1fr); }

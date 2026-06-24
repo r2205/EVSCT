@@ -158,9 +158,14 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 - Vehicle filter mirrors the Charging log tabs.
 - **Year recap** — tap the PDF icon in the top bar to open a year-end
   recap (any year you pick): headline totals, monthly trend, top
-  brands, longest trip. Save or Share the recap as a single-page PDF.
-  When you open it from a specific vehicle's tab, the recap and PDF
-  are scoped to that vehicle (and the filename includes its name).
+  brands, longest trip. Save or Share the recap as a single-page PDF,
+  or as a self-contained **HTML** report — a richer, responsive page
+  (full monthly cost+energy table, a Cost/Energy chart toggle, and a
+  **map** of that year's charging stops drawn over a bundled North
+  America outline, colored by trip). The HTML opens offline in any
+  browser with no external resources, so nothing leaves the phone.
+  When you open it from a specific vehicle's tab, the recap and its
+  exports are scoped to that vehicle (and the filename includes its name).
 
 ### Settings
 - **Vehicles** — manage your EVs and pick a default for new sessions.
@@ -277,7 +282,10 @@ PDFs) all come across.
 - WorkManager for the background backup-reminder check
 - Coil for image loading
 - Google Maps SDK for Android + Maps Compose (incl. `HeatmapTileProvider`)
-- `android.graphics.pdf.PdfDocument` for the year-recap PDF
+- `android.graphics.pdf.PdfDocument` for the year-recap PDF; the HTML
+  recap is rendered as plain inline SVG (no chart/map libraries). Its map
+  basemap is bundled from [Natural Earth](https://www.naturalearthdata.com/)
+  1:50m admin-1 data (public domain), simplified to a small outline.
 - Apache POI for the legacy XLSX importer (one-shot only)
 - DataStore Preferences for cross-screen settings (units, currency,
   backup reminder, map prefs, last-backup timestamp)

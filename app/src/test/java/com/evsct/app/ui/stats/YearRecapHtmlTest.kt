@@ -9,11 +9,23 @@ import kotlin.test.assertTrue
 
 class YearRecapHtmlTest {
 
-    private fun render(ui: YearRecapUi, units: UserUnits = UserUnits()): String {
+    private fun render(
+        ui: YearRecapUi,
+        units: UserUnits = UserUnits(),
+        basemap: NaBasemap? = null,
+    ): String {
         val out = ByteArrayOutputStream()
-        writeYearRecapHtml(out, ui, units)
+        writeYearRecapHtml(out, ui, units, basemap)
         return out.toString(Charsets.UTF_8.name())
     }
+
+    /** A single ring near the sample pins so it survives the view-bbox cull. */
+    private fun bcBasemap() = NaBasemap(
+        listOf(listOf(48.0 to -124.0, 54.0 to -124.0, 54.0 to -118.0, 48.0 to -118.0)),
+    )
+
+    private fun stop(lat: Double, lng: Double, color: String = "#1E88E5", label: String = "Stop", visits: Int = 1) =
+        RecapMapStop(lat = lat, lng = lng, colorHex = color, label = label, visits = visits)
 
     private fun months(vararg values: Double): List<Pair<String, Double>> =
         // 12 entries to match the recap's Jan→Dec series shape.
@@ -142,6 +154,111 @@ class YearRecapHtmlTest {
         )
         assertTrue("Bob &amp; Sue&#39;s EV" in html)
         assertFalse("Bob & Sue's EV" in html)
+    }
+
+    @Test
+    fun `no map section when no stops have coordinates`() {
+        val html = render(
+            YearRecapUi(
+                isLoading = false, selectedYear = 2025, sessionCount = 3,
+                monthlyCost = months(), monthlyKwh = months(),
+                mapStops = emptyList(),
+            ),
+            basemap = bcBasemap(),
+        )
+        assertFalse("Charging map" in html, "map section omitted with no located stops")
+        assertFalse("class=\"map\"" in html)
+    }
+
+    @Test
+    fun `map section renders basemap pins routes and legend`() {
+        val html = render(
+            YearRecapUi(
+                isLoading = false, selectedYear = 2025, sessionCount = 4,
+                monthlyCost = months(), monthlyKwh = months(),
+                mapStops = listOf(
+                    stop(49.28, -123.12, "#1E88E5", "BC Hydro, Vancouver", 2),
+                    stop(51.05, -114.07, "#2E7D32", "Home, Calgary", 9),
+                ),
+                mapTripPaths = listOf(
+                    RecapTripPath("#1E88E5", listOf(49.28 to -123.12, 51.05 to -114.07)),
+                ),
+                mapLegend = listOf("West trip" to "#1E88E5", "Untripped" to "#2E7D32"),
+            ),
+            basemap = bcBasemap(),
+        )
+        assertTrue("<svg class=\"map\"" in html, "map svg present")
+        assertTrue("viewBox=\"0 0 " in html, "map has a viewBox")
+        assertTrue("<path class=\"coast\"" in html, "basemap outline drawn")
+        assertTrue("<polyline class=\"route\"" in html, "trip route drawn")
+        assertTrue(Regex("<circle class=\"pin\"[^>]*fill=\"#1E88E5\"").containsMatchIn(html), "trip pin")
+        assertTrue(Regex("<circle class=\"pin\"[^>]*fill=\"#2E7D32\"").containsMatchIn(html), "untripped pin")
+        assertTrue("West trip" in html && "Untripped" in html, "legend labels present")
+    }
+
+    @Test
+    fun `pins render without a basemap`() {
+        val html = render(
+            YearRecapUi(
+                isLoading = false, selectedYear = 2025, sessionCount = 1,
+                monthlyCost = months(), monthlyKwh = months(),
+                mapStops = listOf(stop(49.28, -123.12)),
+            ),
+            basemap = null,
+        )
+        assertTrue("<svg class=\"map\"" in html, "map still renders pins")
+        assertTrue("<circle class=\"pin\"" in html)
+        assertFalse("<path class=\"coast\"" in html, "no basemap paths without a basemap")
+    }
+
+    @Test
+    fun `pin tooltip escapes the stop label`() {
+        val html = render(
+            YearRecapUi(
+                isLoading = false, selectedYear = 2025, sessionCount = 1,
+                monthlyCost = months(), monthlyKwh = months(),
+                mapStops = listOf(stop(49.0, -123.0, label = "A & B <pin>")),
+            ),
+        )
+        assertTrue("A &amp; B &lt;pin&gt;" in html, "label appears escaped in the tooltip")
+        assertFalse("A & B <pin>" in html)
+    }
+
+    @Test
+    fun `parseNaBasemap reads rings and skips malformed lines`() {
+        val bm = parseNaBasemap(
+            """
+            49.00,-123.00 50.00,-123.00 50.00,-122.00
+            garbage line with no commas
+            1.0,2.0 3.0,4.0
+            """.trimIndent(),
+        )
+        // First line: a 3-vertex ring (kept). Second: no valid tokens (dropped).
+        // Third: only 2 vertices, below the 3-point floor (dropped).
+        assertEquals(1, bm.rings.size)
+        assertEquals(49.0 to -123.0, bm.rings[0][0])
+        assertEquals(3, bm.rings[0].size)
+    }
+
+    @Test
+    fun `map coordinates use a dot decimal under a comma locale`() {
+        val previous = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.GERMANY)
+            val html = render(
+                YearRecapUi(
+                    isLoading = false, selectedYear = 2025, sessionCount = 2,
+                    monthlyCost = months(), monthlyKwh = months(),
+                    mapStops = listOf(stop(49.28, -123.12), stop(45.5, -73.57)),
+                ),
+                basemap = bcBasemap(),
+            )
+            // No comma should appear inside an SVG coordinate attribute.
+            assertFalse(Regex("c[xy]=\"[0-9]+,[0-9]+\"").containsMatchIn(html))
+            assertFalse(Regex("viewBox=\"[^\"]*,[^\"]*\"").containsMatchIn(html))
+        } finally {
+            java.util.Locale.setDefault(previous)
+        }
     }
 
     @Test
