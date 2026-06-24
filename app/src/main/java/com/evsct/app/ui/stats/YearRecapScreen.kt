@@ -66,14 +66,21 @@ fun YearRecapScreen(
         ActivityResultContracts.CreateDocument("application/pdf"),
     ) { uri -> uri?.let { viewModel.saveAsPdf(it) } }
 
-    // Mirror the Full backup share flow: VM writes a PDF to cacheDir, posts
-    // it here, we wrap with FileProvider and fire ACTION_SEND.
+    val saveHtmlLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/html"),
+    ) { uri -> uri?.let { viewModel.saveAsHtml(it) } }
+
+    // Mirror the Full backup share flow: VM writes a recap file to cacheDir,
+    // posts it here, we wrap with FileProvider and fire ACTION_SEND. The mime
+    // type follows the file extension since the same channel carries both the
+    // PDF and HTML exports.
     LaunchedEffect(state.pendingShareFile) {
         val file = state.pendingShareFile ?: return@LaunchedEffect
         val authority = "${context.packageName}.fileprovider"
         val contentUri = FileProvider.getUriForFile(context, authority, file)
+        val mime = if (file.extension.equals("html", ignoreCase = true)) "text/html" else "application/pdf"
         val send = Intent(Intent.ACTION_SEND).apply {
-            type = "application/pdf"
+            type = mime
             putExtra(Intent.EXTRA_STREAM, contentUri)
             putExtra(Intent.EXTRA_SUBJECT, file.name)
             putExtra(Intent.EXTRA_TITLE, file.name)
@@ -138,12 +145,18 @@ fun YearRecapScreen(
             Spacer(Modifier.height(16.dp))
             ExportButtons(
                 busy = state.busy,
-                onSave = {
+                onSavePdf = {
                     savePdfLauncher.launch(
-                        defaultRecapFilename(state.selectedYear, state.vehicleName),
+                        defaultRecapFilename(state.selectedYear, state.vehicleName, "pdf"),
                     )
                 },
-                onShare = { viewModel.shareAsPdf() },
+                onSharePdf = { viewModel.shareAsPdf() },
+                onSaveHtml = {
+                    saveHtmlLauncher.launch(
+                        defaultRecapFilename(state.selectedYear, state.vehicleName, "html"),
+                    )
+                },
+                onShareHtml = { viewModel.shareAsHtml() },
             )
             Spacer(Modifier.height(24.dp))
         }
@@ -342,20 +355,36 @@ private fun SimpleBarList(
 }
 
 @Composable
-private fun ExportButtons(busy: Boolean, onSave: () -> Unit, onShare: () -> Unit) {
+private fun ExportButtons(
+    busy: Boolean,
+    onSavePdf: () -> Unit,
+    onSharePdf: () -> Unit,
+    onSaveHtml: () -> Unit,
+    onShareHtml: () -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Button(
-            onClick = onSave,
+            onClick = onSavePdf,
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy,
         ) { Text("Save as PDF…") }
         OutlinedButton(
-            onClick = onShare,
+            onClick = onSharePdf,
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy,
         ) { Text("Share PDF…") }
+        Button(
+            onClick = onSaveHtml,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !busy,
+        ) { Text("Save as HTML…") }
+        OutlinedButton(
+            onClick = onShareHtml,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !busy,
+        ) { Text("Share HTML…") }
     }
 }

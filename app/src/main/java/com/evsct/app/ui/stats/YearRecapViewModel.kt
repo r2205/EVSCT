@@ -89,14 +89,14 @@ private fun emptyMonthly(): List<Pair<String, Double>> {
 
 /** Default filename for a recap export. Includes a slugified vehicle name
  *  when the recap is scoped to a single vehicle so multi-vehicle users get
- *  distinct files. */
-internal fun defaultRecapFilename(year: Int, vehicleName: String?): String {
-    if (vehicleName.isNullOrBlank()) return "evsct-recap-$year.pdf"
+ *  distinct files. [ext] is the extension without a dot ("pdf", "html"). */
+internal fun defaultRecapFilename(year: Int, vehicleName: String?, ext: String = "pdf"): String {
+    if (vehicleName.isNullOrBlank()) return "evsct-recap-$year.$ext"
     val slug = vehicleName
         .replace(Regex("[^A-Za-z0-9]+"), "-")
         .trim('-')
         .ifBlank { "vehicle" }
-    return "evsct-recap-$year-$slug.pdf"
+    return "evsct-recap-$year-$slug.$ext"
 }
 
 @HiltViewModel
@@ -174,6 +174,49 @@ class YearRecapViewModel @Inject constructor(
                 }
                 val target = File(shareDir, defaultRecapFilename(ui.selectedYear, ui.vehicleName))
                 target.outputStream().use { writeYearRecapPdf(it, ui, units) }
+                target
+            }
+        }.onSuccess { file ->
+            transient.update { it.copy(busy = false, pendingShareFile = file) }
+        }.onFailure { e ->
+            transient.update { it.copy(busy = false, message = "Share failed: ${e.message}") }
+        }
+    }
+
+    /** Save the recap as a self-contained HTML file to a SAF-picked Uri.
+     *  Twin of [saveAsPdf]; the screen wires a separate CreateDocument
+     *  launcher for the text/html mime type. */
+    fun saveAsHtml(uri: Uri) = viewModelScope.launch {
+        transient.update { it.copy(busy = true, message = null) }
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val out = context.contentResolver.openOutputStream(uri, "wt")
+                    ?: throw java.io.IOException("Could not open output for writing.")
+                out.use { writeYearRecapHtml(it, computed.value, appPreferences.userUnits.first()) }
+            }
+        }.onSuccess {
+            transient.update { it.copy(busy = false, message = "Recap saved.") }
+        }.onFailure { e ->
+            transient.update { it.copy(busy = false, message = "Save failed: ${e.message}") }
+        }
+    }
+
+    /** Build the recap HTML in the shared recap-share cache subdir and post
+     *  the file for an ACTION_SEND chooser dispatch. Twin of [shareAsPdf];
+     *  the share dir is cleared on every prepare so the two formats never
+     *  leave a stale file behind. */
+    fun shareAsHtml() = viewModelScope.launch {
+        transient.update { it.copy(busy = true, message = null) }
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val ui = computed.value
+                val units = appPreferences.userUnits.first()
+                val shareDir = File(context.cacheDir, "recap-share").apply {
+                    mkdirs()
+                    listFiles()?.forEach { it.delete() }
+                }
+                val target = File(shareDir, defaultRecapFilename(ui.selectedYear, ui.vehicleName, "html"))
+                target.outputStream().use { writeYearRecapHtml(it, ui, units) }
                 target
             }
         }.onSuccess { file ->
