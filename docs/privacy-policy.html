@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EVSCT — Privacy Policy</title>
+  <style>
+    :root { --green: #1f8a4c; --ink: #1b1b1b; --muted: #555; --line: #e3e3e3; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0 1.25rem 4rem;
+      font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--ink); background: #fff;
+    }
+    main { max-width: 760px; margin: 0 auto; }
+    header { display: flex; align-items: center; gap: 0.9rem; padding: 2.5rem 0 1rem; border-bottom: 2px solid var(--green); }
+    header img { width: 56px; height: 56px; border-radius: 12px; }
+    header h1 { margin: 0; font-size: 1.6rem; }
+    header p { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.95rem; }
+    h2 { color: var(--green); font-size: 1.2rem; margin: 2.2rem 0 0.6rem; }
+    h3 { font-size: 1.02rem; margin: 1.3rem 0 0.4rem; }
+    p, li { color: var(--ink); }
+    ul { padding-left: 1.3rem; }
+    li { margin: 0.3rem 0; }
+    a { color: var(--green); }
+    .muted { color: var(--muted); }
+    .callout {
+      background: #f3faf5; border: 1px solid #cfe9d8; border-radius: 10px;
+      padding: 0.9rem 1.1rem; margin: 1.2rem 0;
+    }
+    footer { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="branding/evsct-icon-512.png" alt="EVSCT icon">
+    <div>
+      <h1>EVSCT Privacy Policy</h1>
+      <p>EV Session &amp; Charging Tracker &middot; package <code>com.evsct.app</code></p>
+    </div>
+  </header>
+
+  <p class="muted"><strong>Last updated:</strong> June 27, 2026</p>
+
+  <p>
+    EVSCT (“the app”) is a personal Android app for logging electric-vehicle
+    charging sessions, trips, and vehicles. This policy explains what data the
+    app handles and how. The short version: <strong>EVSCT stores your data on
+    your device and does not collect, transmit, or sell it to the developer or
+    any third party.</strong> Data only leaves your phone when <em>you</em>
+    choose to export or share it, or through the specific Google services
+    described below that are needed to draw the map and look up addresses.
+  </p>
+
+  <div class="callout">
+    <strong>No account. No analytics. No advertising.</strong> EVSCT has no
+    sign-in, includes no analytics or advertising SDKs, and runs no background
+    tracking. There is no developer-operated server that receives your data.
+  </div>
+
+  <h2>Information the app handles</h2>
+
+  <h3>Data you enter</h3>
+  <p>
+    The information you log — charging sessions (date, energy, cost, duration,
+    battery levels, brand, location text, notes, tags), trips, vehicles
+    (including optional profile photos), and receipt photos or PDFs — is stored
+    locally on your device in the app’s private database and file storage. It is
+    not uploaded to the developer.
+  </p>
+
+  <h3>Location</h3>
+  <p>
+    EVSCT requests location permission (approximate and precise) so that, when
+    you tap the “GPS autofill” / “use my location” control while editing a
+    session, the app can:
+  </p>
+  <ul>
+    <li>fill in the city, province/state, and address of where you charged, and</li>
+    <li>store the coordinates so the charging stop can appear on the in-app map.</li>
+  </ul>
+  <p>
+    Location is read <strong>only when you actively request it</strong> — the
+    app does not track your location in the background. The resulting
+    coordinates and address text are stored locally with that session. To turn
+    the address lookup into a place name, the coordinates are sent to the
+    device’s geocoding service, which on most Android devices is provided by
+    Google (see “Third-party services” below).
+  </p>
+
+  <h3>Permissions used</h3>
+  <ul>
+    <li><strong>Location (approximate &amp; precise)</strong> — on-demand GPS autofill and map placement, as described above.</li>
+    <li><strong>Internet</strong> — to load Google map tiles and perform address lookups.</li>
+    <li><strong>Notifications</strong> — to show the optional “charging in progress” notification and backup reminders. Declining only hides these notifications; the app still works.</li>
+  </ul>
+
+  <h2>Third-party services</h2>
+  <p>
+    EVSCT uses Google Maps Platform to display the map of your charging stops,
+    and the device’s geocoding service (Google on most devices) to convert
+    coordinates into addresses. When these features are used, the relevant
+    request data (such as map view coordinates or the coordinates being looked
+    up) is processed by Google under Google’s own privacy terms:
+  </p>
+  <ul>
+    <li><a href="https://policies.google.com/privacy" rel="noopener" target="_blank">Google Privacy Policy</a></li>
+    <li><a href="https://cloud.google.com/maps-platform/terms/maps-service-terms" rel="noopener" target="_blank">Google Maps Platform Terms</a></li>
+  </ul>
+  <p>
+    EVSCT does not share your logged charging data with Google or anyone else
+    through these services — only the data inherently needed to render the map
+    and resolve addresses is sent.
+  </p>
+
+  <h2>Backups and exports</h2>
+  <p>
+    EVSCT relies on Android’s standard backup mechanisms and your own explicit
+    exports:
+  </p>
+  <ul>
+    <li><strong>Android system backup / transfer.</strong> If you have Android’s automatic backup enabled, the system may back up the app’s database and settings to your own Google Drive, and may transfer app data when you set up a new device. This is handled by Android under your Google account, not by the developer.</li>
+    <li><strong>Manual export / share.</strong> When you use the in-app CSV export, full backup (.zip), or year-recap (PDF/HTML) features, the resulting file goes wherever you choose to send it (a folder, Drive, email, messaging, etc.). You control where it goes.</li>
+  </ul>
+
+  <h2>Data retention and deletion</h2>
+  <p>
+    Because your data lives on your device, you control its lifetime:
+  </p>
+  <ul>
+    <li>Delete individual sessions, trips, or vehicles within the app.</li>
+    <li>Clear the app’s data from Android Settings, or uninstall the app, to remove all locally stored data from the device.</li>
+    <li>Delete any backup or export files you created, and manage device backups through your Google account if you use Android’s automatic backup.</li>
+  </ul>
+
+  <h2>Children’s privacy</h2>
+  <p>
+    EVSCT is a general-purpose utility intended for vehicle owners and is not
+    directed at children. It does not knowingly collect personal information
+    from children.
+  </p>
+
+  <h2>Changes to this policy</h2>
+  <p>
+    If the app’s data practices change, this page will be updated and the “Last
+    updated” date above revised.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions about this policy or the app can be sent to:<br>
+    <strong>robsonforge@r914.org</strong>
+  </p>
+
+  <footer>
+    EVSCT — EV Session &amp; Charging Tracker. This privacy policy applies to the
+    EVSCT Android app distributed under the package name <code>com.evsct.app</code>.
+  </footer>
+</main>
+</body>
+</html>

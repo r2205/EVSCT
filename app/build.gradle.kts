@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -22,6 +23,20 @@ val mapsApiKey: String = run {
     props.getProperty("MAPS_API_KEY", "")
 }
 
+// Upload-keystore credentials for signing the AAB you publish to Google Play.
+// Read from keystore.properties (gitignored — see keystore.properties.template).
+// When the file is absent (fresh clones, CI) the release build falls back to
+// debug signing below so assembleRelease/bundleRelease still produces an
+// artifact that exercises R8 + release lint. That fallback build is NOT
+// distributable: Play rejects debug-signed uploads.
+val keystoreProps: Properties = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val releaseKeystoreFile: File? = keystoreProps.getProperty("storeFile")
+    ?.let { rootProject.file(it) }
+    ?.takeIf { it.exists() }
+
 // --- Git info baked into BuildConfig for the in-app About card. providers.exec
 // is configuration-cache safe and only re-runs when the underlying git output
 // actually changes. isIgnoreExitValue covers the no-.git case (non-zero exit,
@@ -45,6 +60,18 @@ val gitCommitDate: Provider<String> = gitOutput("git", "log", "-1", "--format=%c
     .orElse("unknown")
 val gitDescribe: Provider<String> = gitSha.zip(gitDirty) { sha, dirty -> sha + dirty }
 
+// versionCode must strictly increase on every Play upload or the upload is
+// rejected. Derive it from the git commit count so each build off a new commit
+// gets a unique, monotonically increasing code with no manual bookkeeping.
+// Override with -PevsctVersionCode=NN to reproduce a specific past upload.
+// Falls back to 1 outside a git checkout (fresh tarball, no git binary).
+val gitCommitCount: Provider<String> = gitOutput("git", "rev-list", "--count", "HEAD")
+    .map { it.ifBlank { "1" } }
+    .orElse("1")
+val resolvedVersionCode: Int =
+    (project.findProperty("evsctVersionCode") as String?)?.toIntOrNull()
+        ?: runCatching { gitCommitCount.get().toInt() }.getOrDefault(1)
+
 android {
     namespace = "com.evsct.app"
     compileSdk = 35
@@ -53,7 +80,7 @@ android {
         applicationId = "com.evsct.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
+        versionCode = resolvedVersionCode
         versionName = "0.1.0"
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
@@ -69,14 +96,35 @@ android {
         buildConfigField("String", "GIT_COMMIT_DATE", "\"$gitCommitDateValue\"")
     }
 
+    signingConfigs {
+        // Only declared when keystore.properties points at a real keystore; the
+        // release buildType below picks this up when present and otherwise falls
+        // back to debug signing so CI / fresh clones still build.
+        if (releaseKeystoreFile != null) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
-            // Sign release with the auto-generated debug keystore so a release
-            // build is installable locally (./gradlew installRelease) for
-            // performance testing. This is NOT a distributable signing config —
-            // a real Play release would point this at a proper upload keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            // Sign with the real upload keystore when keystore.properties is
+            // present (see keystore.properties.template), producing the AAB you
+            // upload to Play. Without it, fall back to the debug keystore so a
+            // release build is still installable locally (./gradlew
+            // installRelease) and CI's assembleRelease/bundleRelease still runs
+            // R8 + release lint. A debug-signed build is NOT distributable —
+            // Play rejects it.
+            signingConfig = if (releaseKeystoreFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

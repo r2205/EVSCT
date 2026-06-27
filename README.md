@@ -235,12 +235,17 @@ and signing certificate.
 
 1. In **Google Cloud Console**, create or pick a project, enable the
    **Maps SDK for Android**, and **Credentials → Create credentials → API key**.
-2. Restrict the key by **Android apps**, adding both the debug and release
-   package + signing-certificate SHA-1 fingerprints. The simplest way to
-   read your debug fingerprint:
+2. Restrict the key by **Android apps**, adding one entry per
+   package + signing-certificate SHA-1 fingerprint. The simplest way to read
+   your local fingerprints:
    - In Android Studio, press **Ctrl** twice to open Run Anything, type
      `gradle :app:signingReport`, hit **Enter**.
-   - Copy the `SHA1` value from the `Variant: debug` block.
+   - Copy the `SHA1` value from each `Variant:` block.
+
+   You'll generally want these entries:
+   - `com.evsct.app.debug` + the **debug** variant SHA-1 (local debug builds).
+   - `com.evsct.app` + your **upload-key** SHA-1 (local release builds signed
+     with `keystore.properties`).
 3. Add a single line to **`local.properties`** at the repo root (this file
    is already gitignored):
    ```
@@ -249,6 +254,47 @@ and signing certificate.
 4. Re-run **Build → Make Project**. Without the key set, the app builds and
    runs but the Map screen renders a blank Google logo where the basemap
    would be — that's the signal to set the key.
+
+> **Distributing via Google Play? Add the Play App Signing SHA-1.** When you
+> upload an `.aab`, Google **re-signs** it with an *app signing key* whose
+> SHA-1 differs from your upload key. The build your testers actually install
+> is signed with that key, so the map stays **blank for everyone** unless you
+> also add a Maps key restriction for `com.evsct.app` + the **App signing key
+> certificate SHA-1** from **Play Console → Setup → App signing**. This is the
+> most common "works on my device, blank for testers" trap — do it before your
+> first internal-testing rollout.
+
+## Releasing to Google Play
+
+Play distributes **App Bundles** and rejects debug-signed uploads, so a real
+release needs its own upload keystore. The build is wired to read one from a
+gitignored `keystore.properties`; without that file the release build falls
+back to debug signing (still fine for local `installRelease` and for CI, which
+only needs R8 + release lint to run).
+
+1. **Generate an upload keystore** once and keep it (and its passwords) backed
+   up somewhere safe — losing them means you can't ship updates under the same
+   upload key without a reset via Play support:
+   ```
+   keytool -genkeypair -v -keystore upload-keystore.jks \
+     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+   ```
+2. **Copy `keystore.properties.template` to `keystore.properties`** (gitignored)
+   and fill in the path and passwords. The `.jks` is gitignored too (`*.jks`),
+   so neither secret gets committed.
+3. **Build the bundle:**
+   ```
+   ./gradlew bundleRelease
+   ```
+   The artifact lands at `app/build/outputs/bundle/release/app-release.aab`.
+4. **versionCode** is derived automatically from the git commit count, so every
+   build off a new commit gets a unique, increasing code (Play rejects re-used
+   codes). Override it for a specific upload with
+   `./gradlew bundleRelease -PevsctVersionCode=42`. Bump `versionName` in
+   `app/build.gradle.kts` by hand when you want a new user-visible version.
+5. On first upload, enroll in **Play App Signing** (the default) and then add
+   the app signing key's SHA-1 to your Maps API key — see the callout in the
+   [Google Maps API key](#google-maps-api-key) section above.
 
 ## Importing an existing xlsx log
 
