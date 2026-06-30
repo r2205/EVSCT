@@ -12,6 +12,30 @@ Personal Android app for logging EV charging sessions (DC fast on road trips,
 AC at home/hotels). Stores everything locally; nothing leaves the phone unless
 you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 
+## Screenshots
+
+<!--
+  Drop screenshots into docs/screenshots/ using the filenames below (PNG or
+  WebP). Display width is controlled here (200 px), not by the source image,
+  so you don't need to resize — but cropping the status/nav bar looks cleaner.
+  Remove any <td> for a screen you don't include. See docs/screenshots/README.md.
+-->
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="docs/screenshots/log.png" alt="Charging log" width="200"><br><sub><b>Charging log</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/entry.png" alt="Add a session" width="200"><br><sub><b>Add a session</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/map.png" alt="Map view" width="200"><br><sub><b>Map</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/stats.png" alt="Stats" width="200"><br><sub><b>Stats</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center" width="25%"><img src="docs/screenshots/vehicle.png" alt="Vehicle detail" width="200"><br><sub><b>Vehicle detail</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/trips.png" alt="Trips" width="200"><br><sub><b>Trips</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/recap.png" alt="Year recap" width="200"><br><sub><b>Year recap</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/settings.png" alt="Settings" width="200"><br><sub><b>Settings</b></sub></td>
+  </tr>
+</table>
+
 ## Features
 
 ### Logging a session
