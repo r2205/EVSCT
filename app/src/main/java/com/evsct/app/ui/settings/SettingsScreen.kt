@@ -702,6 +702,24 @@ private fun AboutCard(context: Context) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Text(
+                "View on GitHub",
+                modifier = Modifier.clickable {
+                    val url = "https://github.com/r2205/EVSCT"
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                "Privacy policy",
+                modifier = Modifier.clickable {
+                    val url = "https://r2205.github.io/EVSCT/privacy-policy.html"
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }
