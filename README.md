@@ -17,42 +17,42 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming](#theming))._
 
 <!--
-  Two kinds of shots:
-   1. The grid below — one single-screen thumbnail per screen (PNG or WebP),
-      sized to 200 px here, so you don't need to resize the source. Cropping
-      the status/nav bar looks cleaner. Remove a <td> for any screen you skip.
+  Two kinds of shots (stored as lossless WebP):
+   1. The grid below — one single-screen thumbnail per screen, sized to 200 px
+      here, so you don't need to resize the source. Cropping the status/nav
+      bar looks cleaner. Remove a <td> for any screen you skip.
    2. The "Full-length captures" expanders — for screens that scroll past one
-      screenful, drop an extended/long screenshot named "<screen>-full.png".
+      screenful, an extended/long screenshot named "<screen>-full.webp".
       It only shows on click, at 320 px wide so the detail stays legible.
   See docs/screenshots/README.md for the full filename list.
 -->
 
 <table>
   <tr>
-    <td align="center" width="25%"><img src="docs/screenshots/log.png" alt="Charging log" width="200"><br><sub><b>Charging log</b></sub></td>
-    <td align="center" width="25%"><img src="docs/screenshots/entry.png" alt="Add a session" width="200"><br><sub><b>Add a session</b></sub></td>
-    <td align="center" width="25%"><img src="docs/screenshots/map.png" alt="Map view" width="200"><br><sub><b>Map</b></sub></td>
-    <td align="center" width="25%"><img src="docs/screenshots/stats.png" alt="Stats" width="200"><br><sub><b>Stats</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/log.webp" alt="Charging log" width="200"><br><sub><b>Charging log</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/entry.webp" alt="Add a session" width="200"><br><sub><b>Add a session</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/map.webp" alt="Map view" width="200"><br><sub><b>Map</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/stats.webp" alt="Stats" width="200"><br><sub><b>Stats</b></sub></td>
   </tr>
   <tr>
-    <td align="center" width="25%"><img src="docs/screenshots/vehicle.png" alt="Vehicle detail" width="200"><br><sub><b>Vehicle detail</b></sub></td>
-    <td align="center" width="25%"><img src="docs/screenshots/trips.png" alt="Trips" width="200"><br><sub><b>Trips</b></sub></td>
-    <td align="center" width="25%"><img src="docs/screenshots/recap.png" alt="Year recap" width="200"><br><sub><b>Year recap</b></sub></td>
-    <td align="center" width="25%"><img src="docs/screenshots/settings.png" alt="Settings" width="200"><br><sub><b>Settings</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/vehicle.webp" alt="Vehicle detail" width="200"><br><sub><b>Vehicle detail</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/trips.webp" alt="Trips" width="200"><br><sub><b>Trips</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/recap.webp" alt="Year recap" width="200"><br><sub><b>Year recap</b></sub></td>
+    <td align="center" width="25%"><img src="docs/screenshots/settings.webp" alt="Settings" width="200"><br><sub><b>Settings</b></sub></td>
   </tr>
 </table>
 
 **Full-length captures** — some screens scroll past one screenful; tap to expand the complete shot:
 
-<details><summary>Add a session (full form)</summary><br><img src="docs/screenshots/entry-full.png" alt="Add a session — full form" width="320"></details>
+<details><summary>Add a session (full form)</summary><br><img src="docs/screenshots/entry-full.webp" alt="Add a session — full form" width="320"></details>
 
-<details><summary>Stats (full screen)</summary><br><img src="docs/screenshots/stats-full.png" alt="Stats — full screen" width="320"></details>
+<details><summary>Stats (full screen)</summary><br><img src="docs/screenshots/stats-full.webp" alt="Stats — full screen" width="320"></details>
 
-<details><summary>Vehicle detail (full screen)</summary><br><img src="docs/screenshots/vehicle-full.png" alt="Vehicle detail — full screen" width="320"></details>
+<details><summary>Vehicle detail (full screen)</summary><br><img src="docs/screenshots/vehicle-full.webp" alt="Vehicle detail — full screen" width="320"></details>
 
-<details><summary>Year recap (full screen)</summary><br><img src="docs/screenshots/recap-full.png" alt="Year recap — full screen" width="320"></details>
+<details><summary>Year recap (full screen)</summary><br><img src="docs/screenshots/recap-full.webp" alt="Year recap — full screen" width="320"></details>
 
-<details><summary>Settings (full screen)</summary><br><img src="docs/screenshots/settings-full.png" alt="Settings — full screen" width="320"></details>
+<details><summary>Settings (full screen)</summary><br><img src="docs/screenshots/settings-full.webp" alt="Settings — full screen" width="320"></details>
 
 ## Features
 
