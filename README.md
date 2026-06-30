@@ -14,6 +14,8 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 
 ## Screenshots
 
+_Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming](#theming))._
+
 <!--
   Two kinds of shots:
    1. The grid below — one single-screen thumbnail per screen (PNG or WebP),
