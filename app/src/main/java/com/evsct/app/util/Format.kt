@@ -79,15 +79,21 @@ object Format {
      * keyboards surface the locale's separator, so comma-locale users type
      * "12,5" where the app renders "12.5" — toDoubleOrNull() rejects that
      * and the value would silently save as null. Accepts both separators:
-     * a lone comma is treated as the decimal point; a comma alongside a dot
-     * is treated as a thousands separator ("1,234.5"). Returns null for
-     * blank or unparseable input.
+     * a lone comma is treated as the decimal point; when both appear, the
+     * one that occurs last is the decimal point and the other is a
+     * thousands separator — so US "1,234.5" and European "1.234,56" both
+     * parse to their intended value. Returns null for blank or
+     * unparseable input.
      */
     fun parseDecimal(text: String): Double? {
         val t = text.trim()
         if (t.isEmpty()) return null
         val normalized = when {
-            ',' in t && '.' in t -> t.replace(",", "")
+            ',' in t && '.' in t ->
+                if (t.lastIndexOf(',') > t.lastIndexOf('.'))
+                    t.replace(".", "").replace(',', '.')  // European: dot-thousands, comma-decimal
+                else
+                    t.replace(",", "")                    // US: comma-thousands, dot-decimal
             ',' in t -> t.replace(',', '.')
             else -> t
         }

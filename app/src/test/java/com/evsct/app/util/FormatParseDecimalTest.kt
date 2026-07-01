@@ -22,6 +22,13 @@ class FormatParseDecimalTest {
     @Test
     fun `comma alongside dot is a thousands separator`() {
         assertEquals(1234.5, Format.parseDecimal("1,234.5"))
+        assertEquals(1234567.89, Format.parseDecimal("1,234,567.89"))
+    }
+
+    @Test
+    fun `european dot-thousands comma-decimal parses`() {
+        assertEquals(1234.56, Format.parseDecimal("1.234,56"))
+        assertEquals(1234567.89, Format.parseDecimal("1.234.567,89"))
     }
 
     @Test
