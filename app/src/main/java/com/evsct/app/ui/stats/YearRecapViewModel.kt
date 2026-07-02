@@ -17,8 +17,11 @@ import com.evsct.app.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.IOException
+import java.io.OutputStream
 import java.text.DateFormatSymbols
 import java.util.Calendar
+import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -210,15 +213,42 @@ class YearRecapViewModel @Inject constructor(
         return cachedLogo
     }
 
+    /** Render into a cacheDir staging file, then copy the bytes to [uri].
+     *  Mirrors BackupIo.export: a render failure aborts before the SAF
+     *  stream is opened (which "wt"-truncates immediately), so a recap
+     *  file the user is overwriting survives it. Only the final byte-copy
+     *  can truncate the destination (SAF has no atomic replace), and that
+     *  path says so in its error message. */
+    private fun stagedWriteTo(uri: Uri, ext: String, render: (OutputStream) -> Unit) {
+        val staging = File(context.cacheDir, "recap-staging-${UUID.randomUUID()}.$ext")
+        try {
+            staging.outputStream().use(render)
+            val out = context.contentResolver.openOutputStream(uri, "wt")
+                ?: throw IOException("Could not open output for writing.")
+            try {
+                out.use { output -> staging.inputStream().use { it.copyTo(output) } }
+            } catch (e: Exception) {
+                throw IOException(
+                    "Could not write to the chosen location — the destination file may " +
+                        "be incomplete. Save again before relying on it." +
+                        (e.message?.let { " ($it)" } ?: ""),
+                    e,
+                )
+            }
+        } finally {
+            staging.delete()
+        }
+    }
+
     /** Save the recap to a SAF-picked Uri. The screen wires a CreateDocument
      *  launcher; this method runs the actual write. */
     fun saveAsPdf(uri: Uri) = viewModelScope.launch {
         transient.update { it.copy(busy = true, message = null) }
         runCatching {
             withContext(Dispatchers.IO) {
-                val out = context.contentResolver.openOutputStream(uri, "wt")
-                    ?: throw java.io.IOException("Could not open output for writing.")
-                out.use { writeYearRecapPdf(it, computed.value, appPreferences.userUnits.first()) }
+                val ui = computed.value
+                val units = appPreferences.userUnits.first()
+                stagedWriteTo(uri, "pdf") { writeYearRecapPdf(it, ui, units) }
             }
         }.onSuccess {
             transient.update { it.copy(busy = false, message = "Recap saved.") }
@@ -257,11 +287,11 @@ class YearRecapViewModel @Inject constructor(
         transient.update { it.copy(busy = true, message = null) }
         runCatching {
             withContext(Dispatchers.IO) {
-                val out = context.contentResolver.openOutputStream(uri, "wt")
-                    ?: throw java.io.IOException("Could not open output for writing.")
+                val ui = computed.value
+                val units = appPreferences.userUnits.first()
                 val basemap = loadBasemap()
                 val logo = loadLogo()
-                out.use { writeYearRecapHtml(it, computed.value, appPreferences.userUnits.first(), basemap, logo) }
+                stagedWriteTo(uri, "html") { writeYearRecapHtml(it, ui, units, basemap, logo) }
             }
         }.onSuccess {
             transient.update { it.copy(busy = false, message = "Recap saved.") }
