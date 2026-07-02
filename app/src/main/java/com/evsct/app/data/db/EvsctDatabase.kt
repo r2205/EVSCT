@@ -13,7 +13,10 @@ import com.evsct.app.data.entity.Vehicle
 @Database(
     entities = [ChargingSession::class, SessionReceipt::class, Trip::class, Vehicle::class],
     version = 11,
-    exportSchema = false,
+    // Schema JSONs land in app/schemas/ (see room.schemaLocation in
+    // build.gradle.kts) and are committed, so future schema changes diff
+    // visibly in review and MigrationTestHelper can verify the chain.
+    exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class EvsctDatabase : RoomDatabase() {

@@ -50,7 +50,15 @@ object AppModule {
                 EvsctDatabase.MIGRATION_9_10,
                 EvsctDatabase.MIGRATION_10_11,
             )
-            .fallbackToDestructiveMigration(dropAllTables = true)
+            // No destructive-migration fallback, deliberately. The migration
+            // chain above is complete, so the only ways to hit a missing
+            // path are a version downgrade (sideloading an older APK over a
+            // newer DB, or cloud auto-restore onto an older build) or a
+            // future version that forgets to register its migration. In
+            // both cases a crash on open is recoverable — reinstall the
+            // matching version and the data is still there — whereas the
+            // fallback would silently drop every table and destroy the
+            // user's entire charging history.
             .build()
 
     @Provides

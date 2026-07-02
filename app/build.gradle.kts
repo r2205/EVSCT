@@ -176,6 +176,13 @@ kotlin {
     }
 }
 
+// Emit Room's schema JSON (one file per @Database version) into app/schemas/,
+// which is committed. Required by exportSchema = true on EvsctDatabase; gives
+// reviewable schema diffs and lets MigrationTestHelper verify migrations.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

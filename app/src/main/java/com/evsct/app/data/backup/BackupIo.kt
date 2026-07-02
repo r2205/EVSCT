@@ -88,15 +88,36 @@ class BackupIo @Inject constructor(
 ) {
 
     suspend fun export(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
+        // Stage the zip in cacheDir before touching the destination. Users
+        // routinely overwrite their previous backup file, and opening the
+        // SAF stream in "wt" mode truncates it immediately — so a failure
+        // while reading the DB or media files used to destroy the old
+        // backup along with the new one. Building locally first means every
+        // build-time failure leaves the destination untouched; only the
+        // final byte-copy can still truncate it (SAF has no atomic
+        // replace), and that failure mode gets an explicit warning below.
+        val staging = File(context.cacheDir, "backup-staging-${UUID.randomUUID()}.zip")
+        val counts = try {
+            staging.outputStream().use { writeBackupZip(it) }
+        } catch (e: Exception) {
+            staging.delete()
+            return@withContext BackupResult.Failure(e.message ?: "Export failed")
+        }
         try {
             val out = context.contentResolver.openOutputStream(uri, "wt")
                 ?: return@withContext BackupResult.Failure("Could not open output for writing.")
-            val counts = out.use { writeBackupZip(it) }
+            out.use { output -> staging.inputStream().use { it.copyTo(output) } }
             appPreferences.recordBackup()
             backupReminderScheduler.refresh()
             BackupResult.ExportSuccess(counts.sessions, counts.trips, counts.vehicles)
         } catch (e: Exception) {
-            BackupResult.Failure(e.message ?: "Export failed")
+            BackupResult.Failure(
+                "Could not write to the chosen location — the destination file may be " +
+                    "incomplete. Save the backup again before relying on it." +
+                    (e.message?.let { " ($it)" } ?: ""),
+            )
+        } finally {
+            staging.delete()
         }
     }
 
@@ -192,6 +213,35 @@ class BackupIo @Inject constructor(
 
             val payload = parsePayload(backupJson)
                 ?: return@withContext BackupResult.Failure("Backup is malformed or unsupported.")
+
+            // Validate cross-references while the existing database is still
+            // intact. Duplicate trip/vehicle ids would make the id remap
+            // below silently attach sessions to an arbitrary row, and a
+            // session pointing at an id the backup doesn't contain would
+            // silently restore unassigned. Both mean the file is damaged or
+            // hand-edited — refuse it outright, before anything is wiped.
+            val tripIds = payload.trips.mapTo(mutableSetOf()) { it.id }
+            val vehicleIds = payload.vehicles.mapTo(mutableSetOf()) { it.id }
+            if (tripIds.size != payload.trips.size || vehicleIds.size != payload.vehicles.size) {
+                return@withContext BackupResult.Failure(
+                    "Backup is inconsistent (duplicate trip or vehicle ids). " +
+                        "Restore cancelled — nothing was changed.",
+                )
+            }
+            val danglingTrip = payload.sessions.count { it.tripId != null && it.tripId !in tripIds }
+            val danglingVehicle =
+                payload.sessions.count { it.vehicleId != null && it.vehicleId !in vehicleIds }
+            if (danglingTrip > 0 || danglingVehicle > 0) {
+                val problems = listOfNotNull(
+                    danglingTrip.takeIf { it > 0 }
+                        ?.let { "$it session(s) reference a trip that isn't in the backup" },
+                    danglingVehicle.takeIf { it > 0 }
+                        ?.let { "$it session(s) reference a vehicle that isn't in the backup" },
+                ).joinToString("; ")
+                return@withContext BackupResult.Failure(
+                    "Backup is inconsistent: $problems. Restore cancelled — nothing was changed.",
+                )
+            }
 
             // Plan the relative paths the DB rows will reference, but DON'T
             // touch filesDir yet. If the transaction below throws, the user's
@@ -514,7 +564,7 @@ class BackupIo @Inject constructor(
         val sessionsArr = json.optJSONArray("sessions") ?: return null
 
         return BackupPayload(
-            vehicles = vehiclesArr.mapObjects { v ->
+            vehicles = vehiclesArr.mapObjectsStrict("vehicles") { v ->
                 RawVehicle(
                     id = v.getLong("id"),
                     name = v.getString("name"),
@@ -532,7 +582,7 @@ class BackupIo @Inject constructor(
                     updatedAt = v.optLong("updatedAt", System.currentTimeMillis()),
                 )
             },
-            trips = tripsArr.mapObjects { t ->
+            trips = tripsArr.mapObjectsStrict("trips") { t ->
                 RawTrip(
                     id = t.getLong("id"),
                     name = t.getString("name"),
@@ -545,7 +595,7 @@ class BackupIo @Inject constructor(
                     createdAt = t.optLong("createdAt", System.currentTimeMillis()),
                 )
             },
-            sessions = sessionsArr.mapObjects { s ->
+            sessions = sessionsArr.mapObjectsStrict("sessions") { s ->
                 RawSession(
                     id = s.getLong("id"),
                     sessionStart = s.getLong("sessionStart"),
@@ -803,13 +853,30 @@ private fun JSONObject.optLongOrNull(key: String): Long? =
 private fun JSONObject.optDoubleOrNull(key: String): Double? =
     if (isNull(key) || !has(key)) null else optDouble(key).takeIf { !it.isNaN() }
 
-/** Map JSON objects to [T], silently skipping any row whose [transform] throws.
- *  A single malformed row in a 100-session backup shouldn't fail the whole
- *  restore — we'd rather drop the row and continue. (The destructive
- *  deleteAll runs after parsePayload returns, so a parse-time throw inside
- *  any non-skipping caller would still abort safely; this helper just
- *  trades that abort for partial-success behavior.) */
-private inline fun <T : Any> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =
-    (0 until length()).mapNotNull { idx ->
-        runCatching { transform(getJSONObject(idx)) }.getOrNull()
+/** Thrown when backup.json parses as JSON but a row inside it is
+ *  structurally invalid. Raised while parsing, before the destructive
+ *  restore transaction starts, so the user's existing data is never
+ *  touched. */
+private class BackupFormatException(message: String) : Exception(message)
+
+/** Map JSON objects to [T]. A malformed row aborts the whole parse with an
+ *  error naming the array and index. This used to skip unreadable rows and
+ *  continue — but restore wipes the database before re-inserting, so
+ *  partial success silently converted a damaged backup into permanent
+ *  data loss (dropped sessions, vanished vehicles). Refusing up front
+ *  happens before the wipe, leaving existing data intact and telling the
+ *  user exactly which row to look at. */
+private inline fun <T : Any> JSONArray.mapObjectsStrict(
+    name: String,
+    transform: (JSONObject) -> T,
+): List<T> =
+    (0 until length()).map { idx ->
+        try {
+            transform(getJSONObject(idx))
+        } catch (e: Exception) {
+            throw BackupFormatException(
+                "Backup entry $name[$idx] is unreadable (${e.message}). " +
+                    "Restore cancelled — nothing was changed.",
+            )
+        }
     }

@@ -78,19 +78,39 @@ object Format {
      * Parse user-typed decimal input from a text field. KeyboardType.Decimal
      * keyboards surface the locale's separator, so comma-locale users type
      * "12,5" where the app renders "12.5" — toDoubleOrNull() rejects that
-     * and the value would silently save as null. Accepts both separators:
-     * a lone comma is treated as the decimal point; a comma alongside a dot
-     * is treated as a thousands separator ("1,234.5"). Returns null for
-     * blank or unparseable input.
+     * and the value would silently save as null. Accepts both separators.
+     * When both appear, the one that occurs last is the decimal point and
+     * the other is a thousands separator — so US "1,234.5" and European
+     * "1.234,56" both parse to their intended value. A comma-only value in
+     * strict thousands grouping ("1,234", "12,345,678") reads as grouped —
+     * pasted US-style odometers would otherwise silently shrink ~1000×.
+     * Any other lone comma is the decimal point ("12,5", "0,485"); the
+     * nonzero-leading-group requirement keeps 3-decimal fractions below 1
+     * out of the grouped branch. The residual ambiguity — a comma-decimal
+     * value ≥ 1 with exactly 3 decimals — resolves as thousands, since no
+     * field in this app realistically takes 3-decimal input above 1.
+     * Returns null for blank or unparseable input.
      */
     fun parseDecimal(text: String): Double? {
         val t = text.trim()
         if (t.isEmpty()) return null
         val normalized = when {
-            ',' in t && '.' in t -> t.replace(",", "")
-            ',' in t -> t.replace(',', '.')
+            ',' in t && '.' in t ->
+                if (t.lastIndexOf(',') > t.lastIndexOf('.'))
+                    t.replace(".", "").replace(',', '.')  // European: dot-thousands, comma-decimal
+                else
+                    t.replace(",", "")                    // US: comma-thousands, dot-decimal
+            ',' in t ->
+                if (GROUPED_THOUSANDS.matches(t) && !t.trimStart('-', '+').startsWith("0"))
+                    t.replace(",", "")                    // "1,234" / "12,345,678"
+                else
+                    t.replace(',', '.')                   // "12,5" / "0,485"
             else -> t
         }
         return normalized.toDoubleOrNull()
     }
+
+    /** Comma-only input in strict US thousands grouping: 1–3 digit leading
+     *  group, then one or more groups of exactly 3. */
+    private val GROUPED_THOUSANDS = Regex("""[-+]?\d{1,3}(,\d{3})+""")
 }
