@@ -88,15 +88,36 @@ class BackupIo @Inject constructor(
 ) {
 
     suspend fun export(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
+        // Stage the zip in cacheDir before touching the destination. Users
+        // routinely overwrite their previous backup file, and opening the
+        // SAF stream in "wt" mode truncates it immediately — so a failure
+        // while reading the DB or media files used to destroy the old
+        // backup along with the new one. Building locally first means every
+        // build-time failure leaves the destination untouched; only the
+        // final byte-copy can still truncate it (SAF has no atomic
+        // replace), and that failure mode gets an explicit warning below.
+        val staging = File(context.cacheDir, "backup-staging-${UUID.randomUUID()}.zip")
+        val counts = try {
+            staging.outputStream().use { writeBackupZip(it) }
+        } catch (e: Exception) {
+            staging.delete()
+            return@withContext BackupResult.Failure(e.message ?: "Export failed")
+        }
         try {
             val out = context.contentResolver.openOutputStream(uri, "wt")
                 ?: return@withContext BackupResult.Failure("Could not open output for writing.")
-            val counts = out.use { writeBackupZip(it) }
+            out.use { output -> staging.inputStream().use { it.copyTo(output) } }
             appPreferences.recordBackup()
             backupReminderScheduler.refresh()
             BackupResult.ExportSuccess(counts.sessions, counts.trips, counts.vehicles)
         } catch (e: Exception) {
-            BackupResult.Failure(e.message ?: "Export failed")
+            BackupResult.Failure(
+                "Could not write to the chosen location — the destination file may be " +
+                    "incomplete. Save the backup again before relying on it." +
+                    (e.message?.let { " ($it)" } ?: ""),
+            )
+        } finally {
+            staging.delete()
         }
     }
 

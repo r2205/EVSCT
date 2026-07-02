@@ -13,9 +13,11 @@ import com.evsct.app.ui.map.TripPinColor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedReader
 import java.io.File
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.io.Writer
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -140,13 +142,39 @@ class CsvIo @Inject constructor(
     private val vehicleRepository: VehicleRepository,
 ) {
     suspend fun export(uri: Uri): Int = withContext(Dispatchers.IO) {
-        var count = 0
-        context.contentResolver.openOutputStream(uri, "wt")?.use { os ->
-            OutputStreamWriter(os, Charsets.UTF_8).use { w ->
-                count = writeCsvTo(w)
+        // Stage in cacheDir before touching the destination — mirrors
+        // BackupIo.export. "wt" truncates an existing file the user is
+        // overwriting before a single row is read, so any failure while
+        // walking the DB used to destroy the previous export. A null
+        // output stream now surfaces as an error instead of silently
+        // reporting "Exported 0 sessions".
+        val staging = File(context.cacheDir, "csv-staging-${UUID.randomUUID()}.csv")
+        val count = try {
+            staging.outputStream().use { os ->
+                OutputStreamWriter(os, Charsets.UTF_8).use { w -> writeCsvTo(w) }
             }
+        } catch (e: Exception) {
+            staging.delete()
+            throw e
         }
-        count
+        val out = context.contentResolver.openOutputStream(uri, "wt")
+            ?: run {
+                staging.delete()
+                throw IOException("Could not open output for writing.")
+            }
+        try {
+            out.use { output -> staging.inputStream().use { it.copyTo(output) } }
+            count
+        } catch (e: Exception) {
+            throw IOException(
+                "Could not write to the chosen location — the destination file may be " +
+                    "incomplete. Export again before relying on it." +
+                    (e.message?.let { " ($it)" } ?: ""),
+                e,
+            )
+        } finally {
+            staging.delete()
+        }
     }
 
     /**
