@@ -50,6 +50,7 @@ object EfficiencyAnalysis {
      * (prev, curr) becomes a leg when:
      *   - both are for [vehicle] (caller groups by vehicle),
      *   - either share a non-null trip OR `curr.continuesPrevious` is true,
+     *   - no other same-vehicle charge in [allSessions] happened between them,
      *   - both have an odometer reading,
      *   - prev has an end battery %, curr has a start battery %,
      *   - the vehicle has a battery capacity,
@@ -57,13 +58,24 @@ object EfficiencyAnalysis {
      *
      * Continuous pairs that fail one of those checks land in [EfficiencyReport.excluded]
      * with a short reason so the UI can tell the user exactly what's missing.
+     *
+     * [allSessions] is the vehicle's complete session list, used to detect
+     * charges that happened between two in-scope sessions. A trip-scoped
+     * caller must pass it: two adjacent-in-the-trip sessions with an
+     * untripped charge in between (e.g. a home top-up mid-trip) are NOT
+     * physically consecutive — pairing them anyway silently distorts both
+     * the distance and the battery delta. Defaults to [sessions] for
+     * callers already analyzing the full list, where adjacent pairs can't
+     * have anything in between.
      */
     fun analyze(
         sessions: List<ChargingSession>,
         vehicle: Vehicle?,
+        allSessions: List<ChargingSession> = sessions,
     ): EfficiencyReport {
         if (sessions.size < 2) return EfficiencyReport(emptyList(), emptyList())
         val sorted = sessions.sortedBy { it.sessionStart }
+        val inScopeIds = sorted.mapTo(mutableSetOf()) { it.id }
 
         val legs = mutableListOf<DrivingLeg>()
         val excluded = mutableListOf<ExcludedPair>()
@@ -72,6 +84,23 @@ object EfficiencyAnalysis {
             val prev = sorted[i - 1]
             val curr = sorted[i]
             if (!isContinuous(prev, curr)) continue
+
+            // The same-trip rule (and the continuesPrevious flag) assume
+            // nothing charged this vehicle between the two sessions. An
+            // out-of-scope charge in the gap breaks that — the battery
+            // delta would be distorted by however much it added.
+            val interleaved = allSessions.any {
+                it.id !in inScopeIds &&
+                    it.sessionStart > prev.sessionStart &&
+                    it.sessionStart < curr.sessionStart
+            }
+            if (interleaved) {
+                excluded += ExcludedPair(
+                    prev, curr,
+                    "Another charge happened between these sessions — add it to the trip to measure this drive",
+                )
+                continue
+            }
 
             val prevOdo = prev.odometerKm
             val currOdo = curr.odometerKm

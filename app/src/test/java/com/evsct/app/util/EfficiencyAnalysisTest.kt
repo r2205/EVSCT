@@ -159,6 +159,63 @@ class EfficiencyAnalysisTest {
     }
 
     @Test
+    fun `interleaved out-of-scope charge excludes the same-trip pair`() {
+        // Trip sessions at t=0 and t=2; an untripped home charge at t=1 for
+        // the same vehicle. Trip-scoped analysis (sessions = trip only,
+        // allSessions = full timeline) must NOT pair the trip sessions —
+        // the home charge distorted the battery delta.
+        val tripA = session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 7)
+        val homeCharge = session(id = 2, t = 1, odo = 1100.0, battStart = 40, battEnd = 90)
+        val tripB = session(id = 3, t = 2, odo = 1280.0, battStart = 30, tripId = 7)
+
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(tripA, tripB),
+            vehicle = vehicle,
+            allSessions = listOf(tripA, homeCharge, tripB),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertEquals(1, report.excluded.size)
+        assertEquals(1L, report.excluded.first().from.id)
+        assertEquals(3L, report.excluded.first().to.id)
+    }
+
+    @Test
+    fun `interleaved out-of-scope charge excludes a flagged pair too`() {
+        // continuesPrevious attests "nothing charged in between" — an
+        // out-of-scope charge in the gap contradicts it.
+        val a = session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 1)
+        val between = session(id = 2, t = 1)
+        val b = session(
+            id = 3, t = 2, odo = 1280.0, battStart = 30, tripId = 2,
+            continuesPrevious = true,
+        )
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(a, b),
+            vehicle = vehicle,
+            allSessions = listOf(a, between, b),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertEquals(1, report.excluded.size)
+    }
+
+    @Test
+    fun `full-timeline analysis is unchanged by the default allSessions`() {
+        // VehicleDetail-style call: sessions == allSessions. The untripped
+        // middle session splits the trip pair naturally (no flag set), and
+        // no interleave exclusion fires for adjacent pairs.
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 7),
+                session(id = 2, t = 1, odo = 1100.0, battStart = 40, battEnd = 90),
+                session(id = 3, t = 2, odo = 1280.0, battStart = 30, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertTrue(report.legs.isEmpty())
+        assertTrue(report.excluded.isEmpty())
+    }
+
+    @Test
     fun `out-of-order input is sorted by time before pairing`() {
         // Pass in reverse chronological order. Pairing should still match
         // session 1 → session 2 chronologically.
