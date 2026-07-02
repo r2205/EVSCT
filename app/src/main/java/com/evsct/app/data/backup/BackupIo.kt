@@ -860,12 +860,17 @@ private fun JSONObject.optDoubleOrNull(key: String): Double? =
 private class BackupFormatException(message: String) : Exception(message)
 
 /** Map JSON objects to [T]. A malformed row aborts the whole parse with an
- *  error naming the array and index. This used to skip unreadable rows and
+ *  error locating the row. This used to skip unreadable rows and
  *  continue — but restore wipes the database before re-inserting, so
  *  partial success silently converted a damaged backup into permanent
  *  data loss (dropped sessions, vanished vehicles). Refusing up front
  *  happens before the wipe, leaving existing data intact and telling the
- *  user exactly which row to look at. */
+ *  user exactly which row to look at.
+ *
+ *  The error counts entries 1-based ("entry 2 of 312") — the audience is
+ *  a person scrolling backup.json, not a programmer — and includes the
+ *  row's `id` when that field survived the damage, since the id is what
+ *  the user would actually search the file for. */
 private inline fun <T : Any> JSONArray.mapObjectsStrict(
     name: String,
     transform: (JSONObject) -> T,
@@ -874,9 +879,14 @@ private inline fun <T : Any> JSONArray.mapObjectsStrict(
         try {
             transform(getJSONObject(idx))
         } catch (e: Exception) {
+            val idLabel = optJSONObject(idx)
+                ?.takeIf { it.has("id") && !it.isNull("id") }
+                ?.optLong("id")
+                ?.let { " (id $it)" }
+                ?: ""
             throw BackupFormatException(
-                "Backup entry $name[$idx] is unreadable (${e.message}). " +
-                    "Restore cancelled — nothing was changed.",
+                "Backup entry ${idx + 1} of ${length()} in $name$idLabel is unreadable " +
+                    "(${e.message}). Restore cancelled — nothing was changed.",
             )
         }
     }
