@@ -158,6 +158,12 @@ class AppPreferences @Inject constructor(
     suspend fun trackedChargeSessionId(): Long? =
         dataStore.data.first()[TRACKED_CHARGE_SESSION_ID]?.takeIf { it > 0 }
 
+    /** Reactive variant of [trackedChargeSessionId] for UI that reacts when
+     *  tracking starts or ends (the stale-tracking nudge on the log). */
+    val trackedChargeSessionIdFlow: Flow<Long?> = dataStore.data.map { prefs ->
+        prefs[TRACKED_CHARGE_SESSION_ID]?.takeIf { it > 0 }
+    }
+
     suspend fun setTrackedChargeSessionId(id: Long?) {
         dataStore.edit { prefs ->
             if (id == null) prefs.remove(TRACKED_CHARGE_SESSION_ID)
