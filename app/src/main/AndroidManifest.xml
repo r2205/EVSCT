@@ -31,6 +31,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Chosen-component callback for the backup share sheet: records
+             the "last backed up" timestamp only when the user actually
+             picks a share target (cancelling the sheet fires nothing). -->
+        <receiver
+            android:name=".data.backup.BackupShareChosenReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

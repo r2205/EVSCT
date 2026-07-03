@@ -1,6 +1,7 @@
 package com.evsct.app.ui.settings
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -65,6 +66,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.BuildConfig
+import com.evsct.app.data.backup.BackupShareChosenReceiver
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.CardTimeRate
 import java.time.OffsetDateTime
@@ -129,7 +131,24 @@ fun SettingsScreen(
             putExtra(Intent.EXTRA_TITLE, file.name)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(send, chooserTitle))
+        val chooser = if (isCsv) {
+            Intent.createChooser(send, chooserTitle)
+        } else {
+            // Backup shares defer the "last backed up" record to the
+            // moment the user actually picks a target: the system fires
+            // this IntentSender on selection and never on cancel, so a
+            // dismissed sheet no longer silences the backup reminder.
+            // FLAG_MUTABLE because the system appends the chosen
+            // component to the fired intent.
+            val chosenCallback = PendingIntent.getBroadcast(
+                context,
+                0,
+                Intent(context, BackupShareChosenReceiver::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+            Intent.createChooser(send, chooserTitle, chosenCallback.intentSender)
+        }
+        context.startActivity(chooser)
         viewModel.consumePendingShare()
     }
 

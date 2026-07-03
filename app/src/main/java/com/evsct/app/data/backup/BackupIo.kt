@@ -127,10 +127,12 @@ class BackupIo @Inject constructor(
      * it to an Android share-sheet via FileProvider. Older share files are
      * cleared first so the cache doesn't accumulate after repeated shares.
      *
-     * Treats handing the file off as the user's intent to back up — records
-     * the timestamp and clears the reminder, matching the Save flow. The
-     * user can still cancel the chooser, but the file does exist on disk
-     * and the data is captured in a self-contained zip.
+     * Deliberately does NOT record a backup: at this point the zip exists
+     * only in app cache (which the next share wipes), and the user can
+     * still cancel the chooser. [BackupShareChosenReceiver] records the
+     * backup when the share sheet reports that a target was actually
+     * picked — cancelling no longer silences the reminder for another
+     * full threshold period.
      */
     suspend fun prepareShareFile(filenamePrefix: String = "evsct-backup"): PrepareShareResult =
         withContext(Dispatchers.IO) {
@@ -143,8 +145,6 @@ class BackupIo @Inject constructor(
                     .format(java.util.Date())
                 val target = File(shareDir, "$filenamePrefix-$ts.zip")
                 val counts = target.outputStream().use { writeBackupZip(it) }
-                appPreferences.recordBackup()
-                backupReminderScheduler.refresh()
                 PrepareShareResult.Success(
                     PreparedShareBackup(
                         file = target,
