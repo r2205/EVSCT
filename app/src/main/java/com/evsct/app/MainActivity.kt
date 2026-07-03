@@ -21,6 +21,7 @@ import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.util.BackupReminderScheduler
 import com.evsct.app.util.InProgressChargeNotifier
+import com.evsct.app.util.MissingMediaSweeper
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,8 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var appPreferences: AppPreferences
 
+    @Inject lateinit var missingMediaSweeper: MissingMediaSweeper
+
     /** Pending deep-link route emitted when this activity is launched (or
      *  re-launched) by tapping the in-progress charge notification. The
      *  composition collects this and routes the NavController to the right
@@ -43,6 +46,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Drop DB references to media files that don't exist on disk — the
+        // aftermath of a cloud auto-restore, which carries the DB but not
+        // receipts/ or vehicles/. Once per process, runs on the app scope.
+        missingMediaSweeper.sweepInBackground()
         // Only consume the launching intent on a fresh process start. Config
         // changes (rotation, theme) reuse the same intent — without this
         // guard we'd re-navigate to the deep-link target on every rotation.
