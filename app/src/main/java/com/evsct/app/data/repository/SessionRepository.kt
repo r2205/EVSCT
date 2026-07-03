@@ -30,7 +30,7 @@ class SessionRepository @Inject constructor(
         return if (toSave.id == 0L) {
             dao.insert(toSave)
         } else {
-            dao.update(toSave)
+            dao.updateAndClearStaleContinuity(toSave, now)
             toSave.id
         }
     }
@@ -47,7 +47,8 @@ class SessionRepository @Inject constructor(
         dao.setCoordinatesForIds(ids.toList(), lat, lng, System.currentTimeMillis())
     }
 
-    suspend fun delete(session: ChargingSession) = dao.delete(session)
+    suspend fun delete(session: ChargingSession) =
+        dao.deleteAndClearStaleContinuity(session, System.currentTimeMillis())
 
     suspend fun deleteAll() = dao.deleteAll()
 }

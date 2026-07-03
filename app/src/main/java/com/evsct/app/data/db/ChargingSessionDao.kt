@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.evsct.app.data.entity.ChargingSession
 import kotlinx.coroutines.flow.Flow
@@ -73,4 +74,61 @@ interface ChargingSessionDao {
 
     @Query("DELETE FROM charging_sessions")
     suspend fun deleteAll()
+
+    // `IS` instead of `=` so a null vehicleId matches other null-vehicle
+    // sessions; the efficiency analysis groups by vehicleId the same way.
+    @Query(
+        """
+        SELECT * FROM charging_sessions
+        WHERE vehicleId IS :vehicleId AND id != :excludeId AND sessionStart >= :start
+        ORDER BY sessionStart ASC, id ASC LIMIT 1
+        """
+    )
+    suspend fun firstAfter(vehicleId: Long?, start: Long, excludeId: Long): ChargingSession?
+
+    @Query("UPDATE charging_sessions SET continuesPrevious = 0, updatedAt = :now WHERE id = :id")
+    suspend fun clearContinuesPrevious(id: Long, now: Long)
+
+    /**
+     * Deletes [session] and clears `continuesPrevious` on the session that
+     * immediately followed it on the same vehicle's timeline. That flag
+     * attests "no untracked charging since the previous session" — and the
+     * previous session is the one being deleted, which becomes exactly an
+     * untracked charge in the gap. Left set, the flag would silently
+     * re-target an older session the user never vouched for.
+     */
+    @Transaction
+    suspend fun deleteAndClearStaleContinuity(session: ChargingSession, now: Long) {
+        delete(session)
+        val follower = firstAfter(session.vehicleId, session.sessionStart, session.id)
+        if (follower != null && follower.continuesPrevious) {
+            clearContinuesPrevious(follower.id, now)
+        }
+    }
+
+    /**
+     * Updates [session] and, when the edit moved it (new start time or
+     * vehicle) out from directly in front of a flagged follower, clears that
+     * follower's `continuesPrevious` — the attestation targeted this session
+     * at its old position, and after the move it would silently re-target
+     * whichever session is adjacent now.
+     *
+     * The reverse direction — this session landing directly in front of some
+     * other flagged session — is deliberately left alone: a tracked charge
+     * appearing inside an attested gap only narrows the gap (this is the
+     * backfill workflow), it doesn't invalidate "nothing untracked in
+     * between".
+     */
+    @Transaction
+    suspend fun updateAndClearStaleContinuity(session: ChargingSession, now: Long) {
+        val before = findById(session.id)
+        update(session)
+        if (before == null) return
+        if (before.vehicleId == session.vehicleId && before.sessionStart == session.sessionStart) return
+        val follower = firstAfter(before.vehicleId, before.sessionStart, before.id) ?: return
+        if (!follower.continuesPrevious) return
+        val stillPredecessor =
+            firstAfter(session.vehicleId, session.sessionStart, session.id)?.id == follower.id
+        if (!stillPredecessor) clearContinuesPrevious(follower.id, now)
+    }
 }
