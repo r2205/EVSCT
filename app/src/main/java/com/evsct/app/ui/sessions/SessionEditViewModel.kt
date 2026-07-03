@@ -195,9 +195,28 @@ class SessionEditViewModel @Inject constructor(
     /** Latched once a commit has succeeded and navigation-out was requested.
      *  commitInFlight alone isn't enough: the save coroutine can finish (and
      *  re-arm) before the exit transition does, letting a late tap start a
-     *  second commit on a screen that's already leaving. Never reset — a
-     *  failed commit doesn't set it, so retries still work. */
+     *  second commit on a screen that's already leaving. A failed commit
+     *  doesn't set it, so retries still work. Reset only by
+     *  [onScreenResumed] — the pop that onSaved/onDeleted requests goes
+     *  through ifResumed, which silently drops it mid-transition, and a
+     *  screen stuck visible with this latched would have permanently dead
+     *  Save/Delete buttons. */
     @Volatile private var exitRequested = false
+
+    /** Row id committed by a save on this screen. Normally irrelevant (the
+     *  screen pops right after), but when the pop is dropped and the user
+     *  saves again, a screen opened as "new" must update this row instead
+     *  of inserting a duplicate — and Delete must target it too. */
+    @Volatile private var committedSessionId: Long? = null
+
+    /** Called by the screen on every ON_RESUME of its nav entry. A screen
+     *  that actually popped never reaches RESUMED again, so resuming with
+     *  [exitRequested] still latched means the requested pop was dropped
+     *  (ifResumed swallows navigation while the entry is mid-transition).
+     *  Re-arm Save/Delete instead of leaving the visible screen inert. */
+    fun onScreenResumed() {
+        exitRequested = false
+    }
 
     /** The session's stored odometer in km at load time, plus the formatted
      *  display text we put into the form. Used by save() and the validation
@@ -660,7 +679,10 @@ class SessionEditViewModel @Inject constructor(
                         .coerceAtLeast(0L)) / 1000L
                 } else null
             val session = ChargingSession(
-                id = if (s.isNew) 0 else sessionId,
+                // committedSessionId wins: a prior save on this screen
+                // already inserted the row (its pop was dropped) and a
+                // retry must update it, not insert a duplicate.
+                id = committedSessionId ?: if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
                 durationSeconds = durationSeconds,
                 waitTimeMinutes = s.waitTimeText.toIntOrNull()?.takeIf { it >= 0 },
@@ -694,6 +716,7 @@ class SessionEditViewModel @Inject constructor(
                 createdAt = originalCreatedAt ?: System.currentTimeMillis(),
             )
             val savedId = sessionRepository.upsert(session)
+            committedSessionId = savedId
 
             // Diff the in-memory receipts against the DB and apply the delta.
             // Newly added rows (id == null) get inserted; rows that the user
@@ -872,13 +895,17 @@ class SessionEditViewModel @Inject constructor(
         if (commitInFlight || exitRequested) return
         commitInFlight = true
         viewModelScope.launch {
-            if (sessionId > 0) {
-                sessionRepository.findById(sessionId)?.let {
+            // A save on this screen may already have committed a row even
+            // when the entry opened as "new" (dropped-pop recovery) —
+            // Delete must target that row, not just the nav-arg id.
+            val targetId = committedSessionId ?: sessionId
+            if (targetId > 0) {
+                sessionRepository.findById(targetId)?.let {
                     sessionRepository.delete(it)
                 }
                 // The session no longer exists; the in-progress notification
                 // for it would tap into a deleted row, so always clear it.
-                inProgressChargeNotifier.cancelIfFor(sessionId)
+                inProgressChargeNotifier.cancelIfFor(targetId)
             }
             // No row left, so drop every file we touched (originals plus
             // speculative copies). FK CASCADE has already removed the

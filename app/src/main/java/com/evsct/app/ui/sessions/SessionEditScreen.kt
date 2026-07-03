@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import java.io.File
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
@@ -103,6 +104,17 @@ fun SessionEditScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // Re-arm the ViewModel's exit latch whenever this nav entry reaches
+    // RESUMED (LocalLifecycleOwner inside a NavHost is the back-stack
+    // entry). A screen whose post-save pop actually ran never resumes
+    // again — so resuming with the latch set means ifResumed dropped the
+    // pop mid-transition, and without the reset Save/Delete would stay
+    // dead on a screen that's still visible.
+    LifecycleResumeEffect(Unit) {
+        viewModel.onScreenResumed()
+        onPauseOrDispose { }
+    }
 
     // The map picker (a sibling nav destination) writes its result into
     // this screen's SavedStateHandle and pops back. NavGraph reads those

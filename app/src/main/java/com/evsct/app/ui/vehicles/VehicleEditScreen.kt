@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import java.io.File
@@ -64,6 +65,17 @@ fun VehicleEditScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // Re-arm the ViewModel's exit latch whenever this nav entry reaches
+    // RESUMED (LocalLifecycleOwner inside a NavHost is the back-stack
+    // entry). A screen whose post-save pop actually ran never resumes
+    // again — so resuming with the latch set means ifResumed dropped the
+    // pop mid-transition, and without the reset Save/Delete would stay
+    // dead on a screen that's still visible.
+    LifecycleResumeEffect(Unit) {
+        viewModel.onScreenResumed()
+        onPauseOrDispose { }
+    }
 
     val pickImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
