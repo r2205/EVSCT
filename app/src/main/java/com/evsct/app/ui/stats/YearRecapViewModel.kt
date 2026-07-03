@@ -14,6 +14,7 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.StopKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -414,7 +415,10 @@ class YearRecapViewModel @Inject constructor(
         if (located.isEmpty()) return RecapMap(emptyList(), emptyList(), emptyList())
 
         val tripById = trips.associateBy { it.trip.id }
-        val groups = located.groupBy(::recapStopKey).filterKeys { it.isNotBlank() }
+        // Every session here has coordinates, so StopKey never blank-keys:
+        // sessions without brand/address/city fall back to a geo bucket
+        // instead of silently vanishing from the recap map.
+        val groups = located.groupBy(StopKey::of).filterKeys { it.isNotBlank() }
 
         // Track which trip buckets actually appear on the map so the legend
         // lists only relevant entries.
@@ -462,13 +466,6 @@ class YearRecapViewModel @Inject constructor(
 
         return RecapMap(stops, paths, legend)
     }
-
-    /** Mirrors MapViewModel.stopKey: brand + address + city, lowercased. */
-    private fun recapStopKey(s: ChargingSession): String = listOfNotNull(
-        s.brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-        s.locationAddress?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-        s.locationCity?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-    ).joinToString("|")
 
     private fun monthlySeries(
         sessions: List<ChargingSession>,
