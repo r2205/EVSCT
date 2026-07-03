@@ -32,22 +32,43 @@ object Csv {
      *  formulas (e.g., a notes field starting with `=cmd|...`). */
     private val FORMULA_TRIGGERS = setOf('=', '+', '-', '@', '\t', '\r')
 
+    /** Matches a field that is nothing but a signed number. Kotlin's
+     *  Double.toString can emit scientific notation, so the exponent is
+     *  part of the shape. */
+    private val PLAIN_NUMBER = Regex("""[-+]?\d+(\.\d+)?([eE][-+]?\d+)?""")
+
     fun encodeField(value: String?): String {
         if (value == null) return ""
         // Defuse formula injection by prefixing dangerous leading chars with
         // a single quote — spreadsheet apps strip that prefix and treat the
         // rest as literal text. decodeField mirrors this on import so EVSCT
         // round-trips the user's original value losslessly.
-        val sanitized = if (value.isNotEmpty() && value[0] in FORMULA_TRIGGERS) "'$value" else value
+        val sanitized = if (needsDefusing(value)) "'$value" else value
         val needsQuote = sanitized.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
         val escaped = sanitized.replace("\"", "\"\"")
         return if (needsQuote) "\"$escaped\"" else escaped
     }
 
+    /** A leading `=`, `@`, tab, or CR always defuses. A leading `+`/`-`
+     *  defuses only when the field isn't a plain number: `-79.38` is a
+     *  longitude that every western-hemisphere export contains, and
+     *  prefixing it turns the whole column into text in Excel/Sheets —
+     *  while a pure number can't carry a payload (`+1234` in a cell just
+     *  evaluates to 1234). `-2+cmd|...` is not a plain number and still
+     *  gets the prefix. */
+    private fun needsDefusing(value: String): Boolean {
+        val first = value.firstOrNull() ?: return false
+        if (first !in FORMULA_TRIGGERS) return false
+        if ((first == '-' || first == '+') && PLAIN_NUMBER.matches(value)) return false
+        return true
+    }
+
     /** Reverse of the [encodeField] formula-injection prefix: strip a leading
      *  `'` only when it sits in front of a known formula trigger. A user's
      *  legitimate `'Tesla` brand stays intact (the second char isn't a
-     *  trigger). */
+     *  trigger). Deliberately looser than [needsDefusing]: exports written
+     *  before numbers were exempted contain `'-79.38`, and those must keep
+     *  round-tripping back to `-79.38`. */
     private fun decodeField(value: String): String =
         if (value.length >= 2 && value[0] == '\'' && value[1] in FORMULA_TRIGGERS)
             value.substring(1)
@@ -116,6 +137,10 @@ object Csv {
         return rows
     }
 }
+
+/** Lookup key for matching a CSV row's trip/vehicle name against existing
+ *  rows: trimmed and lowercased with locale-independent rules. */
+private fun nameKey(name: String): String = name.trim().lowercase()
 
 data class CsvImportResult(val imported: Int, val skipped: Int)
 
@@ -238,14 +263,25 @@ class CsvIo @Inject constructor(
         // the Flow .first() collectors don't run on the transaction connection
         // (mirrors the pattern in BackupIo.restore). Pin colors are pre-read
         // for the same reason — see the trip-creation comment below.
+        //
+        // Names match case-insensitively (CSV fields arrive trimmed): an
+        // existing "summer 2025" must absorb a row tagged "Summer 2025"
+        // instead of spawning a duplicate trip. Existing DB rows fill the
+        // map first, and first-in wins, so imports attach to real rows
+        // even if the DB somehow holds two names differing only by case.
+        // Known format limitation, unchanged here: the CSV carries only
+        // the trip NAME, so two genuinely distinct trips that share one
+        // name collapse into a single trip on import.
         val tripIdByName = mutableMapOf<String, Long>()
         val usedPinColors = mutableListOf<String>()
         tripRepository.observeAll().first().forEach { trip ->
-            tripIdByName[trip.name] = trip.id
+            tripIdByName.getOrPut(nameKey(trip.name)) { trip.id }
             trip.pinColor?.let { usedPinColors += it }
         }
         val vehicleIdByName = mutableMapOf<String, Long>()
-        vehicleRepository.observeAll().first().forEach { vehicleIdByName[it.name] = it.id }
+        vehicleRepository.observeAll().first().forEach {
+            vehicleIdByName.getOrPut(nameKey(it.name)) { it.id }
+        }
 
         var imported = 0
         var skipped = 0
@@ -262,7 +298,9 @@ class CsvIo @Inject constructor(
                 val parsed = CsvFormat.fromRow(headers, row)
                 if (parsed == null) { skipped++; continue }
                 val tripId = parsed.tripName?.takeIf { it.isNotBlank() }?.let { name ->
-                    tripIdByName.getOrPut(name) {
+                    // Keyed by the normalized name; newly created rows keep
+                    // the CSV's original casing as their display name.
+                    tripIdByName.getOrPut(nameKey(name)) {
                         // Assign the pin color here from the pre-read list
                         // rather than letting TripRepository.upsert auto-pick:
                         // its auto-pick collects a DAO Flow, which must not run
@@ -275,7 +313,9 @@ class CsvIo @Inject constructor(
                     }
                 }
                 val vehicleId = parsed.vehicleName?.takeIf { it.isNotBlank() }?.let { name ->
-                    vehicleIdByName.getOrPut(name) { vehicleRepository.upsert(Vehicle(name = name)) }
+                    vehicleIdByName.getOrPut(nameKey(name)) {
+                        vehicleRepository.upsert(Vehicle(name = name))
+                    }
                 }
                 sessionRepository.upsert(parsed.session.copy(tripId = tripId, vehicleId = vehicleId))
                 imported++

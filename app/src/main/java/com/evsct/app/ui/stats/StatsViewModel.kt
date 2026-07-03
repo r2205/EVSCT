@@ -8,6 +8,7 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.VehicleRepository
+import com.evsct.app.util.OdometerDistance
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -124,7 +125,7 @@ class StatsViewModel @Inject constructor(
             acByDayHour = dayHourGrid(sessions.filter {
                 it.chargingType == ChargingType.AC_L2 || it.chargingType == ChargingType.AC_L1
             }),
-        ).withGasComparison(costSessions)
+        ).withGasComparison(sessions, costSessions)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())
 
     fun setVehicleFilter(id: Long?) { vehicleFilter.value = id }
@@ -177,23 +178,34 @@ class StatsViewModel @Inject constructor(
      * and return a copy of [this] with the matching fields populated.
      *
      * Distance preference:
-     *   1. Sum of per-vehicle odometer deltas where the *end* session falls
-     *      in this month — captures driving even when the *start* session
-     *      was in the previous month.
+     *   1. [OdometerDistance.inWindow] over ALL of the vehicle-scoped
+     *      [sessions] — distance is a physical quantity with no currency,
+     *      and walking a currency-filtered list both disagreed with the
+     *      Year Recap and let deltas spanning a foreign-currency session
+     *      skew the total.
      *   2. If no odometer data is usable, fall back to month-kWh ×
      *      [EV_EFFICIENCY_KM_PER_KWH] so the card still works for users who
-     *      don't log odometer readings.
+     *      don't log odometer readings (also unfiltered — energy is
+     *      physical too).
      *
-     * [costSessions] is already filtered to the user's default currency, so
-     * the cost and gas estimate stay apples-to-apples.
+     * Only the money stays scoped to [costSessions] (the user's default
+     * currency): sums across currencies have no single unit. A month with
+     * foreign-currency charging therefore shows its full driving but only
+     * home-currency spend — same trade-off the Year Recap makes.
      */
-    private fun StatsUi.withGasComparison(costSessions: List<ChargingSession>): StatsUi {
+    private fun StatsUi.withGasComparison(
+        sessions: List<ChargingSession>,
+        costSessions: List<ChargingSession>,
+    ): StatsUi {
         val (monthStart, monthEnd) = currentMonthBounds()
-        val monthSessions = costSessions.filter { it.sessionStart in monthStart until monthEnd }
-        val monthCost = monthSessions.sumOf { it.totalCost ?: 0.0 }
+        val monthCost = costSessions
+            .filter { it.sessionStart in monthStart until monthEnd }
+            .sumOf { it.totalCost ?: 0.0 }
 
-        val odoDistance = odometerDistanceForMonth(costSessions, monthStart, monthEnd)
-        val kwhDistance = monthSessions.sumOf { it.energyKwh ?: 0.0 } * EV_EFFICIENCY_KM_PER_KWH
+        val odoDistance = OdometerDistance.inWindow(sessions, monthStart, monthEnd)
+        val kwhDistance = sessions
+            .filter { it.sessionStart in monthStart until monthEnd }
+            .sumOf { it.energyKwh ?: 0.0 } * EV_EFFICIENCY_KM_PER_KWH
         val distance = if (odoDistance > 1.0) odoDistance else kwhDistance
 
         val gasCost = (distance / 100.0) * GAS_CONSUMPTION_L_PER_100KM * GAS_PRICE_PER_L
@@ -204,34 +216,6 @@ class StatsViewModel @Inject constructor(
             thisMonthSavings = gasCost - monthCost,
             thisMonthHasDriving = distance > 0.0,
         )
-    }
-
-    /** Per-vehicle odometer deltas for any session pair whose *end* falls
-     *  in [monthStart, monthEnd). Negative or unknown deltas are skipped
-     *  (odometer rollback, missing readings). Walks the full session list
-     *  (not just in-month) so the boundary delta from the prior month's
-     *  last charge is counted. */
-    private fun odometerDistanceForMonth(
-        sessions: List<ChargingSession>,
-        monthStart: Long,
-        monthEnd: Long,
-    ): Double {
-        var total = 0.0
-        sessions.groupBy { it.vehicleId }
-            .values
-            .map { group -> group.sortedBy { it.sessionStart } }
-            .forEach { sorted ->
-                for (i in 1 until sorted.size) {
-                    val prev = sorted[i - 1]
-                    val curr = sorted[i]
-                    if (curr.sessionStart < monthStart || curr.sessionStart >= monthEnd) continue
-                    val prevOdo = prev.odometerKm ?: continue
-                    val currOdo = curr.odometerKm ?: continue
-                    val delta = currOdo - prevOdo
-                    if (delta > 0) total += delta
-                }
-            }
-        return total
     }
 
     /** Epoch millis for the current calendar month: [start, end). */

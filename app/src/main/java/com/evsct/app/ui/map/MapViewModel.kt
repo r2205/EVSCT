@@ -8,6 +8,7 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.util.LocationAutofill
+import com.evsct.app.util.StopKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -174,7 +175,10 @@ class MapViewModel @Inject constructor(
             else allSessions.filter { it.vehicleId == effectiveVehicleFilter }
 
         val tripColorById = trips.associate { it.id to it.pinColor }
-        val groups = sessions.groupBy(::stopKey).filterKeys { it.isNotBlank() }
+        // StopKey gives coordinate-only sessions (no brand/address/city) a
+        // geo-bucket key, so they render as pins instead of vanishing; only
+        // sessions with no text AND no coordinates blank-key out here.
+        val groups = sessions.groupBy(StopKey::of).filterKeys { it.isNotBlank() }
 
         val stops = groups.mapNotNull { (key, group) -> buildStop(key, group, tripColorById, f) }
             .sortedByDescending { it.lastVisit }
@@ -325,7 +329,7 @@ class MapViewModel @Inject constructor(
             // Snapshot the current sessions list without retaining a long-lived collector.
             val sessions = sessionRepository.observeAll().first()
             val groups = sessions
-                .groupBy(::stopKey)
+                .groupBy(StopKey::of)
                 .filterKeys { it.isNotBlank() }
                 .filterValues { group -> group.none { it.hasCoordinates() } }
                 .filterValues { group -> group.any { !it.geocodeQuery().isNullOrBlank() } }
@@ -438,16 +442,6 @@ class MapViewModel @Inject constructor(
         private const val BACKFILL_THROTTLE_MS = 24L * 60L * 60L * 1000L
     }
 }
-
-/** Stops are grouped by brand + address + city only. Station/stall name is
- *  intentionally NOT part of the key — visits to the same physical charger
- *  should share a pin even when each visit logs a different stall number.
- *  Mirrors the matching helper in SessionEditViewModel. */
-private fun stopKey(s: ChargingSession): String = listOfNotNull(
-    s.brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-    s.locationAddress?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-    s.locationCity?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-).joinToString("|")
 
 private fun ChargingSession.hasCoordinates(): Boolean =
     latitude != null && longitude != null

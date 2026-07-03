@@ -1,6 +1,7 @@
 package com.evsct.app.ui.settings
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -65,6 +66,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.BuildConfig
+import com.evsct.app.data.backup.BackupShareChosenReceiver
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.CardTimeRate
 import java.time.OffsetDateTime
@@ -82,6 +84,7 @@ fun SettingsScreen(
     var replaceOnImport by remember { mutableStateOf(false) }
     var showXlsxConfirm by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showUndoRestoreConfirm by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv"),
@@ -129,7 +132,24 @@ fun SettingsScreen(
             putExtra(Intent.EXTRA_TITLE, file.name)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(send, chooserTitle))
+        val chooser = if (isCsv) {
+            Intent.createChooser(send, chooserTitle)
+        } else {
+            // Backup shares defer the "last backed up" record to the
+            // moment the user actually picks a target: the system fires
+            // this IntentSender on selection and never on cancel, so a
+            // dismissed sheet no longer silences the backup reminder.
+            // FLAG_MUTABLE because the system appends the chosen
+            // component to the fired intent.
+            val chosenCallback = PendingIntent.getBroadcast(
+                context,
+                0,
+                Intent(context, BackupShareChosenReceiver::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+            Intent.createChooser(send, chooserTitle, chosenCallback.intentSender)
+        }
+        context.startActivity(chooser)
         viewModel.consumePendingShare()
     }
 
@@ -218,6 +238,19 @@ fun SettingsScreen(
                             "any other app you have installed.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    // Updates when a Save completes, a share target is
+                    // picked (not on a cancelled share sheet), or a
+                    // restore succeeds.
+                    Text(
+                        "Last backed up: " + (state.lastBackupAt?.let {
+                            java.text.DateFormat.getDateTimeInstance(
+                                java.text.DateFormat.MEDIUM,
+                                java.text.DateFormat.SHORT,
+                            ).format(java.util.Date(it))
+                        } ?: "never"),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                    )
                     Button(
                         onClick = {
                             val ts = java.text.SimpleDateFormat(
@@ -246,6 +279,23 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) { Text("Restore from backup…") }
+                    state.preRestoreSnapshotAt?.let { snapAt ->
+                        OutlinedButton(
+                            onClick = { showUndoRestoreConfirm = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !state.busy,
+                        ) { Text("Undo last restore…") }
+                        Text(
+                            "Brings back the data as it was just before your last " +
+                                "restore (snapshot taken automatically " +
+                                java.text.DateFormat.getDateTimeInstance(
+                                    java.text.DateFormat.MEDIUM,
+                                    java.text.DateFormat.SHORT,
+                                ).format(java.util.Date(snapAt)) + ").",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
@@ -356,7 +406,8 @@ fun SettingsScreen(
                 Text(
                     "This will erase every session, trip, and vehicle currently in " +
                         "the app and replace them with the contents of the backup file. " +
-                        "This can't be undone."
+                        "A snapshot of your current data is saved automatically first, " +
+                        "so you can undo this from Settings if it's the wrong file."
                 )
             },
             confirmButton = {
@@ -369,6 +420,32 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreConfirm = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showUndoRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showUndoRestoreConfirm = false },
+            title = { Text("Undo last restore?") },
+            text = {
+                Text(
+                    "This replaces everything currently in the app with the " +
+                        "snapshot taken just before your last restore. The data " +
+                        "you're replacing is snapshotted first, so you can undo " +
+                        "the undo."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showUndoRestoreConfirm = false
+                    viewModel.undoRestore()
+                }) {
+                    Text("Undo restore", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUndoRestoreConfirm = false }) { Text("Cancel") }
             },
         )
     }

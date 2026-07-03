@@ -41,6 +41,13 @@ private const val RECEIPT_DIR_IN_FILES = "receipts"
  *  in res/xml/file_paths.xml so FileProvider can hand out content:// URIs. */
 private const val SHARE_DIR_IN_CACHE = "backup-share"
 
+/** App-private home of the safety snapshot written automatically before
+ *  every restore. One file, one level deep: each restore overwrites it
+ *  with the pre-wipe state, which is exactly what "undo last restore"
+ *  needs (and undoing twice ping-pongs between the two states). */
+private const val PRE_RESTORE_DIR_IN_FILES = "pre-restore"
+private const val PRE_RESTORE_SNAPSHOT_NAME = "pre-restore-snapshot.zip"
+
 // Decompression caps. A real backup of a heavy user is comfortably under
 // these — they exist to short-circuit zip-bombs that decompress a few KB
 // of input into gigabytes of output.
@@ -127,10 +134,12 @@ class BackupIo @Inject constructor(
      * it to an Android share-sheet via FileProvider. Older share files are
      * cleared first so the cache doesn't accumulate after repeated shares.
      *
-     * Treats handing the file off as the user's intent to back up — records
-     * the timestamp and clears the reminder, matching the Save flow. The
-     * user can still cancel the chooser, but the file does exist on disk
-     * and the data is captured in a self-contained zip.
+     * Deliberately does NOT record a backup: at this point the zip exists
+     * only in app cache (which the next share wipes), and the user can
+     * still cancel the chooser. [BackupShareChosenReceiver] records the
+     * backup when the share sheet reports that a target was actually
+     * picked — cancelling no longer silences the reminder for another
+     * full threshold period.
      */
     suspend fun prepareShareFile(filenamePrefix: String = "evsct-backup"): PrepareShareResult =
         withContext(Dispatchers.IO) {
@@ -143,8 +152,6 @@ class BackupIo @Inject constructor(
                     .format(java.util.Date())
                 val target = File(shareDir, "$filenamePrefix-$ts.zip")
                 val counts = target.outputStream().use { writeBackupZip(it) }
-                appPreferences.recordBackup()
-                backupReminderScheduler.refresh()
                 PrepareShareResult.Success(
                     PreparedShareBackup(
                         file = target,
@@ -204,6 +211,48 @@ class BackupIo @Inject constructor(
 
     private data class BackupCounts(val sessions: Int, val trips: Int, val vehicles: Int)
 
+    /** Epoch millis of the pre-restore safety snapshot, or null when no
+     *  restore has ever run on this install. Drives the "Undo last
+     *  restore" row in Settings. */
+    fun preRestoreSnapshotAt(): Long? =
+        snapshotFile().takeIf { it.exists() }?.lastModified()?.takeIf { it > 0 }
+
+    /** Restore the safety snapshot taken just before the most recent
+     *  restore — the one-tap undo for "that was the wrong zip". Runs the
+     *  normal restore path, which snapshots the current state first, so
+     *  an undo can itself be undone. */
+    suspend fun restoreFromSnapshot(): BackupResult {
+        val snapshot = snapshotFile()
+        if (!snapshot.exists()) {
+            return BackupResult.Failure("No pre-restore snapshot found on this device.")
+        }
+        return restore(Uri.fromFile(snapshot))
+    }
+
+    private fun snapshotFile(): File =
+        File(File(context.filesDir, PRE_RESTORE_DIR_IN_FILES), PRE_RESTORE_SNAPSHOT_NAME)
+
+    /** Write the current database + media as a backup zip to the snapshot
+     *  path. Staged in cacheDir and moved into place so a failure mid-write
+     *  can't leave a truncated snapshot masquerading as a good one. */
+    private suspend fun writeSnapshotOfCurrentData() {
+        val snapshot = snapshotFile()
+        snapshot.parentFile?.mkdirs()
+        val staging = File(context.cacheDir, "pre-restore-staging-${UUID.randomUUID()}.zip")
+        try {
+            staging.outputStream().use { writeBackupZip(it) }
+            if (snapshot.exists()) snapshot.delete()
+            if (!staging.renameTo(snapshot)) {
+                // Different filesystem or rename quirk — fall back to a copy.
+                staging.inputStream().use { inp ->
+                    snapshot.outputStream().use { out -> inp.copyTo(out) }
+                }
+            }
+        } finally {
+            staging.delete()
+        }
+    }
+
     suspend fun restore(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
         val tempDir = File(context.cacheDir, "backup-restore-${UUID.randomUUID()}")
         try {
@@ -240,6 +289,24 @@ class BackupIo @Inject constructor(
                 ).joinToString("; ")
                 return@withContext BackupResult.Failure(
                     "Backup is inconsistent: $problems. Restore cancelled — nothing was changed.",
+                )
+            }
+
+            // Safety snapshot: capture the CURRENT data as a normal backup
+            // zip before anything is wiped, so a restore of the wrong file
+            // is recoverable via Settings → "Undo last restore". Taken
+            // after the incoming file is fully read and validated — the
+            // source zip is completely consumed by now, which also makes
+            // undo-of-undo work: restoring the snapshot snapshots the
+            // present state into the same file first. A snapshot failure
+            // aborts the restore before the wipe.
+            try {
+                writeSnapshotOfCurrentData()
+            } catch (e: Exception) {
+                return@withContext BackupResult.Failure(
+                    "Could not write the pre-restore safety snapshot" +
+                        (e.message?.let { " ($it)" } ?: "") +
+                        ". Restore cancelled — nothing was changed.",
                 )
             }
 
@@ -304,6 +371,8 @@ class BackupIo @Inject constructor(
                             endDate = raw.endDate,
                             startOdometerKm = raw.startOdometerKm,
                             endOdometerKm = raw.endOdometerKm,
+                            startBatteryPct = raw.startBatteryPct,
+                            endBatteryPct = raw.endBatteryPct,
                             notes = raw.notes,
                             pinColor = raw.pinColor,
                             createdAt = raw.createdAt,
@@ -448,6 +517,11 @@ class BackupIo @Inject constructor(
         putOptLong("endDate", endDate)
         putOptDouble("startOdometerKm", startOdometerKm)
         putOptDouble("endOdometerKm", endOdometerKm)
+        // Optional since backups predating trip-level battery anchors —
+        // absent keys read back as null, and older app builds simply
+        // ignore them on restore (schema version stays 5).
+        putOptLong("startBatteryPct", startBatteryPct?.toLong())
+        putOptLong("endBatteryPct", endBatteryPct?.toLong())
         putOptString("notes", notes)
         putOptString("pinColor", pinColor)
         put("createdAt", createdAt)
@@ -511,44 +585,12 @@ class BackupIo @Inject constructor(
 
     /* --- restore helpers --- */
 
-    private fun readZipToTemp(uri: Uri, tempDir: File): JSONObject? {
-        var json: JSONObject? = null
-        var totalBytes = 0L
-        var entryCount = 0
+    private fun readZipToTemp(uri: Uri, tempDir: File): JSONObject? =
         context.contentResolver.openInputStream(uri).use { stream ->
             requireNotNull(stream) { "Could not open backup file." }
-            ZipInputStream(BufferedInputStream(stream)).use { zip ->
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    if (entry.isDirectory) {
-                        zip.closeEntry()
-                        continue
-                    }
-                    if (++entryCount > MAX_BACKUP_ENTRIES) {
-                        throw IOException("Backup contains too many entries (>$MAX_BACKUP_ENTRIES).")
-                    }
-                    val written: Long = when {
-                        entry.name == BACKUP_JSON -> {
-                            val bytes = zip.readBytesBounded(MAX_JSON_BYTES)
-                            json = JSONObject(String(bytes, Charsets.UTF_8))
-                            bytes.size.toLong()
-                        }
-                        entry.name.startsWith(IMAGE_DIR_IN_ZIP) ->
-                            extractInto(zip, entry.name, IMAGE_DIR_IN_ZIP, File(tempDir, IMAGE_DIR_IN_FILES))
-                        entry.name.startsWith(RECEIPT_DIR_IN_ZIP) ->
-                            extractInto(zip, entry.name, RECEIPT_DIR_IN_ZIP, File(tempDir, RECEIPT_DIR_IN_FILES))
-                        else -> 0L
-                    }
-                    totalBytes += written
-                    if (totalBytes > MAX_TOTAL_BYTES) {
-                        throw IOException("Backup exceeds the $MAX_TOTAL_BYTES byte total decompression cap.")
-                    }
-                    zip.closeEntry()
-                }
-            }
+            BackupZip.scanToTemp(stream, tempDir)
+                ?.let { JSONObject(String(it, Charsets.UTF_8)) }
         }
-        return json
-    }
 
     private fun parsePayload(json: JSONObject): BackupPayload? {
         val schemaVersion = json.optInt("schemaVersion", -1)
@@ -590,6 +632,8 @@ class BackupIo @Inject constructor(
                     endDate = t.optLongOrNull("endDate"),
                     startOdometerKm = t.optDoubleOrNull("startOdometerKm"),
                     endOdometerKm = t.optDoubleOrNull("endOdometerKm"),
+                    startBatteryPct = t.optLongOrNull("startBatteryPct")?.toInt(),
+                    endBatteryPct = t.optLongOrNull("endBatteryPct")?.toInt(),
                     notes = t.optStringOrNull("notes"),
                     pinColor = t.optStringOrNull("pinColor"),
                     createdAt = t.optLong("createdAt", System.currentTimeMillis()),
@@ -654,55 +698,6 @@ class BackupIo @Inject constructor(
                 )
             },
         )
-    }
-
-    /** Extract one zip entry to [targetDir] under its basename, returning the
-     *  bytes written. Caps the per-entry size; throws if exceeded so the
-     *  outer transaction never sees a partial bomb. */
-    private fun extractInto(
-        zip: ZipInputStream,
-        entryName: String,
-        prefix: String,
-        targetDir: File,
-    ): Long {
-        targetDir.mkdirs()
-        val rel = entryName.removePrefix(prefix)
-        // Guard against zip-slip — keep only the basename.
-        val safeName = File(rel).name
-        if (safeName.isBlank()) return 0L
-        val out = File(targetDir, safeName)
-        // Two entries that reduce to the same basename (e.g. `vehicles/foo.jpg`
-        // and `vehicles/sub/foo.jpg`) would otherwise clobber each other on
-        // disk — and corrupt the first mid-write if the second errors out.
-        // The DB only ever references one file per basename, so keep the
-        // first and silently drop later duplicates.
-        if (out.exists()) return 0L
-        return out.outputStream().use { os -> zip.copyBoundedTo(os, MAX_ENTRY_BYTES) }
-    }
-
-    /** Copy [this] into [out] until EOF or [limit] bytes, whichever comes
-     *  first. Throws when [limit] is exceeded so a single zip-bomb entry
-     *  can't OOM the process or fill cacheDir. */
-    private fun InputStream.copyBoundedTo(out: OutputStream, limit: Long): Long {
-        val buf = ByteArray(8 * 1024)
-        var total = 0L
-        while (true) {
-            val n = read(buf)
-            if (n < 0) break
-            total += n
-            if (total > limit) {
-                throw IOException("Zip entry exceeds the $limit byte size cap.")
-            }
-            out.write(buf, 0, n)
-        }
-        return total
-    }
-
-    /** Read [this] fully into a ByteArray, but no more than [limit] bytes. */
-    private fun InputStream.readBytesBounded(limit: Long): ByteArray {
-        val buf = ByteArrayOutputStream()
-        copyBoundedTo(buf, limit)
-        return buf.toByteArray()
     }
 
     /** Copy each [name] from [tempSubdir] into filesDir/[targetSubdir]/.
@@ -786,6 +781,8 @@ private data class RawTrip(
     val endDate: Long?,
     val startOdometerKm: Double?,
     val endOdometerKm: Double?,
+    val startBatteryPct: Int?,
+    val endBatteryPct: Int?,
     val notes: String?,
     val pinColor: String?,
     val createdAt: Long,
@@ -890,3 +887,132 @@ private inline fun <T : Any> JSONArray.mapObjectsStrict(
             )
         }
     }
+
+/**
+ * Bounded reader for the restore side of the backup zip. Context-free so
+ * unit tests can drive it with in-memory zips.
+ *
+ * Every entry's inflated bytes are metered — including entries the restore
+ * doesn't extract. ZipInputStream.closeEntry() decompresses whatever is
+ * left of an entry to advance the stream, so an unmetered "skipped" entry
+ * would still be an unmetered zip bomb. Directory entries are counted and
+ * drained for the same reason: a hostile zip can attach data to a name
+ * ending in `/`.
+ */
+internal object BackupZip {
+
+    /**
+     * Scan [stream], extracting vehicle images and receipts into [tempDir],
+     * and return the raw bytes of `backup.json` (null when the zip has
+     * none). Throws [IOException] when any decompression cap is exceeded.
+     * The caps default to the production limits; tests pass small ones.
+     */
+    fun scanToTemp(
+        stream: InputStream,
+        tempDir: File,
+        maxJsonBytes: Long = MAX_JSON_BYTES,
+        maxEntryBytes: Long = MAX_ENTRY_BYTES,
+        maxTotalBytes: Long = MAX_TOTAL_BYTES,
+        maxEntries: Int = MAX_BACKUP_ENTRIES,
+    ): ByteArray? {
+        var json: ByteArray? = null
+        var totalBytes = 0L
+        var entryCount = 0
+        ZipInputStream(BufferedInputStream(stream)).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                if (++entryCount > maxEntries) {
+                    throw IOException("Backup contains too many entries (>$maxEntries).")
+                }
+                val written: Long = when {
+                    entry.isDirectory -> zip.drainBounded(maxEntryBytes)
+                    entry.name == BACKUP_JSON -> {
+                        val bytes = zip.readBytesBounded(maxJsonBytes)
+                        json = bytes
+                        bytes.size.toLong()
+                    }
+                    entry.name.startsWith(IMAGE_DIR_IN_ZIP) ->
+                        extractInto(
+                            zip, entry.name, IMAGE_DIR_IN_ZIP,
+                            File(tempDir, IMAGE_DIR_IN_FILES), maxEntryBytes,
+                        )
+                    entry.name.startsWith(RECEIPT_DIR_IN_ZIP) ->
+                        extractInto(
+                            zip, entry.name, RECEIPT_DIR_IN_ZIP,
+                            File(tempDir, RECEIPT_DIR_IN_FILES), maxEntryBytes,
+                        )
+                    // Unknown names are tolerated (forward compatibility)
+                    // but drained through the caps rather than left for
+                    // closeEntry() to inflate unmetered.
+                    else -> zip.drainBounded(maxEntryBytes)
+                }
+                totalBytes += written
+                if (totalBytes > maxTotalBytes) {
+                    throw IOException("Backup exceeds the $maxTotalBytes byte total decompression cap.")
+                }
+                zip.closeEntry()
+            }
+        }
+        return json
+    }
+
+    /** Extract one zip entry to [targetDir] under its basename, returning the
+     *  bytes written (or drained). Caps the per-entry size; throws if
+     *  exceeded so the outer transaction never sees a partial bomb. */
+    private fun extractInto(
+        zip: ZipInputStream,
+        entryName: String,
+        prefix: String,
+        targetDir: File,
+        maxEntryBytes: Long,
+    ): Long {
+        targetDir.mkdirs()
+        val rel = entryName.removePrefix(prefix)
+        // Guard against zip-slip — keep only the basename.
+        val safeName = File(rel).name
+        // Undeliverable entry (nothing after the prefix): dropped, but its
+        // bytes still inflate at closeEntry(), so drain them under the cap.
+        if (safeName.isBlank()) return zip.drainBounded(maxEntryBytes)
+        val out = File(targetDir, safeName)
+        // Two entries that reduce to the same basename (e.g. `vehicles/foo.jpg`
+        // and `vehicles/sub/foo.jpg`) would otherwise clobber each other on
+        // disk — and corrupt the first mid-write if the second errors out.
+        // The DB only ever references one file per basename, so keep the
+        // first and drop (but meter) later duplicates.
+        if (out.exists()) return zip.drainBounded(maxEntryBytes)
+        return out.outputStream().use { os -> zip.copyBoundedTo(os, maxEntryBytes) }
+    }
+
+    /** Copy [this] into [out] until EOF or [limit] bytes, whichever comes
+     *  first. Throws when [limit] is exceeded so a single zip-bomb entry
+     *  can't OOM the process or fill cacheDir. */
+    private fun InputStream.copyBoundedTo(out: OutputStream, limit: Long): Long {
+        val buf = ByteArray(8 * 1024)
+        var total = 0L
+        while (true) {
+            val n = read(buf)
+            if (n < 0) break
+            total += n
+            if (total > limit) {
+                throw IOException("Zip entry exceeds the $limit byte size cap.")
+            }
+            out.write(buf, 0, n)
+        }
+        return total
+    }
+
+    /** Read [this] fully into a ByteArray, but no more than [limit] bytes. */
+    private fun InputStream.readBytesBounded(limit: Long): ByteArray {
+        val buf = ByteArrayOutputStream()
+        copyBoundedTo(buf, limit)
+        return buf.toByteArray()
+    }
+
+    /** Read and discard [this] until EOF, enforcing [limit]. */
+    private fun InputStream.drainBounded(limit: Long): Long = copyBoundedTo(NULL_SINK, limit)
+
+    private val NULL_SINK = object : OutputStream() {
+        override fun write(b: Int) {}
+        override fun write(b: ByteArray, off: Int, len: Int) {}
+    }
+}

@@ -80,6 +80,7 @@ import com.google.maps.android.compose.TileOverlay
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.heatmaps.HeatmapTileProvider
 import com.google.maps.android.heatmaps.WeightedLatLng
+import kotlin.math.ln
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -295,7 +296,13 @@ fun MapScreen(
                 // heatmap mode AND there's at least one stop to weight —
                 // HeatmapTileProvider rejects empty data sets. Visit count
                 // drives intensity so frequently-used home / commute
-                // chargers burn brighter than one-off road-trip stops.
+                // chargers burn brighter than one-off road-trip stops —
+                // but log-compressed: the tile provider normalizes its
+                // color ramp to the hottest spot, so a raw 50-visit home
+                // stop pushes every 1-visit road-trip stop below the
+                // gradient's visible threshold and the map renders as a
+                // single blob. ln keeps home hottest while one-offs stay
+                // at ~20% intensity instead of ~2%.
                 if (state.heatmapEnabled && state.stops.isNotEmpty()) {
                     val tileProvider = remember(state.stops) {
                         HeatmapTileProvider.Builder()
@@ -303,7 +310,7 @@ fun MapScreen(
                                 state.stops.map {
                                     WeightedLatLng(
                                         LatLng(it.latitude, it.longitude),
-                                        it.visits.toDouble().coerceAtLeast(1.0),
+                                        1.0 + ln(it.visits.toDouble().coerceAtLeast(1.0)),
                                     )
                                 },
                             )

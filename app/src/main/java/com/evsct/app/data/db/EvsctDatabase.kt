@@ -12,7 +12,7 @@ import com.evsct.app.data.entity.Vehicle
 
 @Database(
     entities = [ChargingSession::class, SessionReceipt::class, Trip::class, Vehicle::class],
-    version = 11,
+    version = 12,
     // Schema JSONs land in app/schemas/ (see room.schemaLocation in
     // build.gradle.kts) and are committed, so future schema changes diff
     // visibly in review and MigrationTestHelper can verify the chain.
@@ -222,6 +222,17 @@ abstract class EvsctDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE `session_receipts` ADD COLUMN `originalFileName` TEXT"
                 )
+            }
+        }
+
+        /** Adds trip-level battery % at start and end. With the existing
+         *  start/end odometer these anchor the first and last efficiency
+         *  legs (home → first charge, last charge → home). Existing trips
+         *  stay null — no anchors, no behavior change. */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `startBatteryPct` INTEGER")
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `endBatteryPct` INTEGER")
             }
         }
     }

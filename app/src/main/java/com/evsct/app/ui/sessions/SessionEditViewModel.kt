@@ -195,9 +195,35 @@ class SessionEditViewModel @Inject constructor(
     /** Latched once a commit has succeeded and navigation-out was requested.
      *  commitInFlight alone isn't enough: the save coroutine can finish (and
      *  re-arm) before the exit transition does, letting a late tap start a
-     *  second commit on a screen that's already leaving. Never reset — a
-     *  failed commit doesn't set it, so retries still work. */
+     *  second commit on a screen that's already leaving. A failed commit
+     *  doesn't set it, so retries still work. Reset only by
+     *  [onScreenResumed] — the pop that onSaved/onDeleted requests goes
+     *  through ifResumed, which silently drops it mid-transition, and a
+     *  screen stuck visible with this latched would have permanently dead
+     *  Save/Delete buttons. */
     @Volatile private var exitRequested = false
+
+    /** Row id committed by a save on this screen. Normally irrelevant (the
+     *  screen pops right after), but when the pop is dropped and the user
+     *  saves again, a screen opened as "new" must update this row instead
+     *  of inserting a duplicate — and Delete must target it too. */
+    @Volatile private var committedSessionId: Long? = null
+
+    /** Coordinates picked on the map, waiting to propagate to sibling
+     *  sessions (same stop) — consumed by save(). Deferred on purpose:
+     *  the picker used to rewrite sibling rows the moment the pick came
+     *  back, so backing out of a mispick without saving still left every
+     *  other visit to that stop sitting on the abandoned point. */
+    @Volatile private var pendingPickPropagation: Pair<Double, Double>? = null
+
+    /** Called by the screen on every ON_RESUME of its nav entry. A screen
+     *  that actually popped never reaches RESUMED again, so resuming with
+     *  [exitRequested] still latched means the requested pop was dropped
+     *  (ifResumed swallows navigation while the entry is mid-transition).
+     *  Re-arm Save/Delete instead of leaving the visible screen inert. */
+    fun onScreenResumed() {
+        exitRequested = false
+    }
 
     /** The session's stored odometer in km at load time, plus the formatted
      *  display text we put into the form. Used by save() and the validation
@@ -468,6 +494,32 @@ class SessionEditViewModel @Inject constructor(
             )
         }
 
+        val battOutOfRange = mutableSetOf<HintField>()
+        if (battStart != null && battStart !in 0..100) battOutOfRange += HintField.BATTERY_START
+        if (battEnd != null && battEnd !in 0..100) battOutOfRange += HintField.BATTERY_END
+        if (battOutOfRange.isNotEmpty()) {
+            out += ValidationHint(
+                title = "Battery % out of range",
+                detail = "Battery percent should be between 0 and 100.",
+                fields = battOutOfRange,
+            )
+        }
+
+        val negative = mutableSetOf<HintField>()
+        if (odoEntered != null && odoEntered < 0) negative += HintField.ODOMETER
+        if (energy != null && energy < 0) negative += HintField.ENERGY
+        if (cost != null && cost < 0) negative += HintField.COST
+        if (postedPrice != null && postedPrice < 0) negative += HintField.POSTED_ENERGY_PRICE
+        if (postedTimeRate != null && postedTimeRate < 0) negative += HintField.POSTED_TIME_RATE
+        if (postedMaxKw != null && postedMaxKw < 0) negative += HintField.POSTED_MAX_POWER
+        if (negative.isNotEmpty()) {
+            out += ValidationHint(
+                title = "Negative value entered",
+                detail = "These fields don't normally go below zero. Check for a stray minus sign.",
+                fields = negative,
+            )
+        }
+
         return out
     }
 
@@ -634,7 +686,10 @@ class SessionEditViewModel @Inject constructor(
                         .coerceAtLeast(0L)) / 1000L
                 } else null
             val session = ChargingSession(
-                id = if (s.isNew) 0 else sessionId,
+                // committedSessionId wins: a prior save on this screen
+                // already inserted the row (its pop was dropped) and a
+                // retry must update it, not insert a duplicate.
+                id = committedSessionId ?: if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
                 durationSeconds = durationSeconds,
                 waitTimeMinutes = s.waitTimeText.toIntOrNull()?.takeIf { it >= 0 },
@@ -668,6 +723,32 @@ class SessionEditViewModel @Inject constructor(
                 createdAt = originalCreatedAt ?: System.currentTimeMillis(),
             )
             val savedId = sessionRepository.upsert(session)
+            committedSessionId = savedId
+
+            // Sibling propagation from the map picker, deferred until the
+            // pick is actually committed. Guards: the coords being saved
+            // must still be the picked ones (editing the address after the
+            // pick clears them via saveLat/saveLng), and the stop needs an
+            // address to identify it (propagationKey) — brand or city
+            // alone would stamp the point onto unrelated stops.
+            pendingPickPropagation?.let { (pickedLat, pickedLng) ->
+                if (session.latitude == pickedLat && session.longitude == pickedLng) {
+                    val key = propagationKey(
+                        brand = session.brand,
+                        address = session.locationAddress,
+                        city = session.locationCity,
+                    )
+                    if (key != null) {
+                        val siblings = allSessionsCache
+                            .filter { it.id != savedId && stopKey(it) == key }
+                            .map { it.id }
+                        if (siblings.isNotEmpty()) {
+                            sessionRepository.setCoordinates(siblings, pickedLat, pickedLng)
+                        }
+                    }
+                }
+                pendingPickPropagation = null
+            }
 
             // Diff the in-memory receipts against the DB and apply the delta.
             // Newly added rows (id == null) get inserted; rows that the user
@@ -788,18 +869,19 @@ class SessionEditViewModel @Inject constructor(
      *  changed by user" detection doesn't fire on this auto-fill and clear
      *  the freshly-picked coords.
      *
-     *  Also propagates the picked coords to every other session that shares
-     *  this session's stopKey (brand + address|station + city). Visits to
-     *  the same charger should agree on where it is — picking once should
-     *  fix the whole stop instead of forcing a per-session edit. The map
-     *  averages a stop's visits, so without this a single re-pick would be
-     *  diluted by older sessions' stale coords. */
+     *  The pick is also recorded for sibling propagation — visits to the
+     *  same charger should agree on where it is, and the map averages a
+     *  stop's visits, so a single re-pick would otherwise be diluted by
+     *  older sessions' stale coords. The actual write to those rows is
+     *  deferred to save() (see [pendingPickPropagation]); here we only
+     *  surface a heads-up so the wider effect isn't a surprise. */
     fun applyPickedLocation(lat: Double, lng: Double) {
         // Commit the picked coordinates synchronously. The reverse-geocode
         // below is a network call that can take seconds — a Save tapped
         // before it returns must snapshot the picked coords, not the
         // pre-pick state (which would silently discard the pick).
         _state.update { it.copy(latitude = lat, longitude = lng) }
+        pendingPickPropagation = lat to lng
         viewModelScope.launch {
             val located = locationAutofill.reverseGeocodeAt(lat, lng)
             _state.update {
@@ -817,27 +899,33 @@ class SessionEditViewModel @Inject constructor(
                 province = s.province.takeIf { it.isNotBlank() },
             )
 
-            val key = stopKey(
-                brand = s.brand,
+            val key = propagationKey(
+                brand = s.brand.takeIf { it.isNotBlank() },
                 address = s.address.takeIf { it.isNotBlank() },
                 city = s.city.takeIf { it.isNotBlank() },
             )
-            if (key.isNotBlank()) {
-                val siblings = allSessionsCache
-                    .filter { it.id != sessionId && stopKey(it) == key }
-                    .map { it.id }
-                if (siblings.isNotEmpty()) {
-                    sessionRepository.setCoordinates(siblings, lat, lng)
-                    val n = siblings.size
+            if (key != null) {
+                val n = allSessionsCache.count { it.id != sessionId && stopKey(it) == key }
+                if (n > 0) {
                     _state.update {
                         it.copy(
-                            transientMessage = "Updated $n other session" +
-                                (if (n == 1) "" else "s") + " at this stop.",
+                            transientMessage = "$n other session" +
+                                (if (n == 1) "" else "s") +
+                                " at this stop will move here when you save.",
                         )
                     }
                 }
             }
         }
+    }
+
+    /** Sibling-propagation key: like [stopKey], but null unless the stop
+     *  has an address. Brand or city alone spans many physical locations —
+     *  propagating a pick across every address-less "FLO" session in the
+     *  log would collapse distinct stops onto one point. */
+    private fun propagationKey(brand: String?, address: String?, city: String?): String? {
+        if (address.isNullOrBlank()) return null
+        return stopKey(brand = brand, address = address, city = city)
     }
 
     fun clearTransientMessage() = _state.update { it.copy(transientMessage = null) }
@@ -846,13 +934,17 @@ class SessionEditViewModel @Inject constructor(
         if (commitInFlight || exitRequested) return
         commitInFlight = true
         viewModelScope.launch {
-            if (sessionId > 0) {
-                sessionRepository.findById(sessionId)?.let {
+            // A save on this screen may already have committed a row even
+            // when the entry opened as "new" (dropped-pop recovery) —
+            // Delete must target that row, not just the nav-arg id.
+            val targetId = committedSessionId ?: sessionId
+            if (targetId > 0) {
+                sessionRepository.findById(targetId)?.let {
                     sessionRepository.delete(it)
                 }
                 // The session no longer exists; the in-progress notification
                 // for it would tap into a deleted row, so always clear it.
-                inProgressChargeNotifier.cancelIfFor(sessionId)
+                inProgressChargeNotifier.cancelIfFor(targetId)
             }
             // No row left, so drop every file we touched (originals plus
             // speculative copies). FK CASCADE has already removed the

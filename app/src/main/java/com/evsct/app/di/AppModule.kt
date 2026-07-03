@@ -49,6 +49,7 @@ object AppModule {
                 EvsctDatabase.MIGRATION_8_9,
                 EvsctDatabase.MIGRATION_9_10,
                 EvsctDatabase.MIGRATION_10_11,
+                EvsctDatabase.MIGRATION_11_12,
             )
             // No destructive-migration fallback, deliberately. The migration
             // chain above is complete, so the only ways to hit a missing

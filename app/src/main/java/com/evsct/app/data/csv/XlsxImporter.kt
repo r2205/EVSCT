@@ -12,7 +12,6 @@ import java.util.Calendar
 import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.apache.poi.openxml4j.util.ZipSecureFile
@@ -105,10 +104,8 @@ class XlsxImporter @Inject constructor(
         val postedKwh = row.getCell(7)?.numericOrNull()
         val postedTimeRate = row.getCell(9)?.numericOrNull()
         val postedMaxKw = row.getCell(12)?.numericOrNull()
-        // Excel stores % cells as a 0–1 fraction; round to the nearest whole
-        // percent rather than truncating so 0.856 reads back as 86, not 85.
-        val battStart = row.getCell(13)?.numericOrNull()?.let { (it * 100).roundToInt() }
-        val battEnd = row.getCell(14)?.numericOrNull()?.let { (it * 100).roundToInt() }
+        val battStart = row.getCell(13)?.percentOrNull()
+        val battEnd = row.getCell(14)?.percentOrNull()
         val brand = row.getCell(15)?.toStringSafe()?.trim()?.takeIf { it.isNotEmpty() }
         val cityProv = row.getCell(16)?.toStringSafe()?.trim()
         val (city, prov) = splitCityProv(cityProv)
@@ -120,28 +117,50 @@ class XlsxImporter @Inject constructor(
         val type = inferType(postedMaxKw, energy, durationSeconds)
 
         return ParsedRow.Session(
-            ChargingSession(
-                sessionStart = sessionStart,
-                durationSeconds = durationSeconds,
-                odometerKm = mileage,
-                energyKwh = energy,
-                totalCost = cost,
-                currency = "CAD",
-                postedEnergyPricePerKwh = postedKwh,
-                postedTimeRatePerMin = postedTimeRate,
-                postedMaxPowerKw = postedMaxKw,
-                batteryStartPct = battStart,
-                batteryEndPct = battEnd,
-                chargingType = type,
-                pricingModel = pricing,
-                brand = brand,
-                locationCity = city,
-                locationProvince = prov,
-                locationAddress = address,
-                stationName = station,
-                notes = notes,
+            // Same boundary gate as the CSV path: legacy sheets are
+            // hand-maintained, and impossible values (battery > 100%,
+            // negative energy) would silently poison downstream math.
+            ImportSanitizer.sanitize(
+                ChargingSession(
+                    sessionStart = sessionStart,
+                    durationSeconds = durationSeconds,
+                    odometerKm = mileage,
+                    energyKwh = energy,
+                    totalCost = cost,
+                    currency = "CAD",
+                    postedEnergyPricePerKwh = postedKwh,
+                    postedTimeRatePerMin = postedTimeRate,
+                    postedMaxPowerKw = postedMaxKw,
+                    batteryStartPct = battStart,
+                    batteryEndPct = battEnd,
+                    chargingType = type,
+                    pricingModel = pricing,
+                    brand = brand,
+                    locationCity = city,
+                    locationProvince = prov,
+                    locationAddress = address,
+                    stationName = station,
+                    notes = notes,
+                )
             )
         )
+    }
+
+    /**
+     * Battery cells in the legacy sheet are %-formatted (85% stored as
+     * 0.85), but sheets from other tools often hold a plain 85 in an
+     * unformatted cell. Use the cell's number format to pick the scale;
+     * [ImportSanitizer.cellToPercent] holds the fallback heuristic for
+     * unformatted cells and the 0–100 range gate.
+     */
+    private fun Cell.percentOrNull(): Int? {
+        val raw = numericOrNull() ?: return null
+        val isPercentFormatted = try {
+            cellStyle?.dataFormatString?.contains('%') == true
+        } catch (_: Exception) {
+            false
+        }
+        return ImportSanitizer.cellToPercent(raw, isPercentFormatted)
     }
 
     private fun Cell.numericOrNull(): Double? {
@@ -185,19 +204,18 @@ class XlsxImporter @Inject constructor(
             set(Calendar.MILLISECOND, 0)
         }
         if (timeCell != null && timeCell.cellType == CellType.NUMERIC) {
-            val frac = timeCell.numericCellValue
-            val totalSeconds = (frac * 24 * 3600).toLong()
-            cal.add(Calendar.SECOND, totalSeconds.toInt())
+            ImportSanitizer.cellToTimeOfDaySeconds(timeCell.numericCellValue)?.let {
+                cal.add(Calendar.SECOND, it)
+            }
         }
         return cal.timeInMillis
     }
 
-    /** Excel duration cells store fraction-of-a-day. */
+    /** Excel duration cells store fraction-of-a-day; range rules live in
+     *  [ImportSanitizer.cellToDurationSeconds]. */
     private fun durationToSeconds(cell: Cell?): Long? {
         if (cell == null || cell.cellType != CellType.NUMERIC) return null
-        val frac = cell.numericCellValue
-        if (frac.isNaN()) return null
-        return (frac * 24 * 3600).toLong()
+        return ImportSanitizer.cellToDurationSeconds(cell.numericCellValue)
     }
 
     private fun splitCityProv(text: String?): Pair<String?, String?> {

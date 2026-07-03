@@ -14,6 +14,8 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.OdometerDistance
+import com.evsct.app.util.StopKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -354,7 +356,7 @@ class YearRecapViewModel @Inject constructor(
 
         val totalCost = costSessions.sumOf { it.totalCost ?: 0.0 }
         val totalKwh = inYear.sumOf { it.energyKwh ?: 0.0 }
-        val odoDistance = odometerDistanceForRange(sessions, yearStart, yearEnd)
+        val odoDistance = OdometerDistance.inWindow(sessions, yearStart, yearEnd)
         val totalDistance = if (odoDistance > 1.0) odoDistance else totalKwh * FALLBACK_KM_PER_KWH
 
         val topBrands = costSessions
@@ -414,7 +416,10 @@ class YearRecapViewModel @Inject constructor(
         if (located.isEmpty()) return RecapMap(emptyList(), emptyList(), emptyList())
 
         val tripById = trips.associateBy { it.trip.id }
-        val groups = located.groupBy(::recapStopKey).filterKeys { it.isNotBlank() }
+        // Every session here has coordinates, so StopKey never blank-keys:
+        // sessions without brand/address/city fall back to a geo bucket
+        // instead of silently vanishing from the recap map.
+        val groups = located.groupBy(StopKey::of).filterKeys { it.isNotBlank() }
 
         // Track which trip buckets actually appear on the map so the legend
         // lists only relevant entries.
@@ -463,13 +468,6 @@ class YearRecapViewModel @Inject constructor(
         return RecapMap(stops, paths, legend)
     }
 
-    /** Mirrors MapViewModel.stopKey: brand + address + city, lowercased. */
-    private fun recapStopKey(s: ChargingSession): String = listOfNotNull(
-        s.brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-        s.locationAddress?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-        s.locationCity?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-    ).joinToString("|")
-
     private fun monthlySeries(
         sessions: List<ChargingSession>,
         year: Int,
@@ -484,32 +482,6 @@ class YearRecapViewModel @Inject constructor(
             totals[cal.get(Calendar.MONTH)] += valueOf(s)
         }
         return labels.mapIndexed { i, label -> label to totals[i] }
-    }
-
-    /** Per-vehicle sum of odometer deltas where the *end* session lies in
-     *  [yearStart, yearEnd). Walks the whole session list so the boundary
-     *  delta from the year before counts. */
-    private fun odometerDistanceForRange(
-        sessions: List<ChargingSession>,
-        yearStart: Long,
-        yearEnd: Long,
-    ): Double {
-        var total = 0.0
-        sessions.groupBy { it.vehicleId }
-            .values
-            .map { group -> group.sortedBy { it.sessionStart } }
-            .forEach { sorted ->
-                for (i in 1 until sorted.size) {
-                    val prev = sorted[i - 1]
-                    val curr = sorted[i]
-                    if (curr.sessionStart < yearStart || curr.sessionStart >= yearEnd) continue
-                    val prevOdo = prev.odometerKm ?: continue
-                    val currOdo = curr.odometerKm ?: continue
-                    val delta = currOdo - prevOdo
-                    if (delta > 0) total += delta
-                }
-            }
-        return total
     }
 
     private fun longestTripIn(
