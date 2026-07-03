@@ -204,19 +204,18 @@ class XlsxImporter @Inject constructor(
             set(Calendar.MILLISECOND, 0)
         }
         if (timeCell != null && timeCell.cellType == CellType.NUMERIC) {
-            val frac = timeCell.numericCellValue
-            val totalSeconds = (frac * 24 * 3600).toLong()
-            cal.add(Calendar.SECOND, totalSeconds.toInt())
+            ImportSanitizer.cellToTimeOfDaySeconds(timeCell.numericCellValue)?.let {
+                cal.add(Calendar.SECOND, it)
+            }
         }
         return cal.timeInMillis
     }
 
-    /** Excel duration cells store fraction-of-a-day. */
+    /** Excel duration cells store fraction-of-a-day; range rules live in
+     *  [ImportSanitizer.cellToDurationSeconds]. */
     private fun durationToSeconds(cell: Cell?): Long? {
         if (cell == null || cell.cellType != CellType.NUMERIC) return null
-        val frac = cell.numericCellValue
-        if (frac.isNaN()) return null
-        return (frac * 24 * 3600).toLong()
+        return ImportSanitizer.cellToDurationSeconds(cell.numericCellValue)
     }
 
     private fun splitCityProv(text: String?): Pair<String?, String?> {

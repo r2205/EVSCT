@@ -140,6 +140,53 @@ class ImportSanitizerTest {
         assertNull(ImportSanitizer.cellToPercent(Double.NaN, isPercentFormatted = false))
     }
 
+    // --- cellToTimeOfDaySeconds (XLSX time cells) ---
+
+    @Test
+    fun `plain time fraction converts to seconds since midnight`() {
+        assertEquals(12 * 3600, ImportSanitizer.cellToTimeOfDaySeconds(0.5))
+        assertEquals(0, ImportSanitizer.cellToTimeOfDaySeconds(0.0))
+        // 23:59:59
+        assertEquals(86_399, ImportSanitizer.cellToTimeOfDaySeconds(0.99999))
+    }
+
+    @Test
+    fun `full datetime serial in a time cell keeps its time of day`() {
+        // 45123.5 = some date at noon. The old code multiplied the whole
+        // serial by 86400 and overflowed Int, shifting sessions decades
+        // backward; the fractional part is the intended time.
+        assertEquals(12 * 3600, ImportSanitizer.cellToTimeOfDaySeconds(45_123.5))
+    }
+
+    @Test
+    fun `negative or non-finite time cells are rejected`() {
+        assertNull(ImportSanitizer.cellToTimeOfDaySeconds(-0.25))
+        assertNull(ImportSanitizer.cellToTimeOfDaySeconds(Double.NaN))
+        assertNull(ImportSanitizer.cellToTimeOfDaySeconds(Double.POSITIVE_INFINITY))
+    }
+
+    // --- cellToDurationSeconds (XLSX duration cells) ---
+
+    @Test
+    fun `duration fraction converts to seconds`() {
+        // 45 minutes = 0.03125 of a day.
+        assertEquals(2_700L, ImportSanitizer.cellToDurationSeconds(0.03125))
+        assertEquals(0L, ImportSanitizer.cellToDurationSeconds(0.0))
+    }
+
+    @Test
+    fun `durations of a day or more are rejected`() {
+        // A full datetime serial here would read as ~45,000 days.
+        assertNull(ImportSanitizer.cellToDurationSeconds(1.0))
+        assertNull(ImportSanitizer.cellToDurationSeconds(45_123.5))
+    }
+
+    @Test
+    fun `negative or non-finite durations are rejected`() {
+        assertNull(ImportSanitizer.cellToDurationSeconds(-0.1))
+        assertNull(ImportSanitizer.cellToDurationSeconds(Double.NaN))
+    }
+
     // --- CSV import path applies the gate end-to-end ---
 
     @Test

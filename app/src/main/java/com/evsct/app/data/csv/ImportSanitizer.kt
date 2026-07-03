@@ -53,4 +53,29 @@ object ImportSanitizer {
         if (pct < 0) return null
         return pct.roundToInt().takeIf { it <= 100 }
     }
+
+    /**
+     * Interpret a numeric spreadsheet cell as a time of day: seconds since
+     * midnight. Excel stores time as a 0–1 fraction of a day, but a cell
+     * accidentally holding a full datetime serial (45123.5 instead of 0.5)
+     * still carries the time in its fractional part — and multiplying the
+     * whole serial by 86 400 used to overflow Int and shift the imported
+     * session backward by decades. Negatives and non-finite values return
+     * null (caller keeps midnight).
+     */
+    fun cellToTimeOfDaySeconds(raw: Double): Int? {
+        if (!raw.isFinite() || raw < 0) return null
+        return ((raw % 1.0) * 24 * 3600).toInt()
+    }
+
+    /**
+     * Interpret a numeric duration cell (fraction of a day) as seconds.
+     * Negatives, non-finite values, and a day or more are malformed — no
+     * real charging session runs 24 h, and a full datetime serial here
+     * would otherwise import as a ~45,000-day duration.
+     */
+    fun cellToDurationSeconds(raw: Double): Long? {
+        if (!raw.isFinite() || raw < 0 || raw >= 1.0) return null
+        return (raw * 24 * 3600).toLong()
+    }
 }
