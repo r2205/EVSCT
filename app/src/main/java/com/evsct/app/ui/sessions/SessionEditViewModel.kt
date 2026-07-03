@@ -11,6 +11,7 @@ import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.prefs.AppPreferences
+import com.evsct.app.data.prefs.CardTimeRate
 import com.evsct.app.data.prefs.UserUnits
 import com.evsct.app.data.entity.SessionReceipt
 import com.evsct.app.data.repository.SessionReceiptRepository
@@ -45,6 +46,15 @@ enum class HintField {
     ODOMETER, ENERGY, COST, DURATION,
     POSTED_ENERGY_PRICE, POSTED_TIME_RATE, POSTED_MAX_POWER,
     BATTERY_START, BATTERY_END,
+}
+
+/** Entry unit for the posted time-based rate field. Stations advertise in
+ *  either; storage stays canonical $/min ([ChargingSession.postedTimeRatePerMin])
+ *  so every downstream consumer (hints, CSV, XLSX, backup) is unaffected —
+ *  the unit only governs how the typed text is interpreted and echoed. */
+enum class TimeRateUnit(val suffix: String) {
+    PER_MINUTE("min"),
+    PER_HOUR("hr"),
 }
 
 data class ValidationHint(
@@ -110,6 +120,11 @@ data class SessionEditUi(
     val useMiles: Boolean = false,
     val postedEnergyPriceText: String = "",
     val postedTimeRateText: String = "",
+    /** How [postedTimeRateText] is being entered. Existing sessions with a
+     *  stored rate always open in $/min (that's what the echoed canonical
+     *  value is); otherwise seeded from the card-display preference.
+     *  Flipping the toggle converts the current text in place. */
+    val postedTimeRateUnit: TimeRateUnit = TimeRateUnit.PER_MINUTE,
     val postedMaxPowerText: String = "",
     val batteryStartText: String = "",
     val batteryEndText: String = "",
@@ -307,7 +322,14 @@ class SessionEditViewModel @Inject constructor(
             if (sessionId > 0) {
                 val s = sessionRepository.findById(sessionId)
                 if (s != null) loadFrom(s, units)
-                else _state.update { it.copy(isLoading = false, isNew = true, useMiles = units.useMiles) }
+                else _state.update {
+                    it.copy(
+                        isLoading = false,
+                        isNew = true,
+                        useMiles = units.useMiles,
+                        postedTimeRateUnit = defaultTimeRateUnit(units),
+                    )
+                }
             } else {
                 val initialVehicleId = preselectVehicleId
                     ?: vehicleRepository.findDefault()?.id
@@ -318,11 +340,40 @@ class SessionEditViewModel @Inject constructor(
                         vehicleId = initialVehicleId,
                         currency = units.defaultCurrency,
                         useMiles = units.useMiles,
+                        postedTimeRateUnit = defaultTimeRateUnit(units),
                     )
                 }
             }
         }
     }
+
+    /** Entry unit to preselect when there's no stored rate to echo: users
+     *  who chose $/hr for the card display think in $/hr at the pump too.
+     *  OFF and PER_MINUTE both fall back to $/min (today's behavior). */
+    private fun defaultTimeRateUnit(units: UserUnits): TimeRateUnit =
+        if (units.cardTimeRate == CardTimeRate.PER_HOUR) TimeRateUnit.PER_HOUR
+        else TimeRateUnit.PER_MINUTE
+
+    /** Flip the posted-rate entry unit, converting the current text in
+     *  place so the physical value is preserved — entering 27 in $/hr and
+     *  flipping to $/min shows 0.45, not a relabeled 27. */
+    fun setPostedTimeRateUnit(unit: TimeRateUnit) {
+        _state.update { s ->
+            if (s.postedTimeRateUnit == unit) return@update s
+            val converted = Format.parseDecimal(s.postedTimeRateText)?.let { typed ->
+                val perMin = if (s.postedTimeRateUnit == TimeRateUnit.PER_HOUR) typed / 60.0 else typed
+                val inNewUnit = if (unit == TimeRateUnit.PER_HOUR) perMin * 60.0 else perMin
+                formatTimeRateText(inNewUnit)
+            } ?: s.postedTimeRateText
+            withHints(s.copy(postedTimeRateUnit = unit, postedTimeRateText = converted))
+        }
+    }
+
+    /** Up to 4 decimals, trailing zeros trimmed — enough precision for a
+     *  $/min value without echoing binary-noise tails. Locale pinned like
+     *  the Format helpers. */
+    private fun formatTimeRateText(value: Double): String =
+        "%.4f".format(Locale.US, value).trimEnd('0').trimEnd('.')
 
     /** Refresh the in-progress notification with the current brand/city so
      *  the shade entry stays in sync as the user fills in the form. No-op
@@ -397,6 +448,11 @@ class SessionEditViewModel @Inject constructor(
                 currency = s.currency,
                 postedEnergyPriceText = s.postedEnergyPricePerKwh?.toString().orEmpty(),
                 postedTimeRateText = s.postedTimeRatePerMin?.toString().orEmpty(),
+                // A stored rate is echoed in its canonical $/min form, so
+                // the unit toggle must say $/min regardless of preference —
+                // the user can flip it and the text converts.
+                postedTimeRateUnit = if (s.postedTimeRatePerMin != null) TimeRateUnit.PER_MINUTE
+                else defaultTimeRateUnit(units),
                 postedMaxPowerText = s.postedMaxPowerKw?.toString().orEmpty(),
                 batteryStartText = s.batteryStartPct?.toString().orEmpty(),
                 batteryEndText = s.batteryEndPct?.toString().orEmpty(),
@@ -478,13 +534,21 @@ class SessionEditViewModel @Inject constructor(
 
         val effPerMin = if (cost != null && durationSec != null && durationSec > 0)
             cost / (durationSec / 60.0) else null
-        val postedTimeRate = Format.parseDecimal(form.postedTimeRateText)
-        if (effPerMin != null && postedTimeRate != null && postedTimeRate > 0) {
-            val deviation = kotlin.math.abs(effPerMin - postedTimeRate) / postedTimeRate
+        // The typed text is in the toggle's unit; compare canonically in
+        // $/min but echo both numbers back in the unit the user is typing.
+        val postedTimeRateTyped = Format.parseDecimal(form.postedTimeRateText)
+        val postedTimeRatePerMin = postedTimeRateTyped?.let {
+            if (form.postedTimeRateUnit == TimeRateUnit.PER_HOUR) it / 60.0 else it
+        }
+        if (effPerMin != null && postedTimeRatePerMin != null && postedTimeRatePerMin > 0) {
+            val deviation = kotlin.math.abs(effPerMin - postedTimeRatePerMin) / postedTimeRatePerMin
             if (deviation > 0.25) {
+                val unit = form.postedTimeRateUnit.suffix
+                val effInUnit = if (form.postedTimeRateUnit == TimeRateUnit.PER_HOUR) effPerMin * 60.0 else effPerMin
                 out += ValidationHint(
-                    title = "Effective $/min differs from posted",
-                    detail = "Posted ${"%.3f".format(postedTimeRate)} · Effective ${"%.3f".format(effPerMin)}. Check duration or cost.",
+                    title = "Effective $/$unit differs from posted",
+                    detail = "Posted ${"%.3f".format(Locale.US, postedTimeRateTyped)} · " +
+                        "Effective ${"%.3f".format(Locale.US, effInUnit)}. Check duration or cost.",
                     fields = setOf(HintField.COST, HintField.DURATION, HintField.POSTED_TIME_RATE),
                 )
             }
@@ -527,7 +591,7 @@ class SessionEditViewModel @Inject constructor(
         if (energy != null && energy < 0) negative += HintField.ENERGY
         if (cost != null && cost < 0) negative += HintField.COST
         if (postedPrice != null && postedPrice < 0) negative += HintField.POSTED_ENERGY_PRICE
-        if (postedTimeRate != null && postedTimeRate < 0) negative += HintField.POSTED_TIME_RATE
+        if (postedTimeRateTyped != null && postedTimeRateTyped < 0) negative += HintField.POSTED_TIME_RATE
         if (postedMaxKw != null && postedMaxKw < 0) negative += HintField.POSTED_MAX_POWER
         if (negative.isNotEmpty()) {
             out += ValidationHint(
@@ -715,7 +779,11 @@ class SessionEditViewModel @Inject constructor(
                 totalCost = Format.parseDecimal(s.costText),
                 currency = s.currency.ifBlank { "CAD" },
                 postedEnergyPricePerKwh = Format.parseDecimal(s.postedEnergyPriceText),
-                postedTimeRatePerMin = Format.parseDecimal(s.postedTimeRateText),
+                // Storage is canonical $/min; a $/hr entry converts here so
+                // nothing downstream (hints, CSV, XLSX, backup) changes.
+                postedTimeRatePerMin = Format.parseDecimal(s.postedTimeRateText)?.let {
+                    if (s.postedTimeRateUnit == TimeRateUnit.PER_HOUR) it / 60.0 else it
+                },
                 postedMaxPowerKw = Format.parseDecimal(s.postedMaxPowerText),
                 batteryStartPct = s.batteryStartText.toIntOrNull(),
                 batteryEndPct = s.batteryEndText.toIntOrNull(),
