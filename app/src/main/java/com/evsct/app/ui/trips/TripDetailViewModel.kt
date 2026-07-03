@@ -15,6 +15,7 @@ import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.EfficiencyAnalysis
 import com.evsct.app.util.ExcludedPair
+import com.evsct.app.util.TripAnchor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,7 +75,7 @@ class TripDetailViewModel @Inject constructor(
                     totalDistanceKm = TripRepository.computeTripDistance(it, sessions),
                 )
             }
-            val analysis = analyzeLegs(sessions, allSessions, vehicles)
+            val analysis = analyzeLegs(trip, sessions, allSessions, vehicles)
             val totalChargeSeconds = sessions.sumOf { it.durationSeconds ?: 0L }
             val sessionsWithoutDuration = sessions.count { it.durationSeconds == null }
             TripDetailUi(
@@ -101,19 +102,51 @@ class TripDetailViewModel @Inject constructor(
      *  drove it (totals over totals, not a mean of means). Each group also
      *  gets the vehicle's complete session history so pairs with an
      *  out-of-trip charge in between are excluded instead of silently
-     *  producing a distorted leg. */
+     *  producing a distorted leg.
+     *
+     *  The trip's start/end battery+odometer readings anchor the first and
+     *  last legs — but only when the trip is single-vehicle: "the trip
+     *  started at 100%" is ambiguous across two cars. */
     private fun analyzeLegs(
+        trip: Trip?,
         sessions: List<ChargingSession>,
         allSessions: List<ChargingSession>,
         vehicles: List<Vehicle>,
     ): TripAnalysis {
         val byVehicle = sessions.groupBy { it.vehicleId }
+        val startAnchor = trip
+            ?.let { TripAnchor(it.startOdometerKm, it.startBatteryPct, it.startDate) }
+            ?.takeIf { it.hasData }
+        val endAnchor = trip
+            ?.let { TripAnchor(it.endOdometerKm, it.endBatteryPct, it.endDate) }
+            ?.takeIf { it.hasData }
+
         val allLegs = mutableListOf<DrivingLeg>()
         val allExcluded = mutableListOf<ExcludedPair>()
         for ((vehicleId, group) in byVehicle) {
             val v = vehicles.firstOrNull { it.id == vehicleId }
             val vehicleTimeline = allSessions.filter { it.vehicleId == vehicleId }
-            val report = EfficiencyAnalysis.analyze(group, v, vehicleTimeline)
+            val report = EfficiencyAnalysis.analyze(
+                group, v, vehicleTimeline,
+                tripStart = startAnchor.takeIf { byVehicle.size == 1 },
+                tripEnd = endAnchor.takeIf { byVehicle.size == 1 },
+            )
+            allLegs += report.legs
+            allExcluded += report.excluded
+        }
+        // A trip with boundary readings but no sessions yet: still one
+        // whole-trip leg, when the garage has exactly one car to pin the
+        // battery capacity on.
+        if (byVehicle.isEmpty() && (startAnchor != null || endAnchor != null) &&
+            vehicles.size == 1
+        ) {
+            val only = vehicles.single()
+            val report = EfficiencyAnalysis.analyze(
+                emptyList(), only,
+                allSessions.filter { it.vehicleId == only.id },
+                tripStart = startAnchor,
+                tripEnd = endAnchor,
+            )
             allLegs += report.legs
             allExcluded += report.excluded
         }

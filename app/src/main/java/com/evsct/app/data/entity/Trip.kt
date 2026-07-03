@@ -17,6 +17,17 @@ data class Trip(
      */
     val startOdometerKm: Double? = null,
     val endOdometerKm: Double? = null,
+    /**
+     * Optional battery % when the trip began (e.g. 100 after a full home
+     * charge) and when it ended. Together with the start/end odometer these
+     * anchor the trip's first and last efficiency legs — the drive to the
+     * first charging stop and the drive home from the last one, which no
+     * session pair can measure. Only used when every session in the trip
+     * belongs to one vehicle (a trip-level battery % is ambiguous across
+     * two cars).
+     */
+    val startBatteryPct: Int? = null,
+    val endBatteryPct: Int? = null,
     val notes: String? = null,
     /** Palette key used to color this trip's pins on the map. Null = unset
      *  (auto-assigned on insert by [com.evsct.app.data.repository.TripRepository]). */

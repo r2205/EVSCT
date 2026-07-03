@@ -41,6 +41,7 @@ import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.util.DrivingLeg
+import com.evsct.app.util.EfficiencyAnalysis
 import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.Format
 import com.evsct.app.util.Units
@@ -297,10 +298,14 @@ private fun LegRow(leg: DrivingLeg, useMiles: Boolean) {
     }
 }
 
-private fun legLabel(s: ChargingSession): String =
-    s.locationCity?.takeIf { it.isNotBlank() }
+private fun legLabel(s: ChargingSession): String = when (s.id) {
+    // Virtual endpoints carrying the trip-level battery/odometer readings.
+    EfficiencyAnalysis.TRIP_START_ANCHOR_ID -> "Trip start"
+    EfficiencyAnalysis.TRIP_END_ANCHOR_ID -> "Trip end"
+    else -> s.locationCity?.takeIf { it.isNotBlank() }
         ?: s.brand?.takeIf { it.isNotBlank() }
         ?: Format.date(s.sessionStart)
+}
 
 private fun formatKmPerKwh(value: Double, useMiles: Boolean): String {
     val display = Units.kmToDisplay(value, useMiles)

@@ -231,6 +231,121 @@ class EfficiencyAnalysisTest {
         assertEquals(2L, report.legs.first().to.id)
     }
 
+    // --- trip boundary anchors ---
+
+    @Test
+    fun `start anchor measures the drive to the first charging stop`() {
+        // Left home at 100%, odo 1000; first charge starts at 30%, odo 1280.
+        // 280 km on 70 kWh → 4.0 km/kWh.
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battStart = 30, tripId = 7)),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 100, atMillis = 50),
+        )
+        assertEquals(1, report.legs.size)
+        val leg = report.legs.first()
+        assertEquals(EfficiencyAnalysis.TRIP_START_ANCHOR_ID, leg.from.id)
+        assertEquals(280.0, leg.distanceKm)
+        assertEquals(70.0, leg.energyUsedKwh)
+        assertEquals(4.0, leg.kmPerKwh, 0.0001)
+    }
+
+    @Test
+    fun `end anchor measures the drive home from the last stop`() {
+        // Last charge ended at 80%, odo 1280; arrived home at 40%, odo 1480.
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battEnd = 80, tripId = 7)),
+            vehicle = vehicle,
+            tripEnd = TripAnchor(odometerKm = 1480.0, batteryPct = 40, atMillis = 200),
+        )
+        assertEquals(1, report.legs.size)
+        val leg = report.legs.first()
+        assertEquals(EfficiencyAnalysis.TRIP_END_ANCHOR_ID, leg.to.id)
+        assertEquals(200.0, leg.distanceKm)
+        assertEquals(40.0, leg.energyUsedKwh)
+    }
+
+    @Test
+    fun `both anchors plus a mid-trip stop produce all the legs`() {
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(
+                session(id = 1, t = 100, odo = 1280.0, battStart = 30, battEnd = 80, tripId = 7),
+            ),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 100, atMillis = 50),
+            tripEnd = TripAnchor(odometerKm = 1480.0, batteryPct = 40, atMillis = 200),
+        )
+        assertEquals(2, report.legs.size)
+        assertTrue(report.excluded.isEmpty())
+    }
+
+    @Test
+    fun `anchor missing its odometer reading is excluded with a reason`() {
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battStart = 30, tripId = 7)),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = null, batteryPct = 100, atMillis = null),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertEquals(1, report.excluded.size)
+        assertEquals(EfficiencyAnalysis.TRIP_START_ANCHOR_ID, report.excluded.first().from.id)
+    }
+
+    @Test
+    fun `anchor with no data at all is ignored`() {
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battStart = 30, tripId = 7)),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = null, batteryPct = null, atMillis = 50),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertTrue(report.excluded.isEmpty())
+    }
+
+    @Test
+    fun `charge between trip start and first session excludes the anchor leg`() {
+        // Home top-up at t=75 that isn't part of the trip: the 100%-at-start
+        // attestation no longer covers the gap.
+        val tripSession = session(id = 1, t = 100, odo = 1280.0, battStart = 30, tripId = 7)
+        val homeTopUp = session(id = 2, t = 75)
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(tripSession),
+            vehicle = vehicle,
+            allSessions = listOf(tripSession, homeTopUp),
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 100, atMillis = 50),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertEquals(1, report.excluded.size)
+    }
+
+    @Test
+    fun `zero-session trip with both anchors is a single whole-trip leg`() {
+        val report = EfficiencyAnalysis.analyze(
+            sessions = emptyList(),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 90, atMillis = 50),
+            tripEnd = TripAnchor(odometerKm = 1200.0, batteryPct = 40, atMillis = 200),
+        )
+        assertEquals(1, report.legs.size)
+        val leg = report.legs.first()
+        assertEquals(200.0, leg.distanceKm)
+        assertEquals(50.0, leg.energyUsedKwh)
+    }
+
+    @Test
+    fun `zero-session trip with a charge inside its dates is excluded`() {
+        val strayCharge = session(id = 9, t = 120)
+        val report = EfficiencyAnalysis.analyze(
+            sessions = emptyList(),
+            vehicle = vehicle,
+            allSessions = listOf(strayCharge),
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 90, atMillis = 50),
+            tripEnd = TripAnchor(odometerKm = 1200.0, batteryPct = 40, atMillis = 200),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertEquals(1, report.excluded.size)
+    }
+
     private fun session(
         id: Long,
         t: Long = 0,

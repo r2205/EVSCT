@@ -65,6 +65,8 @@ fun TripEditDialog(
     val initialEndText = remember { displayText(trip?.endOdometerKm) }
     var startText by remember { mutableStateOf(initialStartText) }
     var endText by remember { mutableStateOf(initialEndText) }
+    var startBattText by remember { mutableStateOf(trip?.startBatteryPct?.toString().orEmpty()) }
+    var endBattText by remember { mutableStateOf(trip?.endBatteryPct?.toString().orEmpty()) }
     var notes by remember { mutableStateOf(trip?.notes.orEmpty()) }
     var pinColorKey by remember { mutableStateOf(trip?.pinColor) }
     var showColorPicker by remember { mutableStateOf(false) }
@@ -84,6 +86,12 @@ fun TripEditDialog(
     // when both are filled but ordered the wrong way (which would yield a
     // negative distance).
     val odometerError = startKm != null && endKm != null && startKm > endKm
+
+    // Input is digit-filtered, so the only invalid shape is out-of-range.
+    val startBatt = startBattText.toIntOrNull()
+    val endBatt = endBattText.toIntOrNull()
+    val batteryError = (startBatt != null && startBatt !in 0..100) ||
+        (endBatt != null && endBatt !in 0..100)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -129,6 +137,40 @@ fun TripEditDialog(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+                Text(
+                    "Optional: battery % when the trip began and ended. With the " +
+                        "odometer readings these measure the drives to the first " +
+                        "charge and home from the last one.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = startBattText,
+                        onValueChange = { startBattText = it.filter(Char::isDigit).take(3) },
+                        label = { Text("Start battery %") },
+                        singleLine = true,
+                        isError = startBatt != null && startBatt !in 0..100,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = endBattText,
+                        onValueChange = { endBattText = it.filter(Char::isDigit).take(3) },
+                        label = { Text("End battery %") },
+                        singleLine = true,
+                        isError = endBatt != null && endBatt !in 0..100,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (batteryError) {
+                    Text(
+                        "Battery % must be between 0 and 100.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
@@ -153,12 +195,14 @@ fun TripEditDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = name.isNotBlank() && !odometerError,
+                enabled = name.isNotBlank() && !odometerError && !batteryError,
                 onClick = {
                     val merged = (trip ?: Trip(name = name.trim())).copy(
                         name = name.trim(),
                         startOdometerKm = startKm,
                         endOdometerKm = endKm,
+                        startBatteryPct = startBatt,
+                        endBatteryPct = endBatt,
                         notes = notes.trim().takeIf { it.isNotEmpty() },
                         pinColor = pinColorKey,
                     )

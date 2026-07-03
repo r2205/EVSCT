@@ -304,6 +304,8 @@ class BackupIo @Inject constructor(
                             endDate = raw.endDate,
                             startOdometerKm = raw.startOdometerKm,
                             endOdometerKm = raw.endOdometerKm,
+                            startBatteryPct = raw.startBatteryPct,
+                            endBatteryPct = raw.endBatteryPct,
                             notes = raw.notes,
                             pinColor = raw.pinColor,
                             createdAt = raw.createdAt,
@@ -448,6 +450,11 @@ class BackupIo @Inject constructor(
         putOptLong("endDate", endDate)
         putOptDouble("startOdometerKm", startOdometerKm)
         putOptDouble("endOdometerKm", endOdometerKm)
+        // Optional since backups predating trip-level battery anchors —
+        // absent keys read back as null, and older app builds simply
+        // ignore them on restore (schema version stays 5).
+        putOptLong("startBatteryPct", startBatteryPct?.toLong())
+        putOptLong("endBatteryPct", endBatteryPct?.toLong())
         putOptString("notes", notes)
         putOptString("pinColor", pinColor)
         put("createdAt", createdAt)
@@ -558,6 +565,8 @@ class BackupIo @Inject constructor(
                     endDate = t.optLongOrNull("endDate"),
                     startOdometerKm = t.optDoubleOrNull("startOdometerKm"),
                     endOdometerKm = t.optDoubleOrNull("endOdometerKm"),
+                    startBatteryPct = t.optLongOrNull("startBatteryPct")?.toInt(),
+                    endBatteryPct = t.optLongOrNull("endBatteryPct")?.toInt(),
                     notes = t.optStringOrNull("notes"),
                     pinColor = t.optStringOrNull("pinColor"),
                     createdAt = t.optLong("createdAt", System.currentTimeMillis()),
@@ -705,6 +714,8 @@ private data class RawTrip(
     val endDate: Long?,
     val startOdometerKm: Double?,
     val endOdometerKm: Double?,
+    val startBatteryPct: Int?,
+    val endBatteryPct: Int?,
     val notes: String?,
     val pinColor: String?,
     val createdAt: Long,
