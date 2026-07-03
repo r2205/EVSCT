@@ -34,6 +34,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -252,9 +254,18 @@ class SessionEditViewModel @Inject constructor(
         // in-progress notifier. Funnels every state mutation (typed,
         // GPS-autofilled, recent-stop-applied, map-picked) through the
         // same path so the shade entry stays in sync without scattering
-        // manual notifier calls across each mutation site.
+        // manual notifier calls across each mutation site. Keyed to just
+        // the fields the notification renders: without the distinct,
+        // every keystroke in ANY field (a 40-character note, say) meant a
+        // notification re-post and a DataStore disk write while
+        // live-tracking.
         viewModelScope.launch {
-            _state.collect { refreshInProgressNotification(it) }
+            _state
+                .map { Triple(it.brand, it.city, it.sessionStart) }
+                .distinctUntilChanged()
+                .collect { (brand, city, start) ->
+                    refreshInProgressNotification(brand, city, start)
+                }
         }
         viewModelScope.launch {
             sessionRepository.observeBrands().collect { brands ->
@@ -312,13 +323,13 @@ class SessionEditViewModel @Inject constructor(
      *  unless the notifier is already tracking this session id, so editing
      *  an unrelated past session never accidentally posts a new
      *  notification. */
-    private fun refreshInProgressNotification(form: SessionEditUi) {
+    private fun refreshInProgressNotification(brand: String, city: String, sessionStart: Long) {
         if (sessionId <= 0) return
         inProgressChargeNotifier.updateIfTracking(
             sessionId = sessionId,
-            brand = form.brand.takeIf { it.isNotBlank() },
-            city = form.city.takeIf { it.isNotBlank() },
-            sessionStart = form.sessionStart,
+            brand = brand.takeIf { it.isNotBlank() },
+            city = city.takeIf { it.isNotBlank() },
+            sessionStart = sessionStart,
         )
     }
 
