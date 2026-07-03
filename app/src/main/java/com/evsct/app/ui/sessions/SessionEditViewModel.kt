@@ -209,6 +209,13 @@ class SessionEditViewModel @Inject constructor(
      *  of inserting a duplicate — and Delete must target it too. */
     @Volatile private var committedSessionId: Long? = null
 
+    /** Coordinates picked on the map, waiting to propagate to sibling
+     *  sessions (same stop) — consumed by save(). Deferred on purpose:
+     *  the picker used to rewrite sibling rows the moment the pick came
+     *  back, so backing out of a mispick without saving still left every
+     *  other visit to that stop sitting on the abandoned point. */
+    @Volatile private var pendingPickPropagation: Pair<Double, Double>? = null
+
     /** Called by the screen on every ON_RESUME of its nav entry. A screen
      *  that actually popped never reaches RESUMED again, so resuming with
      *  [exitRequested] still latched means the requested pop was dropped
@@ -718,6 +725,31 @@ class SessionEditViewModel @Inject constructor(
             val savedId = sessionRepository.upsert(session)
             committedSessionId = savedId
 
+            // Sibling propagation from the map picker, deferred until the
+            // pick is actually committed. Guards: the coords being saved
+            // must still be the picked ones (editing the address after the
+            // pick clears them via saveLat/saveLng), and the stop needs an
+            // address to identify it (propagationKey) — brand or city
+            // alone would stamp the point onto unrelated stops.
+            pendingPickPropagation?.let { (pickedLat, pickedLng) ->
+                if (session.latitude == pickedLat && session.longitude == pickedLng) {
+                    val key = propagationKey(
+                        brand = session.brand,
+                        address = session.locationAddress,
+                        city = session.locationCity,
+                    )
+                    if (key != null) {
+                        val siblings = allSessionsCache
+                            .filter { it.id != savedId && stopKey(it) == key }
+                            .map { it.id }
+                        if (siblings.isNotEmpty()) {
+                            sessionRepository.setCoordinates(siblings, pickedLat, pickedLng)
+                        }
+                    }
+                }
+                pendingPickPropagation = null
+            }
+
             // Diff the in-memory receipts against the DB and apply the delta.
             // Newly added rows (id == null) get inserted; rows that the user
             // removed get deleted. The session_receipts.sessionId FK uses
@@ -837,18 +869,19 @@ class SessionEditViewModel @Inject constructor(
      *  changed by user" detection doesn't fire on this auto-fill and clear
      *  the freshly-picked coords.
      *
-     *  Also propagates the picked coords to every other session that shares
-     *  this session's stopKey (brand + address|station + city). Visits to
-     *  the same charger should agree on where it is — picking once should
-     *  fix the whole stop instead of forcing a per-session edit. The map
-     *  averages a stop's visits, so without this a single re-pick would be
-     *  diluted by older sessions' stale coords. */
+     *  The pick is also recorded for sibling propagation — visits to the
+     *  same charger should agree on where it is, and the map averages a
+     *  stop's visits, so a single re-pick would otherwise be diluted by
+     *  older sessions' stale coords. The actual write to those rows is
+     *  deferred to save() (see [pendingPickPropagation]); here we only
+     *  surface a heads-up so the wider effect isn't a surprise. */
     fun applyPickedLocation(lat: Double, lng: Double) {
         // Commit the picked coordinates synchronously. The reverse-geocode
         // below is a network call that can take seconds — a Save tapped
         // before it returns must snapshot the picked coords, not the
         // pre-pick state (which would silently discard the pick).
         _state.update { it.copy(latitude = lat, longitude = lng) }
+        pendingPickPropagation = lat to lng
         viewModelScope.launch {
             val located = locationAutofill.reverseGeocodeAt(lat, lng)
             _state.update {
@@ -866,27 +899,33 @@ class SessionEditViewModel @Inject constructor(
                 province = s.province.takeIf { it.isNotBlank() },
             )
 
-            val key = stopKey(
-                brand = s.brand,
+            val key = propagationKey(
+                brand = s.brand.takeIf { it.isNotBlank() },
                 address = s.address.takeIf { it.isNotBlank() },
                 city = s.city.takeIf { it.isNotBlank() },
             )
-            if (key.isNotBlank()) {
-                val siblings = allSessionsCache
-                    .filter { it.id != sessionId && stopKey(it) == key }
-                    .map { it.id }
-                if (siblings.isNotEmpty()) {
-                    sessionRepository.setCoordinates(siblings, lat, lng)
-                    val n = siblings.size
+            if (key != null) {
+                val n = allSessionsCache.count { it.id != sessionId && stopKey(it) == key }
+                if (n > 0) {
                     _state.update {
                         it.copy(
-                            transientMessage = "Updated $n other session" +
-                                (if (n == 1) "" else "s") + " at this stop.",
+                            transientMessage = "$n other session" +
+                                (if (n == 1) "" else "s") +
+                                " at this stop will move here when you save.",
                         )
                     }
                 }
             }
         }
+    }
+
+    /** Sibling-propagation key: like [stopKey], but null unless the stop
+     *  has an address. Brand or city alone spans many physical locations —
+     *  propagating a pick across every address-less "FLO" session in the
+     *  log would collapse distinct stops onto one point. */
+    private fun propagationKey(brand: String?, address: String?, city: String?): String? {
+        if (address.isNullOrBlank()) return null
+        return stopKey(brand = brand, address = address, city = city)
     }
 
     fun clearTransientMessage() = _state.update { it.copy(transientMessage = null) }
