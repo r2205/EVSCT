@@ -50,10 +50,42 @@ class MainActivity : ComponentActivity() {
         // aftermath of a cloud auto-restore, which carries the DB but not
         // receipts/ or vehicles/. Once per process, runs on the app scope.
         missingMediaSweeper.sweepInBackground()
-        // Only consume the launching intent on a fresh process start. Config
-        // changes (rotation, theme) reuse the same intent — without this
-        // guard we'd re-navigate to the deep-link target on every rotation.
-        if (savedInstanceState == null) consumeIntentExtras(intent)
+        // Consume the launching intent exactly once per delivery. Three
+        // arrival shapes need telling apart:
+        //  - Fresh start (no saved state): a launcher open or a
+        //    notification tap on a finished activity — consume normally.
+        //  - In-process recreation (rotation, theme change): saved state
+        //    present AND this process already examined the intent —
+        //    getIntent() is the same, already-consumed object; refiring
+        //    would hijack navigation on every config change.
+        //  - Process-death restore: saved state present but this process
+        //    has never seen the intent. When the restore was triggered by
+        //    tapping the in-progress notification, this is the only
+        //    delivery that tap gets — the old savedInstanceState-only
+        //    guard silently dropped it and the user landed on whatever
+        //    screen was restored. Consume it, but gated to the still-live
+        //    tracked charge so a stale recents relaunch (whose root intent
+        //    happens to be an old notification tap) doesn't hijack the
+        //    restored screen once tracking has ended.
+        when {
+            savedInstanceState == null -> consumeIntentExtras(intent)
+            !launchIntentExamined -> {
+                val sessionId = intent
+                    ?.getLongExtra(InProgressChargeNotifier.EXTRA_OPEN_SESSION_ID, -1L)
+                    ?: -1L
+                if (sessionId > 0) {
+                    // Read the tracked id straight from DataStore — the
+                    // notifier's in-memory copy restores asynchronously
+                    // and may not be populated yet this early in startup.
+                    lifecycleScope.launch {
+                        if (appPreferences.trackedChargeSessionId() == sessionId) {
+                            pendingDeepLinkRoute.value = Routes.sessionEdit(sessionId)
+                        }
+                    }
+                }
+            }
+        }
+        launchIntentExamined = true
         setContent {
             // Resolve the user's theme preference here (above EvsctTheme) so
             // the override applies to the whole composition. SYSTEM falls
@@ -120,5 +152,14 @@ class MainActivity : ComponentActivity() {
         // re-arms the WorkManager check so the daily nag chain keeps
         // running while the app is closed.
         lifecycleScope.launch { backupReminderScheduler.refresh() }
+    }
+
+    companion object {
+        /** True once an activity instance in this process has examined its
+         *  launching intent. Survives activity recreation (rotation, theme
+         *  change) but not process death — exactly the boundary that
+         *  separates "getIntent() was already consumed" from "restored
+         *  task whose notification-tap intent was never delivered". */
+        private var launchIntentExamined = false
     }
 }
