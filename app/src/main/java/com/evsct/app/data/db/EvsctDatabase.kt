@@ -201,13 +201,18 @@ abstract class EvsctDatabase : RoomDatabase() {
                 // Promote every existing single receipt into the new table.
                 // The session's createdAt is the best stand-in for when the
                 // receipt was attached — we don't track per-receipt times in
-                // the old schema.
+                // the old schema. Blank paths are skipped, not promoted: a
+                // legacy row that ever stored '' instead of NULL would
+                // otherwise become a permanent phantom receipt whose
+                // "file" is the app's files directory itself. (Installs
+                // that already ran the unguarded version get any phantom
+                // rows cleaned by MissingMediaSweeper at startup.)
                 db.execSQL(
                     """
                     INSERT INTO `session_receipts` (sessionId, filePath, createdAt)
                     SELECT id, receiptImagePath, createdAt
                     FROM `charging_sessions`
-                    WHERE receiptImagePath IS NOT NULL
+                    WHERE receiptImagePath IS NOT NULL AND TRIM(receiptImagePath) != ''
                     """.trimIndent()
                 )
             }
