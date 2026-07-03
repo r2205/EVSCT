@@ -855,7 +855,17 @@ class SessionEditViewModel @Inject constructor(
     private suspend fun reconcileReceiptFiles(finalPaths: Set<String>) {
         receiptCleanupHandled = true
         val toDelete = touchedReceiptPaths - finalPaths
-        toDelete.forEach { receiptImageStore.delete(it) }
+        if (toDelete.isEmpty()) return
+        // Shared-path guard: restore dedupes equal basenames into one
+        // file, so after restoring a merged backup two sessions' rows can
+        // reference the same path. Removing the receipt here must not
+        // pull that file out from under the other session — skip any path
+        // a receipt row still references (the row diff / CASCADE has
+        // already committed by the time this runs, so the query reflects
+        // post-save truth).
+        val stillReferenced = sessionReceiptRepository.findAll()
+            .mapTo(mutableSetOf()) { it.filePath }
+        (toDelete - stillReferenced).forEach { receiptImageStore.delete(it) }
     }
 
     fun autofillFromLocation() {

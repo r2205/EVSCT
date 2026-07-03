@@ -186,24 +186,31 @@ class BackupIo @Inject constructor(
             zip.write(json.toString(2).toByteArray(Charsets.UTF_8))
             zip.closeEntry()
 
+            // Each distinct entry name is written once. Restore dedupes
+            // shared basenames into a single file, so two receipt rows can
+            // legitimately reference the same path after restoring a
+            // merged backup — writing that entry twice would throw
+            // ZipException("duplicate entry") and fail the whole export.
+            val writtenEntries = mutableSetOf<String>()
+            fun writeFileEntry(nameInZip: String, file: File) {
+                if (!writtenEntries.add(nameInZip)) return
+                zip.putNextEntry(ZipEntry(nameInZip))
+                file.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+
             vehicles.forEach { v ->
                 val rel = v.imagePath ?: return@forEach
                 val file = File(context.filesDir, rel)
                 if (!file.exists()) return@forEach
-                val nameInZip = IMAGE_DIR_IN_ZIP + file.name
-                zip.putNextEntry(ZipEntry(nameInZip))
-                file.inputStream().use { it.copyTo(zip) }
-                zip.closeEntry()
+                writeFileEntry(IMAGE_DIR_IN_ZIP + file.name, file)
             }
 
             // Write every attached receipt file, not just one per session.
             receipts.forEach { r ->
                 val file = File(context.filesDir, r.filePath)
                 if (!file.exists()) return@forEach
-                val nameInZip = RECEIPT_DIR_IN_ZIP + file.name
-                zip.putNextEntry(ZipEntry(nameInZip))
-                file.inputStream().use { it.copyTo(zip) }
-                zip.closeEntry()
+                writeFileEntry(RECEIPT_DIR_IN_ZIP + file.name, file)
             }
         }
         return BackupCounts(sessions = sessions.size, trips = trips.size, vehicles = vehicles.size)
