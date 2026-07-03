@@ -23,9 +23,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class SettingsUi(
     val busy: Boolean = false,
@@ -44,6 +46,10 @@ data class SettingsUi(
      *  in the Full backup card so backup hygiene is visible without
      *  waiting for the reminder to fire. */
     val lastBackupAt: Long? = null,
+    /** Epoch millis of the automatic pre-restore safety snapshot — null
+     *  when no restore has ever run. Non-null shows the "Undo last
+     *  restore" row. */
+    val preRestoreSnapshotAt: Long? = null,
 )
 
 @HiltViewModel
@@ -56,6 +62,10 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val transient = MutableStateFlow(SettingsUi())
+
+    init {
+        refreshSnapshotInfo()
+    }
 
     val state: StateFlow<SettingsUi> =
         combine(
@@ -72,6 +82,13 @@ class SettingsViewModel @Inject constructor(
                 lastBackupAt = lastBackupAt,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUi())
+
+    /** The snapshot timestamp lives on disk, not in a Flow — re-read it on
+     *  screen load and after every restore-shaped operation. */
+    private fun refreshSnapshotInfo() = viewModelScope.launch {
+        val at = withContext(Dispatchers.IO) { backupIo.preRestoreSnapshotAt() }
+        transient.update { it.copy(preRestoreSnapshotAt = at) }
+    }
 
     fun setUseMiles(useMiles: Boolean) = viewModelScope.launch {
         appPreferences.setUseMiles(useMiles)
@@ -210,6 +227,27 @@ class SettingsViewModel @Inject constructor(
             }
             else -> transient.update { it.copy(busy = false) }
         }
+        refreshSnapshotInfo()
+    }
+
+    /** Restore the automatic snapshot taken just before the last restore —
+     *  recovery for "that was the wrong zip". */
+    fun undoRestore() = viewModelScope.launch {
+        transient.update { it.copy(busy = true, message = null) }
+        when (val result = backupIo.restoreFromSnapshot()) {
+            is BackupResult.RestoreSuccess -> transient.update {
+                it.copy(
+                    busy = false,
+                    message = "Restored the pre-restore snapshot: ${result.sessions} sessions, " +
+                        "${result.trips} trips, ${result.vehicles} vehicles.",
+                )
+            }
+            is BackupResult.Failure -> transient.update {
+                it.copy(busy = false, message = "Undo failed: ${result.message}")
+            }
+            else -> transient.update { it.copy(busy = false) }
+        }
+        refreshSnapshotInfo()
     }
 
     fun clearMessage() = transient.update { it.copy(message = null) }

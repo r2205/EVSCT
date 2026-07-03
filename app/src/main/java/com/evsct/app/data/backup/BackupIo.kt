@@ -41,6 +41,13 @@ private const val RECEIPT_DIR_IN_FILES = "receipts"
  *  in res/xml/file_paths.xml so FileProvider can hand out content:// URIs. */
 private const val SHARE_DIR_IN_CACHE = "backup-share"
 
+/** App-private home of the safety snapshot written automatically before
+ *  every restore. One file, one level deep: each restore overwrites it
+ *  with the pre-wipe state, which is exactly what "undo last restore"
+ *  needs (and undoing twice ping-pongs between the two states). */
+private const val PRE_RESTORE_DIR_IN_FILES = "pre-restore"
+private const val PRE_RESTORE_SNAPSHOT_NAME = "pre-restore-snapshot.zip"
+
 // Decompression caps. A real backup of a heavy user is comfortably under
 // these — they exist to short-circuit zip-bombs that decompress a few KB
 // of input into gigabytes of output.
@@ -204,6 +211,48 @@ class BackupIo @Inject constructor(
 
     private data class BackupCounts(val sessions: Int, val trips: Int, val vehicles: Int)
 
+    /** Epoch millis of the pre-restore safety snapshot, or null when no
+     *  restore has ever run on this install. Drives the "Undo last
+     *  restore" row in Settings. */
+    fun preRestoreSnapshotAt(): Long? =
+        snapshotFile().takeIf { it.exists() }?.lastModified()?.takeIf { it > 0 }
+
+    /** Restore the safety snapshot taken just before the most recent
+     *  restore — the one-tap undo for "that was the wrong zip". Runs the
+     *  normal restore path, which snapshots the current state first, so
+     *  an undo can itself be undone. */
+    suspend fun restoreFromSnapshot(): BackupResult {
+        val snapshot = snapshotFile()
+        if (!snapshot.exists()) {
+            return BackupResult.Failure("No pre-restore snapshot found on this device.")
+        }
+        return restore(Uri.fromFile(snapshot))
+    }
+
+    private fun snapshotFile(): File =
+        File(File(context.filesDir, PRE_RESTORE_DIR_IN_FILES), PRE_RESTORE_SNAPSHOT_NAME)
+
+    /** Write the current database + media as a backup zip to the snapshot
+     *  path. Staged in cacheDir and moved into place so a failure mid-write
+     *  can't leave a truncated snapshot masquerading as a good one. */
+    private suspend fun writeSnapshotOfCurrentData() {
+        val snapshot = snapshotFile()
+        snapshot.parentFile?.mkdirs()
+        val staging = File(context.cacheDir, "pre-restore-staging-${UUID.randomUUID()}.zip")
+        try {
+            staging.outputStream().use { writeBackupZip(it) }
+            if (snapshot.exists()) snapshot.delete()
+            if (!staging.renameTo(snapshot)) {
+                // Different filesystem or rename quirk — fall back to a copy.
+                staging.inputStream().use { inp ->
+                    snapshot.outputStream().use { out -> inp.copyTo(out) }
+                }
+            }
+        } finally {
+            staging.delete()
+        }
+    }
+
     suspend fun restore(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
         val tempDir = File(context.cacheDir, "backup-restore-${UUID.randomUUID()}")
         try {
@@ -240,6 +289,24 @@ class BackupIo @Inject constructor(
                 ).joinToString("; ")
                 return@withContext BackupResult.Failure(
                     "Backup is inconsistent: $problems. Restore cancelled — nothing was changed.",
+                )
+            }
+
+            // Safety snapshot: capture the CURRENT data as a normal backup
+            // zip before anything is wiped, so a restore of the wrong file
+            // is recoverable via Settings → "Undo last restore". Taken
+            // after the incoming file is fully read and validated — the
+            // source zip is completely consumed by now, which also makes
+            // undo-of-undo work: restoring the snapshot snapshots the
+            // present state into the same file first. A snapshot failure
+            // aborts the restore before the wipe.
+            try {
+                writeSnapshotOfCurrentData()
+            } catch (e: Exception) {
+                return@withContext BackupResult.Failure(
+                    "Could not write the pre-restore safety snapshot" +
+                        (e.message?.let { " ($it)" } ?: "") +
+                        ". Restore cancelled — nothing was changed.",
                 )
             }
 

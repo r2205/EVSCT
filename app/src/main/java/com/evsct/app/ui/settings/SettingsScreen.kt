@@ -84,6 +84,7 @@ fun SettingsScreen(
     var replaceOnImport by remember { mutableStateOf(false) }
     var showXlsxConfirm by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showUndoRestoreConfirm by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv"),
@@ -278,6 +279,23 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) { Text("Restore from backup…") }
+                    state.preRestoreSnapshotAt?.let { snapAt ->
+                        OutlinedButton(
+                            onClick = { showUndoRestoreConfirm = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !state.busy,
+                        ) { Text("Undo last restore…") }
+                        Text(
+                            "Brings back the data as it was just before your last " +
+                                "restore (snapshot taken automatically " +
+                                java.text.DateFormat.getDateTimeInstance(
+                                    java.text.DateFormat.MEDIUM,
+                                    java.text.DateFormat.SHORT,
+                                ).format(java.util.Date(snapAt)) + ").",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
@@ -388,7 +406,8 @@ fun SettingsScreen(
                 Text(
                     "This will erase every session, trip, and vehicle currently in " +
                         "the app and replace them with the contents of the backup file. " +
-                        "This can't be undone."
+                        "A snapshot of your current data is saved automatically first, " +
+                        "so you can undo this from Settings if it's the wrong file."
                 )
             },
             confirmButton = {
@@ -401,6 +420,32 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreConfirm = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showUndoRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showUndoRestoreConfirm = false },
+            title = { Text("Undo last restore?") },
+            text = {
+                Text(
+                    "This replaces everything currently in the app with the " +
+                        "snapshot taken just before your last restore. The data " +
+                        "you're replacing is snapshotted first, so you can undo " +
+                        "the undo."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showUndoRestoreConfirm = false
+                    viewModel.undoRestore()
+                }) {
+                    Text("Undo restore", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUndoRestoreConfirm = false }) { Text("Cancel") }
             },
         )
     }
