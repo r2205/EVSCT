@@ -39,6 +39,11 @@ data class SettingsUi(
      *  to ACTION_SEND. The screen launches the chooser, then clears this
      *  via [consumePendingShare]. */
     val pendingShareFile: File? = null,
+    /** Epoch millis of the last recorded backup (Save completed, share
+     *  target picked, or restore) — null when never backed up. Rendered
+     *  in the Full backup card so backup hygiene is visible without
+     *  waiting for the reminder to fire. */
+    val lastBackupAt: Long? = null,
 )
 
 @HiltViewModel
@@ -58,8 +63,14 @@ class SettingsViewModel @Inject constructor(
             appPreferences.reminderSettings,
             appPreferences.userUnits,
             appPreferences.themeMode,
-        ) { ui, reminder, units, themeMode ->
-            ui.copy(reminder = reminder, units = units, themeMode = themeMode)
+            appPreferences.lastBackupAt,
+        ) { ui, reminder, units, themeMode, lastBackupAt ->
+            ui.copy(
+                reminder = reminder,
+                units = units,
+                themeMode = themeMode,
+                lastBackupAt = lastBackupAt,
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUi())
 
     fun setUseMiles(useMiles: Boolean) = viewModelScope.launch {

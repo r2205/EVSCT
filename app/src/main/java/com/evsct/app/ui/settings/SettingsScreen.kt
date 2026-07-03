@@ -237,6 +237,19 @@ fun SettingsScreen(
                             "any other app you have installed.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    // Updates when a Save completes, a share target is
+                    // picked (not on a cancelled share sheet), or a
+                    // restore succeeds.
+                    Text(
+                        "Last backed up: " + (state.lastBackupAt?.let {
+                            java.text.DateFormat.getDateTimeInstance(
+                                java.text.DateFormat.MEDIUM,
+                                java.text.DateFormat.SHORT,
+                            ).format(java.util.Date(it))
+                        } ?: "never"),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                    )
                     Button(
                         onClick = {
                             val ts = java.text.SimpleDateFormat(
