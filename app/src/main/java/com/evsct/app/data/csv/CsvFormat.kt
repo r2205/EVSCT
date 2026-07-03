@@ -146,6 +146,9 @@ object CsvFormat {
             longitude = get("longitude")?.toDoubleOrNull(),
             continuesPrevious = get("continues_previous")?.equals("true", ignoreCase = true) ?: false,
         )
-        return ParsedCsvRow(session, get("trip_name"), get("vehicle_name"))
+        // Hand-edited CSVs can carry physically impossible values (battery
+        // 8500%, negative odometer, latitude 400). Nobody sees advisory
+        // hints on this path, so drop them at the boundary.
+        return ParsedCsvRow(ImportSanitizer.sanitize(session), get("trip_name"), get("vehicle_name"))
     }
 }

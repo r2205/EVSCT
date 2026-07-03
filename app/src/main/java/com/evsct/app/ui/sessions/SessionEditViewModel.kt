@@ -468,6 +468,32 @@ class SessionEditViewModel @Inject constructor(
             )
         }
 
+        val battOutOfRange = mutableSetOf<HintField>()
+        if (battStart != null && battStart !in 0..100) battOutOfRange += HintField.BATTERY_START
+        if (battEnd != null && battEnd !in 0..100) battOutOfRange += HintField.BATTERY_END
+        if (battOutOfRange.isNotEmpty()) {
+            out += ValidationHint(
+                title = "Battery % out of range",
+                detail = "Battery percent should be between 0 and 100.",
+                fields = battOutOfRange,
+            )
+        }
+
+        val negative = mutableSetOf<HintField>()
+        if (odoEntered != null && odoEntered < 0) negative += HintField.ODOMETER
+        if (energy != null && energy < 0) negative += HintField.ENERGY
+        if (cost != null && cost < 0) negative += HintField.COST
+        if (postedPrice != null && postedPrice < 0) negative += HintField.POSTED_ENERGY_PRICE
+        if (postedTimeRate != null && postedTimeRate < 0) negative += HintField.POSTED_TIME_RATE
+        if (postedMaxKw != null && postedMaxKw < 0) negative += HintField.POSTED_MAX_POWER
+        if (negative.isNotEmpty()) {
+            out += ValidationHint(
+                title = "Negative value entered",
+                detail = "These fields don't normally go below zero. Check for a stray minus sign.",
+                fields = negative,
+            )
+        }
+
         return out
     }
 
