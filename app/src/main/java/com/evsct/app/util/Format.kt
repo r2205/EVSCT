@@ -1,9 +1,11 @@
 package com.evsct.app.util
 
 import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 object Format {
     // DateTimeFormatter is thread-safe by design — share these statics across
@@ -16,12 +18,27 @@ object Format {
     private val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 
     // DecimalFormat is also not thread-safe and has no java.time-style
-    // replacement. Give each thread its own instance; cheap and matches the
-    // locale-default behavior the old shared instances had.
-    private val moneyFmt = ThreadLocal.withInitial { DecimalFormat("#,##0.00") }
-    private val rateFmt = ThreadLocal.withInitial { DecimalFormat("#,##0.000") }
-    private val kmFmt = ThreadLocal.withInitial { DecimalFormat("#,##0.#") }
-    private val kwhFmt = ThreadLocal.withInitial { DecimalFormat("#,##0.###") }
+    // replacement. Give each thread its own instance.
+    //
+    // Symbols are pinned to US conventions (dot decimal, comma grouping)
+    // rather than the device locale: the money formatters prepend a
+    // literal "$", and locale-default separators produced hybrids like
+    // "$1.234,56 CAD" on comma-decimal devices. Pinning all four keeps
+    // money and unit displays consistent with each other and with the
+    // Locale.US seeding the edit dialogs already use. Input is unaffected
+    // — parseDecimal still accepts both separator conventions.
+    private val moneyFmt = ThreadLocal.withInitial {
+        DecimalFormat("#,##0.00", DecimalFormatSymbols(Locale.US))
+    }
+    private val rateFmt = ThreadLocal.withInitial {
+        DecimalFormat("#,##0.000", DecimalFormatSymbols(Locale.US))
+    }
+    private val kmFmt = ThreadLocal.withInitial {
+        DecimalFormat("#,##0.#", DecimalFormatSymbols(Locale.US))
+    }
+    private val kwhFmt = ThreadLocal.withInitial {
+        DecimalFormat("#,##0.###", DecimalFormatSymbols(Locale.US))
+    }
 
     private fun zonedAt(epoch: Long) =
         Instant.ofEpochMilli(epoch).atZone(ZoneId.systemDefault())
@@ -71,7 +88,10 @@ object Format {
         val h = seconds / 3600
         val m = (seconds % 3600) / 60
         val s = seconds % 60
-        return if (h > 0) "%dh %02dm".format(h, m) else "%dm %02ds".format(m, s)
+        // Locale pinned for the same reason as the number formats above —
+        // default-locale %d can render non-ASCII digit shapes.
+        return if (h > 0) "%dh %02dm".format(Locale.US, h, m)
+        else "%dm %02ds".format(Locale.US, m, s)
     }
 
     /**
