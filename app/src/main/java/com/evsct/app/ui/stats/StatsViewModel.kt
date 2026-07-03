@@ -8,6 +8,7 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.VehicleRepository
+import com.evsct.app.util.BrandSpend
 import com.evsct.app.util.OdometerDistance
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.SimpleDateFormat
@@ -119,7 +120,7 @@ class StatsViewModel @Inject constructor(
             avgPowerKw = computeAvgPower(sessions),
             monthlyCost = monthlySeries(costSessions) { it.totalCost ?: 0.0 },
             monthlyEnergy = monthlySeries(sessions) { it.energyKwh ?: 0.0 },
-            byBrandCost = brandCostSeries(costSessions),
+            byBrandCost = BrandSpend.top(costSessions),
             byType = sessions.groupingBy { it.chargingType }.eachCount(),
             dcFastByDayHour = dayHourGrid(sessions.filter { it.chargingType == ChargingType.DC_FAST }),
             acByDayHour = dayHourGrid(sessions.filter {
@@ -248,13 +249,4 @@ class StatsViewModel @Inject constructor(
         return grid.map { it.toList() }
     }
 
-    private fun brandCostSeries(sessions: List<ChargingSession>): List<Pair<String, Double>> {
-        return sessions
-            .filter { !it.brand.isNullOrBlank() && (it.totalCost ?: 0.0) > 0 }
-            .groupBy { it.brand!!.trim() }
-            .mapValues { (_, ss) -> ss.sumOf { it.totalCost ?: 0.0 } }
-            .toList()
-            .sortedByDescending { it.second }
-            .take(8)
-    }
 }
