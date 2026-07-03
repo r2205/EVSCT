@@ -65,7 +65,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   cost / kWh when you unplug. Save without typing a duration and the
   tracked elapsed time fills it in automatically. (Android 13+ asks for
   notification permission the first time; declining only hides the shade
-  shortcut — tracking still works in-app.)
+  shortcut — tracking still works in-app.) If a tracked charge is ever
+  left running 12+ hours, the log shows a gentle **"Still charging?"**
+  banner that jumps straight to the session so you can finish or delete
+  it — nothing expires or deletes automatically.
 - Odometer, energy delivered (kWh), total cost, charging duration, battery
   start/end %.
 - Optional **wait time** — minutes you spent queueing before the cable
@@ -74,8 +77,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 - Per-session **currency chip** (CAD / USD) — defaults to your preferred
   currency, but a US road-trip session can be tagged USD even when your
   default is CAD.
-- Posted vs. effective rates ($/kWh, $/min, max kW) so you can see when a
-  station charges differently than advertised.
+- Posted vs. effective rates ($/kWh, time rate, max kW) so you can see
+  when a station charges differently than advertised. The time rate has
+  a **$/min ⇄ $/hr toggle** — enter whichever unit the station
+  advertises and flipping the toggle converts the value in place.
 - **Free-form tags** — type "work charge", "winter test", "kid's hockey
   trip"; press Enter or comma to commit. Tags appear as `#pill` chips on
   the row and become a filter chip in the log's Filter sheet.
@@ -132,8 +137,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 
 ### Map view
 - Google Maps full-screen view with **one pin per distinct charging stop**
-  (deduped by brand + address + city). Tap a pin for brand, address, and
-  visit count.
+  (deduped by brand + address + city; stops with only GPS coordinates
+  group by location instead of vanishing). Tap a pin for brand, address,
+  and visit count.
 - **Trip-colored pins** — each trip gets a color from a 10-swatch palette,
   auto-assigned but customizable in the trip edit dialog. Stops visited
   across multiple trips render as a neutral gray "shared" pin so the
@@ -146,8 +152,8 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 - **Layers menu** — basemap switcher (Default / Satellite / Hybrid /
   Terrain) plus two display-mode toggles:
   - **Heatmap** — pins are replaced by a density overlay weighted by
-    visit count, so your everyday home charger glows brighter than a
-    one-off road-trip stop.
+    visit count (log-scaled), so your everyday home charger glows
+    brightest without washing one-off road-trip stops off the map.
   - **Trip routes** — draws a colored polyline for each trip connecting
     its sessions in chronological order, using the trip's pin color.
     Lines are geodesic so cross-country routes curve naturally instead
@@ -180,9 +186,15 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 - Optional start/end odometer per trip — when both are filled, distance =
   end − start. Otherwise distance is inferred from session odometer
   readings.
+- Optional **start/end battery %** per trip — together with the odometer
+  readings these anchor the efficiency legs no session pair can measure:
+  the drive from home (charged to 100%) to your first stop, and the
+  drive home from your last one.
 - **Map pin color** picker per trip (10 swatches, auto-assigned by default).
 - Trip detail shows total cost, energy, distance, $/km or $/mi, $/kWh,
-  plus every session in the trip.
+  plus every session in the trip and a **driving efficiency** card with
+  measured km/kWh per leg (and the reason whenever a leg can't be
+  measured).
 
 ### Stats
 - Headline card: sessions, total cost, total energy, average effective
@@ -218,7 +230,12 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   tags totals on the dashboards.
 - **Full backup** — **Save** a `.zip` to a folder you pick, **Share** it
   out via Drive / email / Messages / etc., or **Restore** from a backup
-  zip.
+  zip. The card shows **when you last backed up**, and every restore
+  automatically snapshots your current data first — an **Undo last
+  restore** button brings it back if you restored the wrong file (and
+  the undo is itself undoable). Note that Android's own automatic
+  backup doesn't include photos or receipts — the in-app zip is the
+  only complete copy.
 - **Backup reminder** — enable/disable, set the threshold in days
   (1–365, default 30), and optionally toggle on Android system
   notifications. The reminder fires even when the app is closed (a
@@ -245,7 +262,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   keys so backups from another phone restore cleanly. Older backups (down
   to v1) still restore — the receipt JSON reader knows three historical
   shapes and falls back gracefully. Confirmation dialog gates the
-  destructive action.
+  destructive action, a damaged or inconsistent backup is refused
+  outright before anything is wiped, and a **pre-restore safety
+  snapshot** is written automatically so any restore can be undone from
+  Settings.
 - **Backup reminder** — in-app banner on the Charging log when it's been
   longer than your threshold since the last backup, optionally pushed to
   the notification shade. The notification fires even when the app is

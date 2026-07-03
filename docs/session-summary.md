@@ -78,10 +78,19 @@ context is in the repo even if the conversation is summarized later.
   attach time so PDF tiles can show e.g. "expense-aug-2025.pdf"
   instead of a generic label. Pre-v11 rows stay null; the user can
   backfill via the in-app rename action.
+- **v11 → v12**: added `startBatteryPct` / `endBatteryPct` (INTEGER,
+  nullable) on `trips`. With the existing start/end odometer these
+  anchor the trip's first and last efficiency legs (home → first
+  charge, last charge → home) via virtual endpoints in
+  `EfficiencyAnalysis`. Single-vehicle trips only.
 
-`fallbackToDestructiveMigration(dropAllTables = true)` is enabled as a
-last-resort safety net (the explicit `dropAllTables` arg replaces the
-deprecated zero-arg overload).
+`fallbackToDestructiveMigration` was **removed** in the 2026-07 bug
+sweep (finding #3): the migration chain is complete, so the only paths
+that could trigger the fallback are version downgrades or a forgotten
+future migration — and in both cases a crash on open is recoverable
+while a silent full-table wipe is not. Schema JSONs are exported to
+`app/schemas/` and committed (11.json, 12.json) so future changes diff
+in review.
 
 ## Feature inventory (organized by area)
 
@@ -418,14 +427,29 @@ vehicle on the same trip.
   → B,
   `energy_used_kWh = (battery_end[A] − battery_start[B]) × capacity / 100`.
   Distance comes from `odometer[B] − odometer[A]`. Both sides are
-  required, plus the vehicle's battery capacity, plus `continuesPrevious
-  = true` on A. We **don't** fall back to "kWh delivered to A" — that
-  isn't what the car used between stops.
-- **Reporting**: `EfficiencyReport` exposes pairs that calculated and
-  pairs that didn't, with reason codes (`MissingOdometer`,
-  `MissingBattery`, `MissingCapacity`, `NotContinuous`). The UI
-  surfaces both: average km/kWh + a dropdown of unmeasurable legs so
-  the user can see why a number is missing.
+  required, plus the vehicle's battery capacity, plus continuity: same
+  non-null trip, or `continuesPrevious = true` on B. We **don't** fall
+  back to "kWh delivered to A" — that isn't what the car used between
+  stops.
+- **Interleave guard** (sweep finding #6): trip-scoped analysis also
+  receives the vehicle's full session timeline; a pair with an
+  out-of-trip charge between its timestamps is excluded (the battery
+  delta would be distorted by whatever that charge added) with a
+  user-facing reason instead of silently producing a wrong leg. The
+  `continuesPrevious` flag also self-heals (finding #7): deleting or
+  moving the session it attested against clears it via `@Transaction`
+  DAO methods.
+- **Trip anchors** (July 2026): the trip's optional start/end battery %
+  + odometer form virtual endpoints (`TripAnchor`, synthetic session
+  ids −100/−101 rendered as "Trip start"/"Trip end") so the drive to
+  the first charge and home from the last one produce legs. Both
+  anchors with zero sessions = one whole-trip leg. Applied only when
+  the trip's sessions are single-vehicle; same measurement rules and
+  interleave protection as real pairs.
+- **Reporting**: `EfficiencyReport` exposes measured legs and excluded
+  pairs with user-facing reason strings. The UI surfaces both: average
+  km/kWh + rows for unmeasurable legs so the user can see why a number
+  is missing.
 - **Hidden when no data**: card collapses entirely if there are zero
   measurable legs and zero excluded pairs to explain.
 
@@ -794,7 +818,39 @@ the unit pref as a parameter; aggregates pass the default-currency to
 - **`util/FormatParseDecimalTest.kt`** — `Format.parseDecimal`
   accepts dot and comma decimal separators, treats comma+dot as
   thousands ("1,234.5"), trims whitespace, and returns null on
-  blank/garbage.
+  blank/garbage. Extended in the 2026-07 sweep: European
+  dot-thousands+comma-decimal, strict comma-grouping ("1,234" reads
+  as thousands, "12,5" as a decimal).
+- **`util/FormatLocaleTest.kt`** (2026-07 sweep) — number rendering is
+  pinned to US separators regardless of device locale; checks run on
+  fresh threads under de/fr/us defaults so the ThreadLocal formatters
+  are created under the foreign locale.
+- **`util/StopKeyTest.kt`** (sweep #12) — text stop keys, trim/case
+  folding, station-name exclusion, and the geo-bucket fallback for
+  coordinate-only sessions.
+- **`util/OdometerDistanceTest.kt`** (sweep #15) — time-overlap
+  proration: boundary intervals split across buckets, long gaps credit
+  only their slice, adjacent windows tile to the exact total,
+  per-vehicle walks.
+- **`util/BrandSpendTest.kt`** (sweep #18) — case-insensitive brand
+  merging, most-frequent-casing labels, non-positive-cost exclusion.
+- **`data/csv/ImportSanitizerTest.kt`** (sweep #8/#16) — the import
+  range gate (impossible battery/negative values nulled, refunds kept),
+  the XLSX percent heuristic, and the time-of-day / duration cell
+  interpreters (datetime-serial overflow case included).
+- **`data/db/ChargingSessionDaoContinuityTest.kt`** (sweep #7) — the
+  DAO's default `@Transaction` methods that clear a stale
+  `continuesPrevious` when its attested predecessor is deleted or
+  moved; runs against an in-memory fake implementing the abstract DAO
+  methods.
+- **`data/backup/BackupZipTest.kt`** (sweep #10) — the bounded zip
+  scanner with in-memory zips and tiny caps: unknown-entry metering,
+  data-carrying directory entries, duplicate basenames, zip-slip
+  confinement.
+- **`util/FormatThreadSafetyTest.kt`** — concurrent formatter use.
+- **`util/EfficiencyAnalysisTest.kt`** also grew interleave-exclusion
+  cases (sweep #6) and the trip-anchor suite (start/end/whole-trip
+  legs, anchor interleave guards).
 
 Run from Android Studio (Right-click → Run 'tests') or
 `./gradlew :app:testDebugUnitTest` from the terminal once
@@ -1003,7 +1059,76 @@ Mid-project we ran an end-to-end bug audit (15 findings), a security
 audit (M1 + M2 + Mn1–Mn5), and a later second-pass bug audit. In June
 2026 a third-pass sweep reviewed every layer in parallel (22 findings:
 5 high, 8 medium, 9 low) and closed out everything high and medium.
-Highlights of what got fixed:
+In July 2026 a fourth-pass pre-release sweep (`BUG_HUNT_REPORT.md`, 29
+findings) closed out the entire report. Highlights of what got fixed:
+
+- **Fourth-pass pre-release sweep** (July 2026; all 29 findings
+  resolved across PRs #31–#34 on branch `claude/evsct-bug-hunt-faxgag`;
+  the full report with per-finding detail lives in
+  `BUG_HUNT_REPORT.md` at the repo root):
+  - **Parsing/units** (#1–#2): `parseDecimal` handles comma decimals
+    and strict thousands-grouping; miles-mode display↔km round-trips
+    stopped drifting stored values.
+  - **Room hardening** (#3): destructive-migration fallback removed
+    (crash-on-downgrade is recoverable, a wipe is not); schema export
+    enabled, baselines committed (`app/schemas/`).
+  - **Backup/restore** (#4, #5, #10, #14, #23, #26): exports stage
+    locally so failures can't truncate the old file; restore refuses
+    damaged/inconsistent backups outright with human-locatable errors
+    ("entry 2 of 312 in sessions (id 238)"); every zip entry is
+    metered during restore (unknown names, data-carrying directory
+    entries, dropped duplicates — the skip-inflation zip-bomb bypass);
+    shared receipt basenames no longer crash export or delete files
+    out from under sibling rows; "backed up" is recorded only when a
+    share target is actually picked (chosen-component IntentSender +
+    `BackupShareChosenReceiver`); the 9→10 migration skips blank
+    receipt paths.
+  - **Efficiency correctness** (#6, #7): interleaved out-of-trip
+    charges exclude a pair instead of silently distorting it;
+    `continuesPrevious` self-heals when its attested predecessor is
+    deleted or moved (DAO `@Transaction` default methods).
+  - **Import gating** (#8, #16, #25): `ImportSanitizer` nulls
+    physically impossible CSV/XLSX values at the boundary (negative
+    cost deliberately survives as a refund); the XLSX battery scale
+    reads the cell's %-format instead of an unconditional ×100; a
+    datetime serial in a time cell no longer overflows Int into
+    decades-old timestamps; CSV export failure reports failure.
+  - **CSV fidelity** (#9, #17): plain negative numbers export without
+    the formula-defusing apostrophe (longitude arrives numeric in
+    Excel; the decoder still strips old exports); trips/vehicles match
+    case-insensitively on import.
+  - **UI state traps** (#11, #13, #24, #29): the `exitRequested`
+    latch re-arms via ON_RESUME when a post-save pop is dropped
+    (recovered re-saves update instead of duplicating); map-pick
+    sibling propagation deferred to save, address-keyed, and announced
+    up front; the notification deep link survives task restore after
+    process death (process-scoped flag + tracked-charge gate); stale
+    quick-tracked charges get a "Still charging?" banner after 12 h.
+  - **Display/aggregation consistency** (#12, #15, #18, #20, #27):
+    coordinate-only sessions render on both maps (shared `StopKey`
+    geo-bucket fallback); Stats and Recap share one odometer-distance
+    walk with time-overlap proration (shared `OdometerDistance`);
+    brand spend merges case variants (shared `BrandSpend`); live
+    tracking stopped rewriting DataStore per keystroke; number
+    rendering pinned to US separators (no "$1.234,56 CAD" hybrids).
+  - **Hygiene** (#19, #21, #22): dead list-level delete paths removed
+    (one would have leaked receipt files); session upsert + receipt
+    reconciliation are one transaction; `MissingMediaSweeper` drops DB
+    references to media a cloud auto-restore never carried.
+  - **No-action** (#28): double-precision money drift measured at
+    ~1e-9 across tens of thousands of amounts — informational only.
+  - **Features that grew out of the sweep**: trip start/end battery %
+    anchors (schema v12) for first/last-leg efficiency; pre-restore
+    safety snapshot + "Undo last restore" (undo is itself undoable);
+    "Last backed up" line and Android-auto-backup caveat in Settings;
+    log-scaled heatmap weights; $/min ⇄ $/hr posted-rate entry toggle
+    (storage stays canonical $/min).
+  - **Verification pattern**: Gradle couldn't run in the cloud
+    container (distribution download blocked), so every logic change
+    was verified with standalone kotlinc harnesses against the real
+    source files (100+ checks across the sweep; the harnesses caught
+    two real bugs pre-commit), mirrored into the JUnit suites listed
+    under "Unit tests" for local runs.
 
 - **Third-pass bug sweep** (June 2026; all 22 findings are fixed and
   merged to `main` — the 5 high + 8 medium batches landed via PR #22
@@ -1264,12 +1389,14 @@ Highlights of what got fixed:
   up in the filename); pro-rate cross-year trips for "longest trip"
   rather than overclaiming the whole-trip distance; multi-page PDF
   when top-brands or trips overflow.
-- **Bump backup `SCHEMA_VERSION` past 5**: the post-v5 additive
-  fields (`waitTimeMinutes`, `tags`) currently ride along under
-  `schemaVersion = 5` because they're forward-compatible (older
-  readers ignore unknown keys). A bump to 6 is the conventional
-  marker — would mean only same-or-newer installs can restore
-  newer backups. Worth doing the next time we touch `BackupIo.kt`.
+- ~~Bump backup `SCHEMA_VERSION` past 5~~ — **decided against**
+  (2026-07 sweep): we touched `BackupIo.kt` repeatedly (findings #4,
+  #5, #10, #14, #23, trip battery anchors, pre-restore snapshot) and
+  deliberately kept `schemaVersion = 5` each time. All post-v5 fields
+  are additive and optional; bumping would make older installs refuse
+  newer backups outright, which costs real users (restore-on-old-build
+  after a bad update) and buys only a version-marker convention.
+  Revisit only if a future format change is genuinely breaking.
 - **Drop the last AGP-9 conservative-mode flags**: five flags remain
   in `gradle.properties` after the cleanup pass (see "Audit
   closeouts" → AGP 9 upgrade). Two are pinned by Kotlin Gradle
@@ -1286,7 +1413,11 @@ Highlights of what got fixed:
   `claude/get-started-AEDLP`, which has since been merged. The
   third-pass bug sweep landed through `claude/adoring-hopper-57uot7`
   (PR #22) and `claude/low-severity-sweep-fixes` (PR #23), both
-  merged. Everything lives on `r2205/evsct` on GitHub.
+  merged. The fourth-pass sweep reused one branch
+  (`claude/evsct-bug-hunt-faxgag`) restarted from `main` between
+  batches: PRs #31 (#1–#5), #32 (restore error messages), #33
+  (#6–#17 + features), #34 (#18–#29 + rate toggle). Everything lives
+  on `r2205/evsct` on GitHub.
 - **History rewrite**: `DC Fast Charging.xlsx` was originally
   committed to `main` early in the project, but contained somewhat
   personal data. We later purged it from history with `git
