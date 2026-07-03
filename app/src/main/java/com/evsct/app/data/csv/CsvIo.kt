@@ -138,6 +138,10 @@ object Csv {
     }
 }
 
+/** Lookup key for matching a CSV row's trip/vehicle name against existing
+ *  rows: trimmed and lowercased with locale-independent rules. */
+private fun nameKey(name: String): String = name.trim().lowercase()
+
 data class CsvImportResult(val imported: Int, val skipped: Int)
 
 /** Successful prepare-for-share. The CSV lives in [file], and [sessions] is
@@ -259,14 +263,25 @@ class CsvIo @Inject constructor(
         // the Flow .first() collectors don't run on the transaction connection
         // (mirrors the pattern in BackupIo.restore). Pin colors are pre-read
         // for the same reason — see the trip-creation comment below.
+        //
+        // Names match case-insensitively (CSV fields arrive trimmed): an
+        // existing "summer 2025" must absorb a row tagged "Summer 2025"
+        // instead of spawning a duplicate trip. Existing DB rows fill the
+        // map first, and first-in wins, so imports attach to real rows
+        // even if the DB somehow holds two names differing only by case.
+        // Known format limitation, unchanged here: the CSV carries only
+        // the trip NAME, so two genuinely distinct trips that share one
+        // name collapse into a single trip on import.
         val tripIdByName = mutableMapOf<String, Long>()
         val usedPinColors = mutableListOf<String>()
         tripRepository.observeAll().first().forEach { trip ->
-            tripIdByName[trip.name] = trip.id
+            tripIdByName.getOrPut(nameKey(trip.name)) { trip.id }
             trip.pinColor?.let { usedPinColors += it }
         }
         val vehicleIdByName = mutableMapOf<String, Long>()
-        vehicleRepository.observeAll().first().forEach { vehicleIdByName[it.name] = it.id }
+        vehicleRepository.observeAll().first().forEach {
+            vehicleIdByName.getOrPut(nameKey(it.name)) { it.id }
+        }
 
         var imported = 0
         var skipped = 0
@@ -283,7 +298,9 @@ class CsvIo @Inject constructor(
                 val parsed = CsvFormat.fromRow(headers, row)
                 if (parsed == null) { skipped++; continue }
                 val tripId = parsed.tripName?.takeIf { it.isNotBlank() }?.let { name ->
-                    tripIdByName.getOrPut(name) {
+                    // Keyed by the normalized name; newly created rows keep
+                    // the CSV's original casing as their display name.
+                    tripIdByName.getOrPut(nameKey(name)) {
                         // Assign the pin color here from the pre-read list
                         // rather than letting TripRepository.upsert auto-pick:
                         // its auto-pick collects a DAO Flow, which must not run
@@ -296,7 +313,9 @@ class CsvIo @Inject constructor(
                     }
                 }
                 val vehicleId = parsed.vehicleName?.takeIf { it.isNotBlank() }?.let { name ->
-                    vehicleIdByName.getOrPut(name) { vehicleRepository.upsert(Vehicle(name = name)) }
+                    vehicleIdByName.getOrPut(nameKey(name)) {
+                        vehicleRepository.upsert(Vehicle(name = name))
+                    }
                 }
                 sessionRepository.upsert(parsed.session.copy(tripId = tripId, vehicleId = vehicleId))
                 imported++
