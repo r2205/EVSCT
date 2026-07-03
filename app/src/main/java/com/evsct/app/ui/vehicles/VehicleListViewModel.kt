@@ -4,26 +4,22 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.VehicleRepository
-import com.evsct.app.util.VehicleImageStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 @HiltViewModel
 class VehicleListViewModel @Inject constructor(
-    private val repository: VehicleRepository,
-    private val imageStore: VehicleImageStore,
+    repository: VehicleRepository,
 ) : ViewModel() {
 
     val vehicles: StateFlow<List<Vehicle>> =
         repository.observeAll()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun delete(vehicle: Vehicle) = viewModelScope.launch {
-        repository.delete(vehicle)
-        imageStore.delete(vehicle.imagePath)
-    }
+    // Deliberately no list-level delete. The edit screen's deleteAndExit
+    // is the one delete path — it cleans up the profile image and any
+    // files an edit session touched.
 }

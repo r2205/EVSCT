@@ -235,7 +235,9 @@ fun SettingsScreen(
                         "Save or restore everything — sessions, trips, vehicles, and " +
                             "vehicle photos — as a single .zip. Save picks a folder on " +
                             "this device; Share sends the file out via Drive, email, or " +
-                            "any other app you have installed.",
+                            "any other app you have installed. Android's automatic " +
+                            "backup doesn't include photos or receipts, so this is the " +
+                            "only complete copy.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     // Updates when a Save completes, a share target is

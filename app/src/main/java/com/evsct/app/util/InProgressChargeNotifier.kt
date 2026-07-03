@@ -68,8 +68,13 @@ class InProgressChargeNotifier @Inject constructor(
         // elapsed chip, elapsed-time fallback into the duration on save)
         // must work even when POST_NOTIFICATIONS is denied — the permission
         // only gates the shade shortcut.
+        val idChanged = trackedSessionId != sessionId
         trackedSessionId = sessionId
-        persistTrackedId(sessionId)
+        // The DataStore mirror exists for process-death recovery, so it
+        // only needs writing when the tracked id CHANGES — re-persisting
+        // the same id on every shade-text refresh was a disk commit per
+        // brand/city keystroke while live-tracking.
+        if (idChanged) persistTrackedId(sessionId)
         if (!hasNotificationPermission()) return
         ensureChannel()
         val notification = build(sessionId, brand, city, sessionStart)

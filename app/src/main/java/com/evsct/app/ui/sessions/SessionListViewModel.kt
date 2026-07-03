@@ -79,6 +79,11 @@ data class SessionListUi(
     val filters: SessionFilters = SessionFilters(),
     val sortOption: SortOption = SortOption.DATE,
     val backupNudge: BackupNudge = BackupNudge(),
+    /** The quick-tracked session, when it has been running past the stale
+     *  threshold — a charge "in progress" for 12+ hours was almost
+     *  certainly abandoned. Drives the "Still charging?" banner; null when
+     *  nothing is tracked or the charge is still young. */
+    val staleTrackedSession: ChargingSession? = null,
 ) {
     val isSelectionMode: Boolean get() = selectedIds.isNotEmpty()
 }
@@ -171,18 +176,41 @@ class SessionListViewModel @Inject constructor(
             rows.asSequence().filter { it.count > 0 }.mapTo(mutableSetOf()) { it.sessionId }
         }
 
+    /** Quick-tracked session that has been running past [STALE_TRACKING_MS].
+     *  Staleness is evaluated whenever an input emits (tracking starts or
+     *  ends, any session changes) and again each time the screen
+     *  resubscribes — so a charge that crosses the threshold while the app
+     *  is closed gets flagged on the next open, which is when the banner
+     *  can be seen anyway. */
+    private val staleTrackedSession =
+        combine(
+            appPreferences.trackedChargeSessionIdFlow,
+            sessionRepository.observeAll(),
+        ) { trackedId, sessions ->
+            if (trackedId == null) null
+            else sessions.firstOrNull { it.id == trackedId }
+                ?.takeIf { System.currentTimeMillis() - it.sessionStart >= STALE_TRACKING_MS }
+        }
+
+    /** Paired so the outer combine stays within the 5-flow overload. */
+    private val receiptsAndStaleTracking =
+        combine(sessionsWithReceipts, staleTrackedSession) { receipts, stale ->
+            receipts to stale
+        }
+
     val state: StateFlow<SessionListUi> =
         combine(
             baseUi,
             appPreferences.lastBackupAt,
             appPreferences.reminderSettings,
             backupNudgeDismissed,
-            sessionsWithReceipts,
-        ) { pair, lastBackupAt, reminder, dismissed, withReceipts ->
+            receiptsAndStaleTracking,
+        ) { pair, lastBackupAt, reminder, dismissed, (withReceipts, staleTracked) ->
             val (ui, totalSessions) = pair
             ui.copy(
                 backupNudge = computeBackupNudge(totalSessions, lastBackupAt, reminder, dismissed),
                 sessionsWithReceipts = withReceipts,
+                staleTrackedSession = staleTracked,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SessionListUi())
 
@@ -247,9 +275,11 @@ class SessionListViewModel @Inject constructor(
         }
     }
 
-    fun delete(session: ChargingSession) = viewModelScope.launch {
-        sessionRepository.delete(session)
-    }
+    // Deliberately no list-level delete here. A bare repository.delete
+    // would CASCADE the session_receipts rows but leak their files on
+    // disk permanently — the edit screen's deleteAndExit is the one
+    // correct session-delete path (it reconciles receipt files). If
+    // list-side delete is ever added, route it through that logic.
 
     /**
      * Quick-track entry point for the "Start charge" FAB. Persists a fresh
@@ -284,6 +314,12 @@ class SessionListViewModel @Inject constructor(
         }
     }
 }
+
+/** A tracked charge older than this is presumed abandoned and gets the
+ *  "Still charging?" banner. 12 h clears any DC or L2 session; only a
+ *  multi-day Level 1 trickle charge can trip it legitimately, and there
+ *  the banner is an ignorable question, not an action. */
+private const val STALE_TRACKING_MS = 12L * 60 * 60 * 1000
 
 private fun computeBackupNudge(
     totalSessions: Int,

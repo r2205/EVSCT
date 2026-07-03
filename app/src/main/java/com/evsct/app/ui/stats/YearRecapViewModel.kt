@@ -14,6 +14,7 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
+import com.evsct.app.util.BrandSpend
 import com.evsct.app.util.OdometerDistance
 import com.evsct.app.util.StopKey
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -359,13 +360,7 @@ class YearRecapViewModel @Inject constructor(
         val odoDistance = OdometerDistance.inWindow(sessions, yearStart, yearEnd)
         val totalDistance = if (odoDistance > 1.0) odoDistance else totalKwh * FALLBACK_KM_PER_KWH
 
-        val topBrands = costSessions
-            .filter { !it.brand.isNullOrBlank() && (it.totalCost ?: 0.0) > 0 }
-            .groupBy { it.brand!!.trim() }
-            .mapValues { (_, ss) -> ss.sumOf { it.totalCost ?: 0.0 } }
-            .toList()
-            .sortedByDescending { it.second }
-            .take(8)
+        val topBrands = BrandSpend.top(costSessions)
 
         val monthlyCost = monthlySeries(costSessions, effectiveYear) { it.totalCost ?: 0.0 }
         val monthlyKwh = monthlySeries(inYear, effectiveYear) { it.energyKwh ?: 0.0 }

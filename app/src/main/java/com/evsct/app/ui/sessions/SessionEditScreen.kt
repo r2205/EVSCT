@@ -54,6 +54,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -299,11 +302,32 @@ fun SessionEditScreen(
                 value = state.postedEnergyPriceText,
                 isError = HintField.POSTED_ENERGY_PRICE in warnedFields,
             ) { v -> viewModel.update { it.copy(postedEnergyPriceText = v) } }
-            NumberField(
-                label = "Posted time-based rate ($/min)",
-                value = state.postedTimeRateText,
-                isError = HintField.POSTED_TIME_RATE in warnedFields,
-            ) { v -> viewModel.update { it.copy(postedTimeRateText = v) } }
+            // Stations advertise time-based pricing in $/min or $/hr; the
+            // toggle picks the entry unit and converts the typed value in
+            // place when flipped. Storage stays canonical $/min.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NumberField(
+                    label = "Posted time-based rate ($/${state.postedTimeRateUnit.suffix})",
+                    value = state.postedTimeRateText,
+                    modifier = Modifier.weight(1f),
+                    isError = HintField.POSTED_TIME_RATE in warnedFields,
+                ) { v -> viewModel.update { it.copy(postedTimeRateText = v) } }
+                SingleChoiceSegmentedButtonRow {
+                    TimeRateUnit.entries.forEachIndexed { index, unit ->
+                        SegmentedButton(
+                            selected = state.postedTimeRateUnit == unit,
+                            onClick = { viewModel.setPostedTimeRateUnit(unit) },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = TimeRateUnit.entries.size,
+                            ),
+                        ) { Text(unit.suffix) }
+                    }
+                }
+            }
             NumberField(
                 label = "Posted max power (kW)",
                 value = state.postedMaxPowerText,

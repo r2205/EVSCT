@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -262,6 +263,14 @@ fun SessionListScreen(
                     onOpenSettings = onOpenSettings,
                     onDismiss = { viewModel.dismissBackupNudge() },
                 )
+            }
+            state.staleTrackedSession?.let { stale ->
+                if (!state.isSelectionMode) {
+                    StaleTrackingBanner(
+                        session = stale,
+                        onOpen = { onEditSession(stale.id) },
+                    )
+                }
             }
             SummaryCard(state)
             if (state.sessions.isEmpty()) {
@@ -1315,6 +1324,50 @@ private fun pickedDayEnd(pickerUtcMillis: Long): Long {
         .atStartOfDay(java.time.ZoneId.systemDefault())
         .toInstant().toEpochMilli()
     return nextDayStart - 1
+}
+
+@Composable
+private fun StaleTrackingBanner(
+    session: ChargingSession,
+    onOpen: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.BatteryChargingFull,
+                    contentDescription = null,
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Still charging?",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "A tracked charge started ${Format.dateTime(session.sessionStart)} " +
+                            "is still running. Open it to finish or delete it.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                androidx.compose.material3.TextButton(onClick = onOpen) { Text("Open session") }
+            }
+        }
+    }
 }
 
 @Composable
