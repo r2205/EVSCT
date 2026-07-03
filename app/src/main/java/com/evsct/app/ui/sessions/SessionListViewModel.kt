@@ -247,9 +247,11 @@ class SessionListViewModel @Inject constructor(
         }
     }
 
-    fun delete(session: ChargingSession) = viewModelScope.launch {
-        sessionRepository.delete(session)
-    }
+    // Deliberately no list-level delete here. A bare repository.delete
+    // would CASCADE the session_receipts rows but leak their files on
+    // disk permanently — the edit screen's deleteAndExit is the one
+    // correct session-delete path (it reconciles receipt files). If
+    // list-side delete is ever added, route it through that logic.
 
     /**
      * Quick-track entry point for the "Start charge" FAB. Persists a fresh
