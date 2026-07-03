@@ -32,22 +32,43 @@ object Csv {
      *  formulas (e.g., a notes field starting with `=cmd|...`). */
     private val FORMULA_TRIGGERS = setOf('=', '+', '-', '@', '\t', '\r')
 
+    /** Matches a field that is nothing but a signed number. Kotlin's
+     *  Double.toString can emit scientific notation, so the exponent is
+     *  part of the shape. */
+    private val PLAIN_NUMBER = Regex("""[-+]?\d+(\.\d+)?([eE][-+]?\d+)?""")
+
     fun encodeField(value: String?): String {
         if (value == null) return ""
         // Defuse formula injection by prefixing dangerous leading chars with
         // a single quote — spreadsheet apps strip that prefix and treat the
         // rest as literal text. decodeField mirrors this on import so EVSCT
         // round-trips the user's original value losslessly.
-        val sanitized = if (value.isNotEmpty() && value[0] in FORMULA_TRIGGERS) "'$value" else value
+        val sanitized = if (needsDefusing(value)) "'$value" else value
         val needsQuote = sanitized.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
         val escaped = sanitized.replace("\"", "\"\"")
         return if (needsQuote) "\"$escaped\"" else escaped
     }
 
+    /** A leading `=`, `@`, tab, or CR always defuses. A leading `+`/`-`
+     *  defuses only when the field isn't a plain number: `-79.38` is a
+     *  longitude that every western-hemisphere export contains, and
+     *  prefixing it turns the whole column into text in Excel/Sheets —
+     *  while a pure number can't carry a payload (`+1234` in a cell just
+     *  evaluates to 1234). `-2+cmd|...` is not a plain number and still
+     *  gets the prefix. */
+    private fun needsDefusing(value: String): Boolean {
+        val first = value.firstOrNull() ?: return false
+        if (first !in FORMULA_TRIGGERS) return false
+        if ((first == '-' || first == '+') && PLAIN_NUMBER.matches(value)) return false
+        return true
+    }
+
     /** Reverse of the [encodeField] formula-injection prefix: strip a leading
      *  `'` only when it sits in front of a known formula trigger. A user's
      *  legitimate `'Tesla` brand stays intact (the second char isn't a
-     *  trigger). */
+     *  trigger). Deliberately looser than [needsDefusing]: exports written
+     *  before numbers were exempted contain `'-79.38`, and those must keep
+     *  round-tripping back to `-79.38`. */
     private fun decodeField(value: String): String =
         if (value.length >= 2 && value[0] == '\'' && value[1] in FORMULA_TRIGGERS)
             value.substring(1)

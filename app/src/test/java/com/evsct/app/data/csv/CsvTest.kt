@@ -33,14 +33,40 @@ class CsvTest {
 
     @Test
     fun `formula triggers get prefixed and quoted`() {
-        // = + - @ tab CR — all defuse with a leading apostrophe.
-        // Quoting kicks in too because the apostrophe-prefixed string still
-        // gets routed through the quote-needed check (not strictly required
-        // for "=foo" but harmless).
+        // = @ tab CR always defuse; + and - defuse when what follows isn't
+        // a plain number. Quoting kicks in too because the apostrophe-
+        // prefixed string still gets routed through the quote-needed check
+        // (not strictly required for "=foo" but harmless).
         assertEquals("'=cmd|calc", Csv.encodeField("=cmd|calc"))
-        assertEquals("'+1234", Csv.encodeField("+1234"))
+        assertEquals("'+cmd", Csv.encodeField("+cmd"))
         assertEquals("'-cmd", Csv.encodeField("-cmd"))
         assertEquals("'@evil", Csv.encodeField("@evil"))
+        assertEquals("'=1234", Csv.encodeField("=1234")) // = defuses even for numbers
+    }
+
+    @Test
+    fun `plain negative numbers are not prefixed`() {
+        // Longitude west of Greenwich, negative costs, etc. must stay
+        // numeric for Excel/Sheets — a pure number can't carry a payload.
+        assertEquals("-79.38", Csv.encodeField("-79.38"))
+        assertEquals("-5", Csv.encodeField("-5"))
+        assertEquals("+1234", Csv.encodeField("+1234"))
+        assertEquals("-1.5E-7", Csv.encodeField("-1.5E-7"))
+    }
+
+    @Test
+    fun `sign followed by non-numeric content still defuses`() {
+        assertEquals("'-79.38 west", Csv.encodeField("-79.38 west"))
+        assertEquals("'-2+3+cmd|calc", Csv.encodeField("-2+3+cmd|calc"))
+        assertEquals("'-", Csv.encodeField("-"))
+        assertEquals("'-1..2", Csv.encodeField("-1..2"))
+    }
+
+    @Test
+    fun `old exports with prefixed negative numbers still decode`() {
+        // Files written before numbers were exempted contain '-79.38 —
+        // the decoder must keep stripping those.
+        assertEquals(listOf("-79.38", "-5"), Csv.parseLine("'-79.38,'-5"))
     }
 
     @Test
