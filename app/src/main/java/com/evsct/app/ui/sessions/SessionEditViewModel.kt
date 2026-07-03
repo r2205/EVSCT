@@ -3,6 +3,8 @@ package com.evsct.app.ui.sessions
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
+import com.evsct.app.data.db.EvsctDatabase
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
@@ -152,6 +154,10 @@ data class SessionEditUi(
 @HiltViewModel
 class SessionEditViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
+    /** Only for [androidx.room.withTransaction] in save(): the session row
+     *  and its receipt-row reconciliation must commit atomically. All data
+     *  access still goes through the repositories. */
+    private val database: EvsctDatabase,
     private val sessionRepository: SessionRepository,
     private val sessionReceiptRepository: SessionReceiptRepository,
     private val tripRepository: TripRepository,
@@ -733,7 +739,51 @@ class SessionEditViewModel @Inject constructor(
                 longitude = saveLng,
                 createdAt = originalCreatedAt ?: System.currentTimeMillis(),
             )
-            val savedId = sessionRepository.upsert(session)
+            // The session row and its receipt-row reconciliation commit as
+            // ONE transaction: process death between them used to save the
+            // session but leave newly attached receipts row-less — files
+            // stranded on disk, invisible to the UI and never cleaned
+            // (reconcileReceiptFiles hadn't run either). File deletions
+            // stay outside, after commit, so a rolled-back transaction
+            // can't have already destroyed files its rows still reference.
+            val desiredPaths = s.receipts.mapTo(mutableSetOf()) { it.filePath }
+            val savedId = database.withTransaction {
+                val id = sessionRepository.upsert(session)
+
+                // Diff the in-memory receipts against the DB and apply the
+                // delta. Newly added rows (id == null) get inserted; rows
+                // that the user removed get deleted. The session_receipts
+                // .sessionId FK uses the freshly-upserted id, which is the
+                // same as the existing id for updates and the new
+                // autoincrement id for inserts.
+                val existing = sessionReceiptRepository.findForSession(id)
+                val existingById = existing.associateBy { it.id }
+                existing
+                    .filter { it.filePath !in desiredPaths }
+                    .forEach { sessionReceiptRepository.delete(it) }
+                val existingPaths = existing.mapTo(mutableSetOf()) { it.filePath }
+                val newRows = s.receipts
+                    .filter { it.filePath !in existingPaths }
+                    .map {
+                        SessionReceipt(
+                            sessionId = id,
+                            filePath = it.filePath,
+                            originalFileName = it.originalFileName,
+                        )
+                    }
+                if (newRows.isNotEmpty()) sessionReceiptRepository.insertAll(newRows)
+                // Apply renames on already-persisted receipts (matched by
+                // id). We skip when the name is unchanged so we don't bump
+                // rows that didn't move.
+                s.receipts.forEach { r ->
+                    val rid = r.id ?: return@forEach
+                    val current = existingById[rid] ?: return@forEach
+                    if (current.originalFileName != r.originalFileName) {
+                        sessionReceiptRepository.updateName(rid, r.originalFileName)
+                    }
+                }
+                id
+            }
             committedSessionId = savedId
 
             // Sibling propagation from the map picker, deferred until the
@@ -759,39 +809,6 @@ class SessionEditViewModel @Inject constructor(
                     }
                 }
                 pendingPickPropagation = null
-            }
-
-            // Diff the in-memory receipts against the DB and apply the delta.
-            // Newly added rows (id == null) get inserted; rows that the user
-            // removed get deleted. The session_receipts.sessionId FK uses
-            // the freshly-upserted savedId, which is the same as the existing
-            // id for updates and the new autoincrement id for inserts.
-            val desiredPaths = s.receipts.mapTo(mutableSetOf()) { it.filePath }
-            val existing = sessionReceiptRepository.findForSession(savedId)
-            val existingById = existing.associateBy { it.id }
-            existing
-                .filter { it.filePath !in desiredPaths }
-                .forEach { sessionReceiptRepository.delete(it) }
-            val existingPaths = existing.mapTo(mutableSetOf()) { it.filePath }
-            val newRows = s.receipts
-                .filter { it.filePath !in existingPaths }
-                .map {
-                    SessionReceipt(
-                        sessionId = savedId,
-                        filePath = it.filePath,
-                        originalFileName = it.originalFileName,
-                    )
-                }
-            if (newRows.isNotEmpty()) sessionReceiptRepository.insertAll(newRows)
-            // Apply renames on already-persisted receipts (matched by id).
-            // We skip when the name is unchanged so we don't bump rows that
-            // didn't move.
-            s.receipts.forEach { r ->
-                val rid = r.id ?: return@forEach
-                val current = existingById[rid] ?: return@forEach
-                if (current.originalFileName != r.originalFileName) {
-                    sessionReceiptRepository.updateName(rid, r.originalFileName)
-                }
             }
 
             // Drop any speculative copies the user attached and then removed
