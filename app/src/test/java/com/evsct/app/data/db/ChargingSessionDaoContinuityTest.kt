@@ -161,6 +161,80 @@ class ChargingSessionDaoContinuityTest {
         assertTrue(dao.findById(b.id)!!.continuesPrevious)
     }
 
+    // --- update: the moved session's own flag ---
+
+    @Test
+    fun `moving a flagged session under a new predecessor clears its own flag`() = runBlocking {
+        val dao = FakeSessionDao()
+        dao.put(session(t = 100, vehicleId = 1))
+        dao.put(session(t = 300, vehicleId = 1))
+        val b = dao.put(session(t = 200, vehicleId = 1, continuesPrevious = true))
+
+        // b attested continuity against the t=100 session; after the move its
+        // predecessor is the t=300 session, which it never attested against.
+        dao.updateAndClearStaleContinuity(b.copy(sessionStart = 400), now = 999)
+
+        assertFalse(dao.findById(b.id)!!.continuesPrevious)
+    }
+
+    @Test
+    fun `moving a flagged session while keeping its predecessor keeps its own flag`() = runBlocking {
+        val dao = FakeSessionDao()
+        dao.put(session(t = 100, vehicleId = 1))
+        val b = dao.put(session(t = 200, vehicleId = 1, continuesPrevious = true))
+
+        // Still directly after the t=100 session — the attestation holds.
+        dao.updateAndClearStaleContinuity(b.copy(sessionStart = 150), now = 999)
+
+        assertTrue(dao.findById(b.id)!!.continuesPrevious)
+    }
+
+    @Test
+    fun `moving a flagged session to another vehicle clears its own flag`() = runBlocking {
+        val dao = FakeSessionDao()
+        dao.put(session(t = 100, vehicleId = 1))
+        val b = dao.put(session(t = 200, vehicleId = 1, continuesPrevious = true))
+
+        dao.updateAndClearStaleContinuity(b.copy(vehicleId = 2), now = 999)
+
+        assertFalse(dao.findById(b.id)!!.continuesPrevious)
+    }
+
+    @Test
+    fun `moving a flagged session to the front of its timeline clears its own flag`() = runBlocking {
+        val dao = FakeSessionDao()
+        dao.put(session(t = 100, vehicleId = 1))
+        val b = dao.put(session(t = 200, vehicleId = 1, continuesPrevious = true))
+
+        dao.updateAndClearStaleContinuity(b.copy(sessionStart = 50), now = 999)
+
+        assertFalse(dao.findById(b.id)!!.continuesPrevious)
+    }
+
+    // --- chunked bulk updates ---
+
+    @Test
+    fun `assignTripToIdsChunked reaches every id across chunk boundaries`() = runBlocking {
+        val dao = FakeSessionDao()
+        val ids = (1..2001).map { dao.put(session(t = it.toLong(), vehicleId = 1)).id }
+
+        val updated = dao.assignTripToIdsChunked(ids, tripId = 7, now = 999)
+
+        assertEquals(2001, updated)
+        assertTrue(ids.all { dao.findById(it)!!.tripId == 7L })
+    }
+
+    @Test
+    fun `setCoordinatesForIdsChunked reaches every id across chunk boundaries`() = runBlocking {
+        val dao = FakeSessionDao()
+        val ids = (1..901).map { dao.put(session(t = it.toLong(), vehicleId = 1)).id }
+
+        val updated = dao.setCoordinatesForIdsChunked(ids, lat = 43.6, lng = -79.4, now = 999)
+
+        assertEquals(901, updated)
+        assertTrue(ids.all { dao.findById(it)!!.latitude == 43.6 })
+    }
+
     private fun session(
         t: Long,
         vehicleId: Long?,
@@ -238,6 +312,13 @@ private class FakeSessionDao : ChargingSessionDao {
         rows.values
             .filter { it.vehicleId == vehicleId && it.id != excludeId && it.sessionStart >= start }
             .minWithOrNull(compareBy({ it.sessionStart }, { it.id }))
+
+    // Mirrors: vehicleId IS :vehicleId AND id != :excludeId AND
+    // sessionStart <= :start ORDER BY sessionStart DESC, id DESC LIMIT 1.
+    override suspend fun lastBefore(vehicleId: Long?, start: Long, excludeId: Long): ChargingSession? =
+        rows.values
+            .filter { it.vehicleId == vehicleId && it.id != excludeId && it.sessionStart <= start }
+            .maxWithOrNull(compareBy({ it.sessionStart }, { it.id }))
 
     override suspend fun clearContinuesPrevious(id: Long, now: Long) {
         rows[id]?.let { rows[id] = it.copy(continuesPrevious = false, updatedAt = now) }
