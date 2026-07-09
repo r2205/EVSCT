@@ -26,6 +26,7 @@ import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -99,7 +100,11 @@ class BackupIo @Inject constructor(
     private val backupReminderScheduler: BackupReminderScheduler,
 ) {
 
-    suspend fun export(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
+    // NonCancellable: export runs in a ViewModel scope, and backing out of
+    // Settings mid-write would cancel it after "wt" has already truncated
+    // the user's previous backup — leaving a corrupt file with no failure
+    // message. The work is short and must finish once started.
+    suspend fun export(uri: Uri): BackupResult = withContext(Dispatchers.IO + NonCancellable) {
         // Stage the zip in cacheDir before touching the destination. Users
         // routinely overwrite their previous backup file, and opening the
         // SAF stream in "wt" mode truncates it immediately — so a failure
@@ -275,7 +280,12 @@ class BackupIo @Inject constructor(
         }
     }
 
-    suspend fun restore(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
+    // NonCancellable for the same reason as export: back-navigation from
+    // Settings cancels the caller's scope, and a cancellation delivered
+    // between the wipe transaction committing and installFiles/promote
+    // would leave a restored database whose media never arrived (which the
+    // missing-media sweep would then null out for good).
+    suspend fun restore(uri: Uri): BackupResult = withContext(Dispatchers.IO + NonCancellable) {
         val tempDir = File(context.cacheDir, "backup-restore-${UUID.randomUUID()}")
         var snapshotStaging: File? = null
         try {

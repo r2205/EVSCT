@@ -54,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,7 +82,11 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var replaceOnImport by remember { mutableStateOf(false) }
+    // Saveable: the SAF picker sits over this screen and low-RAM devices
+    // kill the process behind it; the redelivered activity result would
+    // otherwise see the flag reset to false and quietly downgrade a
+    // replace-import into an append that duplicates the whole log.
+    var replaceOnImport by rememberSaveable { mutableStateOf(false) }
     var showXlsxConfirm by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf<android.net.Uri?>(null) }
     var showUndoRestoreConfirm by remember { mutableStateOf(false) }

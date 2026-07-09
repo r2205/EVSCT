@@ -365,7 +365,15 @@ class MapViewModel @Inject constructor(
                 val lat = located?.latitude
                 val lng = located?.longitude
                 if (lat != null && lng != null) {
-                    sessionRepository.setCoordinates(group.map { it.id }, lat, lng)
+                    // Only stamp sessions whose own geocode inputs match the
+                    // sample's. StopKey excludes stationName, so a group with
+                    // blank address/city degenerates to brand alone and can
+                    // mix physically different stations ("FLO – Guelph" and
+                    // "FLO – Kingston") — writing the sample's point onto all
+                    // of them would permanently collapse distinct stops.
+                    val sampleQuery = sample.geocodeQuery()
+                    val matching = group.filter { it.geocodeQuery() == sampleQuery }
+                    sessionRepository.setCoordinates(matching.map { it.id }, lat, lng)
                 } else {
                     failed += 1
                 }

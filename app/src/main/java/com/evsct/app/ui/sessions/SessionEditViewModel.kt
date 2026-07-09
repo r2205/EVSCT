@@ -30,7 +30,10 @@ import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Tags
 import com.evsct.app.util.Units
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -204,6 +207,13 @@ class SessionEditViewModel @Inject constructor(
      *  Includes the originals (if any) so cleanup logic can iterate one set. */
     private val touchedReceiptPaths = mutableSetOf<String>()
 
+    /** Receipt copies still streaming in from their SAF provider (cloud
+     *  hand-offs take seconds). save()/deleteAndExit() await these before
+     *  snapshotting or reconciling: a Save tapped mid-copy would otherwise
+     *  commit without the attachment, mark cleanup handled, and strand the
+     *  finished copy on disk forever. */
+    private val attachJobsInFlight = mutableListOf<Job>()
+
     /** Becomes true once save() or deleteAndExit() has fully reconciled the
      *  filesystem with the form state. onCleared() uses this to decide
      *  whether to roll back speculative file copies. */
@@ -354,26 +364,45 @@ class SessionEditViewModel @Inject constructor(
         if (units.cardTimeRate == CardTimeRate.PER_HOUR) TimeRateUnit.PER_HOUR
         else TimeRateUnit.PER_MINUTE
 
+    /** The text the field held before the last unit flip, so flipping back
+     *  restores the typed value exactly. Converting twice through the
+     *  4-decimal display rounding turned 1 $/hr into 1.002 $/hr — the
+     *  toggle's contract is convert-in-place, not mutate. Cleared when the
+     *  user edits the field (see [update]). */
+    private var timeRateFlipUndo: Pair<TimeRateUnit, String>? = null
+
     /** Flip the posted-rate entry unit, converting the current text in
      *  place so the physical value is preserved — entering 27 in $/hr and
      *  flipping to $/min shows 0.45, not a relabeled 27. */
     fun setPostedTimeRateUnit(unit: TimeRateUnit) {
         _state.update { s ->
             if (s.postedTimeRateUnit == unit) return@update s
-            val converted = Format.parseDecimal(s.postedTimeRateText)?.let { typed ->
-                val perMin = if (s.postedTimeRateUnit == TimeRateUnit.PER_HOUR) typed / 60.0 else typed
-                val inNewUnit = if (unit == TimeRateUnit.PER_HOUR) perMin * 60.0 else perMin
-                formatTimeRateText(inNewUnit)
-            } ?: s.postedTimeRateText
+            val undo = timeRateFlipUndo
+            val converted = if (undo != null && undo.first == unit) {
+                undo.second
+            } else {
+                Format.parseDecimal(s.postedTimeRateText)?.let { typed ->
+                    val perMin = if (s.postedTimeRateUnit == TimeRateUnit.PER_HOUR) typed / 60.0 else typed
+                    val inNewUnit = if (unit == TimeRateUnit.PER_HOUR) perMin * 60.0 else perMin
+                    formatTimeRateText(inNewUnit)
+                } ?: s.postedTimeRateText
+            }
+            timeRateFlipUndo = s.postedTimeRateUnit to s.postedTimeRateText
             withHints(s.copy(postedTimeRateUnit = unit, postedTimeRateText = converted))
         }
     }
 
     /** Up to 4 decimals, trailing zeros trimmed — enough precision for a
-     *  $/min value without echoing binary-noise tails. Locale pinned like
-     *  the Format helpers. */
-    private fun formatTimeRateText(value: Double): String =
-        "%.4f".format(Locale.US, value).trimEnd('0').trimEnd('.')
+     *  $/min value without echoing binary-noise tails. Tiny rates get more
+     *  decimals rather than collapsing to "0" (0.002 $/hr is 0.000033
+     *  $/min). Locale pinned like the Format helpers. */
+    private fun formatTimeRateText(value: Double): String {
+        for (decimals in 4..12) {
+            val text = "%.${decimals}f".format(Locale.US, value).trimEnd('0').trimEnd('.')
+            if (text != "0" && text != "-0") return text
+        }
+        return "0"
+    }
 
     /** Refresh the in-progress notification with the current brand/city so
      *  the shade entry stays in sync as the user fills in the form. No-op
@@ -477,7 +506,21 @@ class SessionEditViewModel @Inject constructor(
     }
 
     fun update(transform: (SessionEditUi) -> SessionEditUi) =
-        _state.update { withHints(transform(it)) }
+        _state.update { prev ->
+            val next = transform(prev)
+            // A fresh keystroke in the rate field supersedes the pre-flip
+            // text — flipping back must convert the new value, not restore
+            // the stale one.
+            if (next.postedTimeRateText != prev.postedTimeRateText) timeRateFlipUndo = null
+            withHints(next)
+        }
+
+    /** Whole-number fields (battery %, wait minutes) offer a Decimal
+     *  keyboard, so fractional input like "82.5" — or "82,5" on a
+     *  comma-decimal device — must round rather than silently save as
+     *  null the way a bare toIntOrNull did. */
+    private fun parseWholeNumber(text: String): Int? =
+        Format.parseDecimal(text)?.roundToInt()
 
     private fun withHints(form: SessionEditUi): SessionEditUi {
         val prev = previousSessionFor(form)
@@ -565,8 +608,8 @@ class SessionEditViewModel @Inject constructor(
             )
         }
 
-        val battStart = form.batteryStartText.toIntOrNull()
-        val battEnd = form.batteryEndText.toIntOrNull()
+        val battStart = parseWholeNumber(form.batteryStartText)
+        val battEnd = parseWholeNumber(form.batteryEndText)
         if (battStart != null && battEnd != null && battEnd < battStart) {
             out += ValidationHint(
                 title = "Battery decreased during charge",
@@ -605,7 +648,7 @@ class SessionEditViewModel @Inject constructor(
     }
 
     fun addReceipt(uri: Uri) {
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             // Copy the new file to disk and track it. Don't delete anything
             // yet — already-attached receipts stay valid until save() commits
             // the diff, so backing out without saving leaves the DB intact.
@@ -633,6 +676,10 @@ class SessionEditViewModel @Inject constructor(
                 )
             }
         }
+        attachJobsInFlight += job
+        // viewModelScope is main-bound, so completion (and this removal)
+        // runs on the main thread like every other touch of the list.
+        job.invokeOnCompletion { attachJobsInFlight -= job }
     }
 
     /** Remove one receipt from the in-memory list. The file stays on disk
@@ -741,6 +788,9 @@ class SessionEditViewModel @Inject constructor(
         if (commitInFlight || exitRequested) return
         commitInFlight = true
         viewModelScope.launch {
+            // Let any receipt copy still streaming in land first, so the
+            // snapshot below includes it instead of stranding the file.
+            attachJobsInFlight.toList().joinAll()
             val s = _state.value
             val odometerKm = currentOdometerKm(s)
             val newQuery = geocodeQueryFor(
@@ -773,7 +823,7 @@ class SessionEditViewModel @Inject constructor(
                 id = committedSessionId ?: if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
                 durationSeconds = durationSeconds,
-                waitTimeMinutes = s.waitTimeText.toIntOrNull()?.takeIf { it >= 0 },
+                waitTimeMinutes = parseWholeNumber(s.waitTimeText)?.takeIf { it >= 0 },
                 odometerKm = odometerKm,
                 energyKwh = Format.parseDecimal(s.energyText),
                 totalCost = Format.parseDecimal(s.costText),
@@ -785,8 +835,8 @@ class SessionEditViewModel @Inject constructor(
                     if (s.postedTimeRateUnit == TimeRateUnit.PER_HOUR) it / 60.0 else it
                 },
                 postedMaxPowerKw = Format.parseDecimal(s.postedMaxPowerText),
-                batteryStartPct = s.batteryStartText.toIntOrNull(),
-                batteryEndPct = s.batteryEndText.toIntOrNull(),
+                batteryStartPct = parseWholeNumber(s.batteryStartText),
+                batteryEndPct = parseWholeNumber(s.batteryEndText),
                 chargingType = s.chargingType,
                 pricingModel = s.pricingModel,
                 brand = s.brand.takeIf { it.isNotBlank() },
@@ -909,7 +959,15 @@ class SessionEditViewModel @Inject constructor(
                     val lat = located?.latitude
                     val lng = located?.longitude
                     if (lat != null && lng != null) {
-                        sessionRepository.setCoordinates(listOf(savedId), lat, lng)
+                        // The screen is long gone by the time a slow geocode
+                        // lands; the user may have reopened the session and
+                        // saved fresher coordinates (map pick, GPS autofill)
+                        // meanwhile. Only fill the blank this save left —
+                        // never overwrite newer data.
+                        val current = sessionRepository.findById(savedId)
+                        if (current != null && current.latitude == null && current.longitude == null) {
+                            sessionRepository.setCoordinates(listOf(savedId), lat, lng)
+                        }
                     }
                 }
             }
@@ -958,6 +1016,21 @@ class SessionEditViewModel @Inject constructor(
                             address = data.address ?: it.address,
                             latitude = data.latitude ?: it.latitude,
                             longitude = data.longitude ?: it.longitude,
+                        )
+                    }
+                    // Same baseline refresh applyPickedLocation does: save()
+                    // compares the address fields against originalGeocodeQuery
+                    // to detect a user edit, and without this the autofilled
+                    // fields read as one — nulling the exact GPS coordinates
+                    // this autofill just stored in favour of a later, less
+                    // precise text geocode.
+                    if (data.latitude != null && data.longitude != null) {
+                        val s = _state.value
+                        originalGeocodeQuery = geocodeQueryFor(
+                            address = s.address.takeIf { it.isNotBlank() },
+                            stationName = s.stationName.takeIf { it.isNotBlank() },
+                            city = s.city.takeIf { it.isNotBlank() },
+                            province = s.province.takeIf { it.isNotBlank() },
                         )
                     }
                     "Filled from current location."
@@ -1040,6 +1113,10 @@ class SessionEditViewModel @Inject constructor(
         if (commitInFlight || exitRequested) return
         commitInFlight = true
         viewModelScope.launch {
+            // As in save(): an attach that lands after the reconcile below
+            // would add its path to touchedReceiptPaths too late for any
+            // cleanup pass to ever see it.
+            attachJobsInFlight.toList().joinAll()
             // A save on this screen may already have committed a row even
             // when the entry opened as "new" (dropped-pop recovery) —
             // Delete must target that row, not just the nav-arg id.

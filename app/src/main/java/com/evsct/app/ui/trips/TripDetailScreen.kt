@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,7 @@ import com.evsct.app.util.EfficiencyAnalysis
 import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.Format
 import com.evsct.app.util.Units
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,7 +56,9 @@ fun TripDetailScreen(
     viewModel: TripDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var showEdit by remember { mutableStateOf(false) }
+    // Saveable so rotating (or process death) doesn't dismiss the edit
+    // dialog and discard everything typed into it.
+    var showEdit by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -310,5 +314,7 @@ private fun legLabel(s: ChargingSession): String = when (s.id) {
 private fun formatKmPerKwh(value: Double, useMiles: Boolean): String {
     val display = Units.kmToDisplay(value, useMiles)
     val unit = Units.distanceUnit(useMiles)
-    return "%.2f $unit/kWh".format(display)
+    // Locale pinned like every other numeric display — the default locale
+    // would render "3,52 km/kWh" next to US-separated Format.* strings.
+    return "%.2f $unit/kWh".format(Locale.US, display)
 }

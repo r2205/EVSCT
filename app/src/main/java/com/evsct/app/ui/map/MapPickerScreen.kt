@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -69,6 +70,17 @@ fun MapPickerScreen(
         if (exited) return
         exited = true
         action()
+    }
+    // Re-arm the latch whenever this nav entry reaches RESUMED (same
+    // pattern as the edit screens' exit latches). The nav-graph callbacks
+    // run inside ifResumed, which silently drops a tap that lands during
+    // the enter transition — without the reset that swallowed tap would
+    // leave `exited` latched and Cancel, the back arrow, and "Use this
+    // location" all permanently dead. A pop that actually ran never
+    // resumes this entry again, so double-tap protection is unaffected.
+    LifecycleResumeEffect(Unit) {
+        exited = false
+        onPauseOrDispose { }
     }
     val cameraPositionState = rememberCameraPositionState {
         position = if (initialLat != null && initialLng != null) {
