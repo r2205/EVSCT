@@ -48,12 +48,17 @@ private const val SHARE_DIR_IN_CACHE = "backup-share"
 private const val PRE_RESTORE_DIR_IN_FILES = "pre-restore"
 private const val PRE_RESTORE_SNAPSHOT_NAME = "pre-restore-snapshot.zip"
 
-// Decompression caps. A real backup of a heavy user is comfortably under
-// these — they exist to short-circuit zip-bombs that decompress a few KB
-// of input into gigabytes of output.
+// Decompression caps. They exist to short-circuit zip-bombs that decompress
+// a few KB of input into gigabytes of output — the primary defenses are the
+// per-entry and entry-count caps. The aggregate cap must stay far above any
+// legitimate backup: export is unbounded (attachments are capped at 25 MiB
+// each but a receipt-photographing user accumulates multi-hundred-MiB
+// collections), and a backup that exports fine but trips the restore cap is
+// un-restorable — including the automatic pre-restore snapshot, which would
+// make "Undo last restore" fail exactly when it's needed.
 private const val MAX_JSON_BYTES: Long = 10L * 1024 * 1024
 private const val MAX_ENTRY_BYTES: Long = 25L * 1024 * 1024
-private const val MAX_TOTAL_BYTES: Long = 100L * 1024 * 1024
+private const val MAX_TOTAL_BYTES: Long = 2L * 1024 * 1024 * 1024
 private const val MAX_BACKUP_ENTRIES: Int = 5_000
 
 sealed interface BackupResult {
@@ -239,29 +244,40 @@ class BackupIo @Inject constructor(
     private fun snapshotFile(): File =
         File(File(context.filesDir, PRE_RESTORE_DIR_IN_FILES), PRE_RESTORE_SNAPSHOT_NAME)
 
-    /** Write the current database + media as a backup zip to the snapshot
-     *  path. Staged in cacheDir and moved into place so a failure mid-write
-     *  can't leave a truncated snapshot masquerading as a good one. */
-    private suspend fun writeSnapshotOfCurrentData() {
-        val snapshot = snapshotFile()
-        snapshot.parentFile?.mkdirs()
+    /** Stage the current database + media as a backup zip in cacheDir and
+     *  return the staged file. Deliberately does NOT touch the real
+     *  snapshot: during an undo-restore the existing snapshot is the only
+     *  remaining copy of the data being restored, so it must survive until
+     *  the restore transaction has committed — see [promoteSnapshot]. */
+    private suspend fun stageSnapshotOfCurrentData(): File {
         val staging = File(context.cacheDir, "pre-restore-staging-${UUID.randomUUID()}.zip")
         try {
             staging.outputStream().use { writeBackupZip(it) }
-            if (snapshot.exists()) snapshot.delete()
-            if (!staging.renameTo(snapshot)) {
-                // Different filesystem or rename quirk — fall back to a copy.
-                staging.inputStream().use { inp ->
-                    snapshot.outputStream().use { out -> inp.copyTo(out) }
-                }
-            }
-        } finally {
+        } catch (e: Exception) {
             staging.delete()
+            throw e
+        }
+        return staging
+    }
+
+    /** Move a staged snapshot into place as the real pre-restore snapshot.
+     *  Rename-first so a failure mid-write can't leave a truncated snapshot
+     *  masquerading as a good one. */
+    private fun promoteSnapshot(staging: File) {
+        val snapshot = snapshotFile()
+        snapshot.parentFile?.mkdirs()
+        if (snapshot.exists()) snapshot.delete()
+        if (!staging.renameTo(snapshot)) {
+            // Different filesystem or rename quirk — fall back to a copy.
+            staging.inputStream().use { inp ->
+                snapshot.outputStream().use { out -> inp.copyTo(out) }
+            }
         }
     }
 
     suspend fun restore(uri: Uri): BackupResult = withContext(Dispatchers.IO) {
         val tempDir = File(context.cacheDir, "backup-restore-${UUID.randomUUID()}")
+        var snapshotStaging: File? = null
         try {
             tempDir.mkdirs()
             val backupJson = readZipToTemp(uri, tempDir)
@@ -306,9 +322,13 @@ class BackupIo @Inject constructor(
             // source zip is completely consumed by now, which also makes
             // undo-of-undo work: restoring the snapshot snapshots the
             // present state into the same file first. A snapshot failure
-            // aborts the restore before the wipe.
-            try {
-                writeSnapshotOfCurrentData()
+            // aborts the restore before the wipe. Staged only: the staged
+            // zip replaces the real snapshot after the transaction commits,
+            // because during an undo-restore the existing snapshot is the
+            // only remaining copy of the data being restored — overwriting
+            // it now and then failing the transaction would destroy it.
+            snapshotStaging = try {
+                stageSnapshotOfCurrentData()
             } catch (e: Exception) {
                 return@withContext BackupResult.Failure(
                     "Could not write the pre-restore safety snapshot" +
@@ -444,9 +464,19 @@ class BackupIo @Inject constructor(
                 if (receiptRows.isNotEmpty()) sessionReceiptDao.insertAll(receiptRows)
             }
 
-            // Transaction committed — now (and only now) mutate filesDir.
-            // A copy failure here just leaves an individual image missing;
-            // the database is already internally consistent.
+            // Transaction committed — the old rows are gone, so the staged
+            // snapshot is now the authoritative pre-restore state. Promote
+            // it. On failure the old snapshot has already been deleted, so
+            // Settings hides "Undo last restore" instead of silently
+            // offering an older, wrong state.
+            try {
+                promoteSnapshot(snapshotStaging)
+            } catch (_: Exception) {
+            }
+
+            // Now (and only now) mutate filesDir. A copy failure here just
+            // leaves an individual image missing; the database is already
+            // internally consistent.
             installFiles(File(tempDir, IMAGE_DIR_IN_FILES), IMAGE_DIR_IN_FILES, plannedImages.keys)
             installFiles(File(tempDir, RECEIPT_DIR_IN_FILES), RECEIPT_DIR_IN_FILES, plannedReceipts.keys)
 
@@ -472,6 +502,8 @@ class BackupIo @Inject constructor(
         } catch (e: Exception) {
             BackupResult.Failure(e.message ?: "Restore failed")
         } finally {
+            // No-op when the staging zip was promoted (renamed away).
+            snapshotStaging?.delete()
             tempDir.deleteRecursively()
         }
     }
@@ -845,7 +877,10 @@ private fun JSONObject.putOptLong(key: String, value: Long?) {
 }
 
 private fun JSONObject.putOptDouble(key: String, value: Double?) {
-    if (value == null) put(key, JSONObject.NULL) else put(key, value)
+    // JSONObject.put throws on NaN/Infinity, and one such value stored by an
+    // old build would permanently brick every export AND every restore (the
+    // pre-restore snapshot writes through this too). Emit null instead.
+    if (value == null || !value.isFinite()) put(key, JSONObject.NULL) else put(key, value)
 }
 
 private fun JSONObject.optStringOrNull(key: String): String? =
@@ -855,7 +890,7 @@ private fun JSONObject.optLongOrNull(key: String): Long? =
     if (isNull(key) || !has(key)) null else optLong(key)
 
 private fun JSONObject.optDoubleOrNull(key: String): Double? =
-    if (isNull(key) || !has(key)) null else optDouble(key).takeIf { !it.isNaN() }
+    if (isNull(key) || !has(key)) null else optDouble(key).takeIf { it.isFinite() }
 
 /** Thrown when backup.json parses as JSON but a row inside it is
  *  structurally invalid. Raised while parsing, before the destructive

@@ -107,7 +107,7 @@ object EfficiencyAnalysis {
         tripStart: TripAnchor? = null,
         tripEnd: TripAnchor? = null,
     ): EfficiencyReport {
-        val sorted = sessions.sortedBy { it.sessionStart }
+        val sorted = sessions.sortedWith(TIMELINE_ORDER)
         val inScopeIds = sorted.mapTo(mutableSetOf()) { it.id }
 
         val legs = mutableListOf<DrivingLeg>()
@@ -129,7 +129,7 @@ object EfficiencyAnalysis {
             // nothing charged this vehicle between the two sessions. An
             // out-of-scope charge in the gap breaks that — the battery
             // delta would be distorted by however much it added.
-            if (hasInterleavedCharge(allSessions, inScopeIds, prev.sessionStart, curr.sessionStart)) {
+            if (hasInterleavedCharge(allSessions, inScopeIds, prev, curr)) {
                 excluded += ExcludedPair(
                     prev, curr,
                     "Another charge happened between these sessions — add it to the trip to measure this drive",
@@ -268,6 +268,30 @@ object EfficiencyAnalysis {
         )
     }
 
+    /** Deterministic timeline order: sessionStart, then id. Date-only
+     *  imports stamp every row on a day with the same midnight timestamp;
+     *  a bare sessionStart sort is stable, so those rows would keep the
+     *  caller's (newest-first) query order and pair differently from the
+     *  rest of the app's id-tie-broken timeline. */
+    private val TIMELINE_ORDER = compareBy<ChargingSession>({ it.sessionStart }, { it.id })
+
+    /** An out-of-scope charge falling between [prev] and [curr] in timeline
+     *  order. Compared with [TIMELINE_ORDER] rather than raw timestamps so
+     *  a same-timestamp charge (date-only imports again) still registers
+     *  instead of slipping through strict time comparisons. */
+    private fun hasInterleavedCharge(
+        allSessions: List<ChargingSession>,
+        inScopeIds: Set<Long>,
+        prev: ChargingSession,
+        curr: ChargingSession,
+    ): Boolean = allSessions.any {
+        it.id !in inScopeIds &&
+            TIMELINE_ORDER.compare(prev, it) < 0 &&
+            TIMELINE_ORDER.compare(it, curr) < 0
+    }
+
+    /** Time-window variant for the trip-anchor checks, whose bounds are
+     *  trip dates rather than sessions. */
     private fun hasInterleavedCharge(
         allSessions: List<ChargingSession>,
         inScopeIds: Set<Long>,

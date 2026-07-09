@@ -130,11 +130,31 @@ class OdometerDistanceTest {
         assertEquals(50.0, d, 1e-9)
     }
 
+    @Test
+    fun `same-timestamp readings walk in id order regardless of input order`() {
+        // Date-only imports stamp both midday charges with the same midnight
+        // timestamp, and the observeAll() feed arrives newest-first. Without
+        // an id tie-break the walk saw 900→1050, skipped 1050→1000 as a
+        // rollback, then counted 1000→1100 — 250 km for a 200 km drive.
+        val d = OdometerDistance.inWindow(
+            listOf(
+                session(t = 1_040, odo = 1_100.0, id = 4),
+                session(t = 1_020, odo = 1_050.0, id = 3),
+                session(t = 1_020, odo = 1_000.0, id = 2),
+                session(t = 1_010, odo = 900.0, id = 1),
+            ),
+            windowStart, windowEnd,
+        )
+        assertEquals(200.0, d, 1e-9)
+    }
+
     private fun session(
         t: Long,
         odo: Double?,
         vehicleId: Long = 1,
+        id: Long = 0,
     ): ChargingSession = ChargingSession(
+        id = id,
         sessionStart = t,
         odometerKm = odo,
         vehicleId = vehicleId,
