@@ -36,16 +36,18 @@ object ImportSanitizer {
      * Interpret a numeric spreadsheet cell as a battery percent.
      *
      * %-formatted cells store 85% as 0.85, so those always scale by 100.
-     * Unformatted cells are ambiguous: 0–1 reads as a fraction (0.85 → 85%),
-     * anything larger as an already-scaled percent (85 → 85%). The old
-     * unconditional ×100 turned a plain 85 into 8500%. Results outside
-     * 0–100 are dropped.
+     * Unformatted cells are ambiguous: strictly-below-1 reads as a fraction
+     * (0.85 → 85%), 1 and above as an already-scaled percent (85 → 85%).
+     * The old unconditional ×100 turned a plain 85 into 8500%; exactly 1 in
+     * an unformatted cell is far more plausibly a genuine 1% reading than a
+     * fractional 100%, so the fraction branch's upper bound is exclusive.
+     * Results outside 0–100 are dropped.
      */
     fun cellToPercent(raw: Double, isPercentFormatted: Boolean): Int? {
         if (!raw.isFinite()) return null
         val pct = when {
             isPercentFormatted -> raw * 100
-            raw in 0.0..1.0 -> raw * 100
+            raw >= 0.0 && raw < 1.0 -> raw * 100
             else -> raw
         }
         // Reject negatives before rounding — a -0.05 must not round to 0%

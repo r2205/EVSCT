@@ -6,10 +6,12 @@ import androidx.room.withTransaction
 import com.evsct.app.data.db.EvsctDatabase
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.data.repository.SessionReceiptRepository
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.map.TripPinColor
+import com.evsct.app.util.ReceiptImageStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedReader
 import java.io.File
@@ -42,8 +44,16 @@ object Csv {
         // Defuse formula injection by prefixing dangerous leading chars with
         // a single quote — spreadsheet apps strip that prefix and treat the
         // rest as literal text. decodeField mirrors this on import so EVSCT
-        // round-trips the user's original value losslessly.
-        val sanitized = if (needsDefusing(value)) "'$value" else value
+        // round-trips the user's original value losslessly. Values that
+        // ALREADY look like a defused field (quotes then a trigger, e.g. a
+        // note reading `'=see receipt`) get an extra quote too — otherwise
+        // decodeField's strip would eat the user's own apostrophe.
+        val sanitized =
+            if (needsDefusing(value) || (value.startsWith("'") && isStrippableForm(value.substring(1)))) {
+                "'$value"
+            } else {
+                value
+            }
         val needsQuote = sanitized.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
         val escaped = sanitized.replace("\"", "\"\"")
         return if (needsQuote) "\"$escaped\"" else escaped
@@ -63,16 +73,26 @@ object Csv {
         return true
     }
 
-    /** Reverse of the [encodeField] formula-injection prefix: strip a leading
-     *  `'` only when it sits in front of a known formula trigger. A user's
-     *  legitimate `'Tesla` brand stays intact (the second char isn't a
-     *  trigger). Deliberately looser than [needsDefusing]: exports written
-     *  before numbers were exempted contain `'-79.38`, and those must keep
-     *  round-tripping back to `-79.38`. */
+    /** Reverse of the [encodeField] formula-injection prefix: strip one
+     *  leading `'` only when what follows is itself a defusable shape
+     *  (any run of quotes ending at a formula trigger — the form the
+     *  encoder produces, at any nesting depth). A user's legitimate
+     *  `'Tesla` brand stays intact (no trigger follows). Deliberately
+     *  looser than [needsDefusing]: exports written before numbers were
+     *  exempted contain `'-79.38`, and those must keep round-tripping
+     *  back to `-79.38`. */
     private fun decodeField(value: String): String =
-        if (value.length >= 2 && value[0] == '\'' && value[1] in FORMULA_TRIGGERS)
+        if (value.startsWith("'") && isStrippableForm(value.substring(1)))
             value.substring(1)
         else value
+
+    /** A run of zero or more `'` followed by a formula trigger — the only
+     *  shapes [encodeField]'s prefix ever sits in front of. */
+    private fun isStrippableForm(value: String): Boolean {
+        var i = 0
+        while (i < value.length && value[i] == '\'') i++
+        return i < value.length && value[i] in FORMULA_TRIGGERS
+    }
 
     fun encodeRow(fields: List<String?>): String =
         fields.joinToString(",") { encodeField(it) }
@@ -165,6 +185,8 @@ class CsvIo @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val tripRepository: TripRepository,
     private val vehicleRepository: VehicleRepository,
+    private val sessionReceiptRepository: SessionReceiptRepository,
+    private val receiptImageStore: ReceiptImageStore,
 ) {
     suspend fun export(uri: Uri): Int = withContext(Dispatchers.IO) {
         // Stage in cacheDir before touching the destination — mirrors
@@ -251,9 +273,17 @@ class CsvIo @Inject constructor(
     }
 
     suspend fun import(uri: Uri, replaceExisting: Boolean): CsvImportResult = withContext(Dispatchers.IO) {
-        val text = context.contentResolver.openInputStream(uri)?.use { inp ->
+        // A null stream (revoked SAF grant, provider gone) must surface as a
+        // failure — returning (0, 0) here read as "Imported 0 sessions", a
+        // success message for an import that never even opened the file.
+        val raw = context.contentResolver.openInputStream(uri)?.use { inp ->
             BufferedReader(InputStreamReader(inp, Charsets.UTF_8)).readText()
-        } ?: return@withContext CsvImportResult(0, 0)
+        } ?: throw IOException("Could not open the selected file. Nothing was imported.")
+        // Excel's "CSV UTF-8" flavour always writes a byte-order mark, which
+        // the reader keeps as U+FEFF (not whitespace, so trim() keeps it too).
+        // Left in place it glues onto the first header name and every row
+        // fails the header lookup.
+        val text = raw.removePrefix("﻿")
 
         val rows = Csv.parseAll(text)
         if (rows.isEmpty()) return@withContext CsvImportResult(0, 0)
@@ -285,6 +315,14 @@ class CsvIo @Inject constructor(
 
         var imported = 0
         var skipped = 0
+
+        // Replace-import wipes every session, and the session_receipts rows
+        // CASCADE away with them — but nothing else ever deletes the files
+        // those rows pointed at. Snapshot the paths now; the files are
+        // removed only after the transaction commits (a rollback must leave
+        // them untouched because their rows survived).
+        val receiptPathsBeforeWipe =
+            if (replaceExisting) sessionReceiptRepository.findAll().map { it.filePath } else emptyList()
 
         // Atomic: either every row lands or none of it does. Without this a
         // killed process or a single bad row mid-loop after deleteAll() leaves
@@ -320,7 +358,28 @@ class CsvIo @Inject constructor(
                 sessionRepository.upsert(parsed.session.copy(tripId = tripId, vehicleId = vehicleId))
                 imported++
             }
+
+            // Zero parsed rows on a replace-import means the pick was wrong
+            // or the file is mangled (semicolon-delimited Excel export,
+            // renamed headers, arbitrary text file) — committing here would
+            // swap the user's entire log for nothing and report it as
+            // success. Throwing rolls the deleteAll() back. (BackupIo's
+            // restore refuses the equivalent wipe up front.)
+            if (replaceExisting && imported == 0) {
+                throw IOException(
+                    "No rows could be imported from this file, so the existing " +
+                        "sessions were left untouched. Check that it's an EVSCT " +
+                        "CSV export with its original header row.",
+                )
+            }
         }
+
+        // Transaction committed: the old sessions (and their receipt rows)
+        // are gone for good, so their files are unreferenced now. Same
+        // shared-path caution as elsewhere doesn't apply — the whole table
+        // was wiped, nothing can still point at these.
+        receiptPathsBeforeWipe.forEach { receiptImageStore.delete(it) }
+
         CsvImportResult(imported, skipped)
     }
 }

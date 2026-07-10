@@ -176,7 +176,7 @@ object EfficiencyAnalysis {
 
         if (first != null && startPseudo != null) {
             val bound = tripStart?.atMillis?.takeIf { it < first.sessionStart }
-            if (bound != null && hasInterleavedCharge(allSessions, inScopeIds, bound, first.sessionStart)) {
+            if (bound != null && hasChargeBetween(allSessions, inScopeIds, bound, first)) {
                 excluded += ExcludedPair(
                     startPseudo, first,
                     "Another charge happened between the trip start and this session — add it to the trip to measure this drive",
@@ -187,7 +187,7 @@ object EfficiencyAnalysis {
         }
         if (last != null && endPseudo != null) {
             val bound = tripEnd?.atMillis?.takeIf { it > last.sessionStart }
-            if (bound != null && hasInterleavedCharge(allSessions, inScopeIds, last.sessionStart, bound)) {
+            if (bound != null && hasChargeBetween(allSessions, inScopeIds, last, bound)) {
                 excluded += ExcludedPair(
                     last, endPseudo,
                     "Another charge happened between this session and the trip end — add it to the trip to measure this drive",
@@ -290,8 +290,8 @@ object EfficiencyAnalysis {
             TIMELINE_ORDER.compare(it, curr) < 0
     }
 
-    /** Time-window variant for the trip-anchor checks, whose bounds are
-     *  trip dates rather than sessions. */
+    /** Time-window variant for the no-session anchor-to-anchor leg, whose
+     *  bounds are both trip dates rather than sessions. */
     private fun hasInterleavedCharge(
         allSessions: List<ChargingSession>,
         inScopeIds: Set<Long>,
@@ -300,6 +300,32 @@ object EfficiencyAnalysis {
     ): Boolean = allSessions.any {
         it.id !in inScopeIds &&
             it.sessionStart > afterMillis &&
+            it.sessionStart < beforeMillis
+    }
+
+    /** Anchor-leg variants with one trip-date bound and one real-session
+     *  bound. The session side compares in [TIMELINE_ORDER] so a
+     *  same-timestamp out-of-scope charge (date-only imports) still
+     *  registers, exactly as in the session-pair check. */
+    private fun hasChargeBetween(
+        allSessions: List<ChargingSession>,
+        inScopeIds: Set<Long>,
+        afterMillis: Long,
+        before: ChargingSession,
+    ): Boolean = allSessions.any {
+        it.id !in inScopeIds &&
+            it.sessionStart > afterMillis &&
+            TIMELINE_ORDER.compare(it, before) < 0
+    }
+
+    private fun hasChargeBetween(
+        allSessions: List<ChargingSession>,
+        inScopeIds: Set<Long>,
+        after: ChargingSession,
+        beforeMillis: Long,
+    ): Boolean = allSessions.any {
+        it.id !in inScopeIds &&
+            TIMELINE_ORDER.compare(it, after) > 0 &&
             it.sessionStart < beforeMillis
     }
 

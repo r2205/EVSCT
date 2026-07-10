@@ -101,21 +101,29 @@ interface ChargingSessionDao {
 
     // `IS` instead of `=` so a null vehicleId matches other null-vehicle
     // sessions; the efficiency analysis groups by vehicleId the same way.
+    // Adjacency is decided in the app's canonical (sessionStart, id)
+    // timeline order — date-only imports stamp several rows with the same
+    // midnight timestamp, and a bare `>=` would count a same-timestamp
+    // LOWER-id row (which sorts before this one everywhere else) as a
+    // "follower". The extra `id != :excludeId` keeps a moved row from
+    // matching the query aimed at its own old position.
     @Query(
         """
         SELECT * FROM charging_sessions
-        WHERE vehicleId IS :vehicleId AND id != :excludeId AND sessionStart >= :start
+        WHERE vehicleId IS :vehicleId AND id != :excludeId
+            AND (sessionStart > :start OR (sessionStart = :start AND id > :excludeId))
         ORDER BY sessionStart ASC, id ASC LIMIT 1
         """
     )
     suspend fun firstAfter(vehicleId: Long?, start: Long, excludeId: Long): ChargingSession?
 
     // Mirror of [firstAfter]: the session immediately preceding a point on
-    // the same vehicle's timeline.
+    // the same vehicle's timeline, in the same (sessionStart, id) order.
     @Query(
         """
         SELECT * FROM charging_sessions
-        WHERE vehicleId IS :vehicleId AND id != :excludeId AND sessionStart <= :start
+        WHERE vehicleId IS :vehicleId AND id != :excludeId
+            AND (sessionStart < :start OR (sessionStart = :start AND id < :excludeId))
         ORDER BY sessionStart DESC, id DESC LIMIT 1
         """
     )
@@ -172,8 +180,11 @@ interface ChargingSessionDao {
         // other direction: it attested "nothing untracked since the session
         // that preceded me at my OLD position". If the move put a different
         // session in front of it, that attestation was never made about the
-        // new neighbour — clear it rather than silently re-target it.
-        if (session.continuesPrevious) {
+        // new neighbour — clear it rather than silently re-target it. Only
+        // a CARRIED-OVER flag is stale, though: when the user ticked the
+        // box in the same edit that moved the session (before-flag false),
+        // the attestation was made about the new position and must stand.
+        if (session.continuesPrevious && before.continuesPrevious) {
             val oldPredecessor = lastBefore(before.vehicleId, before.sessionStart, before.id)?.id
             val newPredecessor = lastBefore(session.vehicleId, session.sessionStart, session.id)?.id
             if (oldPredecessor != newPredecessor) clearContinuesPrevious(session.id, now)

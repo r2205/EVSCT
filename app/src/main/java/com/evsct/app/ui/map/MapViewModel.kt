@@ -328,11 +328,17 @@ class MapViewModel @Inject constructor(
         viewModelScope.launch {
             // Snapshot the current sessions list without retaining a long-lived collector.
             val sessions = sessionRepository.observeAll().first()
+            // Work on the sessions that still need coordinates, grouped by
+            // (stop, exact geocode inputs). Grouping by StopKey alone was
+            // too coarse both ways: a brand-only key can mix physically
+            // different stations (stamping one sample's point onto all of
+            // them collapsed distinct stops onto one pin), and once part of
+            // a group was located the rest of it was never retried — those
+            // sessions simply stayed off the map forever.
             val groups = sessions
-                .groupBy(StopKey::of)
-                .filterKeys { it.isNotBlank() }
-                .filterValues { group -> group.none { it.hasCoordinates() } }
-                .filterValues { group -> group.any { !it.geocodeQuery().isNullOrBlank() } }
+                .filter { !it.hasCoordinates() && !it.geocodeQuery().isNullOrBlank() }
+                .filter { StopKey.of(it).isNotBlank() }
+                .groupBy { StopKey.of(it) to it.geocodeQuery() }
             if (groups.isEmpty()) {
                 backfillStatus.value = BackfillState(completed = true)
                 return@launch
@@ -352,10 +358,13 @@ class MapViewModel @Inject constructor(
             backfillStatus.value = BackfillState(running = true)
             var failed = 0
             for ((_, group) in groups) {
-                // Pick the first session in the group that has the fields
-                // we need; the structured geocoder validates the result
-                // against the city it was given.
-                val sample = group.firstOrNull { !it.geocodeQuery().isNullOrBlank() } ?: continue
+                // Every member of the group shares the same geocode inputs
+                // by construction, so one lookup locates them all — and a
+                // group that shares only a brand with some other station is
+                // its own group here, so it can never be stamped with that
+                // station's point. The structured geocoder validates the
+                // result against the city it was given.
+                val sample = group.first()
                 val located = locationAutofill.geocode(
                     address = sample.locationAddress?.takeIf { it.isNotBlank() }
                         ?: sample.stationName?.takeIf { it.isNotBlank() },
@@ -365,15 +374,7 @@ class MapViewModel @Inject constructor(
                 val lat = located?.latitude
                 val lng = located?.longitude
                 if (lat != null && lng != null) {
-                    // Only stamp sessions whose own geocode inputs match the
-                    // sample's. StopKey excludes stationName, so a group with
-                    // blank address/city degenerates to brand alone and can
-                    // mix physically different stations ("FLO – Guelph" and
-                    // "FLO – Kingston") — writing the sample's point onto all
-                    // of them would permanently collapse distinct stops.
-                    val sampleQuery = sample.geocodeQuery()
-                    val matching = group.filter { it.geocodeQuery() == sampleQuery }
-                    sessionRepository.setCoordinates(matching.map { it.id }, lat, lng)
+                    sessionRepository.setCoordinates(group.map { it.id }, lat, lng)
                 } else {
                     failed += 1
                 }

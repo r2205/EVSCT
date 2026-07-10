@@ -124,6 +124,9 @@ class ImportSanitizerTest {
         // The old unconditional x100 turned this into 8500.
         assertEquals(85, ImportSanitizer.cellToPercent(85.0, isPercentFormatted = false))
         assertEquals(100, ImportSanitizer.cellToPercent(100.0, isPercentFormatted = false))
+        // Exactly 1 is far more plausibly a genuine 1% reading than a
+        // fractional 100% — the fraction branch's upper bound is exclusive.
+        assertEquals(1, ImportSanitizer.cellToPercent(1.0, isPercentFormatted = false))
     }
 
     @Test

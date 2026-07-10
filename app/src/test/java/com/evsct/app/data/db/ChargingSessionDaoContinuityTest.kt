@@ -211,6 +211,52 @@ class ChargingSessionDaoContinuityTest {
         assertFalse(dao.findById(b.id)!!.continuesPrevious)
     }
 
+    @Test
+    fun `same-timestamp ties use id order when deciding the predecessor`() = runBlocking {
+        val dao = FakeSessionDao()
+        dao.put(session(t = 100, vehicleId = 1))                                    // id 1
+        val b = dao.put(session(t = 200, vehicleId = 1, continuesPrevious = true))  // id 2
+        dao.put(session(t = 200, vehicleId = 1))                                    // id 3, same-day import
+
+        // In (start, id) timeline order b's predecessor is the t=100 session;
+        // after the move it is the same-timestamp id-3 session — an
+        // attestation b never made. A bare <=/>= comparison saw id 3 as the
+        // predecessor on both sides and kept the stale flag.
+        dao.updateAndClearStaleContinuity(b.copy(sessionStart = 300), now = 999)
+
+        assertFalse(dao.findById(b.id)!!.continuesPrevious)
+    }
+
+    @Test
+    fun `deleting a same-timestamp later session does not heal the earlier one`() = runBlocking {
+        val dao = FakeSessionDao()
+        val a = dao.put(session(t = 100, vehicleId = 1, continuesPrevious = true))
+        val b = dao.put(session(t = 100, vehicleId = 1))
+
+        // b sits AFTER a in (start, id) order, so a is not b's follower and
+        // a's own attestation (about whatever preceded a) must survive.
+        dao.deleteAndClearStaleContinuity(b, now = 999)
+
+        assertTrue(dao.findById(a.id)!!.continuesPrevious)
+    }
+
+    @Test
+    fun `ticking the flag in the same edit that moves the session keeps it`() = runBlocking {
+        val dao = FakeSessionDao()
+        dao.put(session(t = 100, vehicleId = 1))
+        dao.put(session(t = 300, vehicleId = 1))
+        val b = dao.put(session(t = 200, vehicleId = 1, continuesPrevious = false))
+
+        // The user both moved the session and ticked "continues previous" in
+        // one save — the attestation is about the NEW position and stands.
+        dao.updateAndClearStaleContinuity(
+            b.copy(sessionStart = 400, continuesPrevious = true),
+            now = 999,
+        )
+
+        assertTrue(dao.findById(b.id)!!.continuesPrevious)
+    }
+
     // --- chunked bulk updates ---
 
     @Test
@@ -306,18 +352,22 @@ private class FakeSessionDao : ChargingSessionDao {
 
     override suspend fun deleteAll() = rows.clear()
 
-    // Mirrors: vehicleId IS :vehicleId AND id != :excludeId AND
-    // sessionStart >= :start ORDER BY sessionStart, id LIMIT 1.
+    // Mirrors the SQL: adjacency in (sessionStart, id) lexicographic order,
+    // excluding :excludeId so a moved row can't match its own old position.
     override suspend fun firstAfter(vehicleId: Long?, start: Long, excludeId: Long): ChargingSession? =
         rows.values
-            .filter { it.vehicleId == vehicleId && it.id != excludeId && it.sessionStart >= start }
+            .filter {
+                it.vehicleId == vehicleId && it.id != excludeId &&
+                    (it.sessionStart > start || (it.sessionStart == start && it.id > excludeId))
+            }
             .minWithOrNull(compareBy({ it.sessionStart }, { it.id }))
 
-    // Mirrors: vehicleId IS :vehicleId AND id != :excludeId AND
-    // sessionStart <= :start ORDER BY sessionStart DESC, id DESC LIMIT 1.
     override suspend fun lastBefore(vehicleId: Long?, start: Long, excludeId: Long): ChargingSession? =
         rows.values
-            .filter { it.vehicleId == vehicleId && it.id != excludeId && it.sessionStart <= start }
+            .filter {
+                it.vehicleId == vehicleId && it.id != excludeId &&
+                    (it.sessionStart < start || (it.sessionStart == start && it.id < excludeId))
+            }
             .maxWithOrNull(compareBy({ it.sessionStart }, { it.id }))
 
     override suspend fun clearContinuesPrevious(id: Long, now: Long) {
