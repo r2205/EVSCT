@@ -346,6 +346,40 @@ class EfficiencyAnalysisTest {
         assertEquals(1, report.excluded.size)
     }
 
+    @Test
+    fun `same-timestamp sessions pair in id order regardless of input order`() {
+        // Date-only imports: both stops share a midnight timestamp and the
+        // observeAll() feed arrives newest-first. Without an id tie-break
+        // the pair stayed reversed and the leg couldn't be measured.
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 2, t = 100, odo = 1280.0, battStart = 30, tripId = 7),
+                session(id = 1, t = 100, odo = 1000.0, battEnd = 80, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertEquals(1, report.legs.size)
+        assertEquals(280.0, report.legs.first().distanceKm)
+    }
+
+    @Test
+    fun `same-timestamp out-of-scope charge between a pair excludes the leg`() {
+        // An untripped charge imported with the same midnight datestamp as
+        // the trip's second stop: strict time comparisons couldn't see it,
+        // silently understating the leg's energy.
+        val tripSessions = listOf(
+            session(id = 1, t = 0, odo = 1000.0, battEnd = 80, tripId = 7),
+            session(id = 3, t = 100, odo = 1280.0, battStart = 30, tripId = 7),
+        )
+        val report = EfficiencyAnalysis.analyze(
+            sessions = tripSessions,
+            vehicle = vehicle,
+            allSessions = tripSessions + session(id = 2, t = 100),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertEquals(1, report.excluded.size)
+    }
+
     private fun session(
         id: Long,
         t: Long = 0,

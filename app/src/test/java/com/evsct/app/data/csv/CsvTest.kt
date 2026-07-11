@@ -102,6 +102,17 @@ class CsvTest {
     }
 
     @Test
+    fun `user text that already looks defused round-trips losslessly`() {
+        // A value beginning with ' + trigger used to lose its apostrophe on
+        // import: decode's strip only ever reverses an encoder-added prefix
+        // now that encode doubles up an already-defused-looking value.
+        for (original in listOf("'=see receipt", "'-79.38", "'@handle", "''=nested")) {
+            val decoded = Csv.parseLine(Csv.encodeRow(listOf(original))).single()
+            assertEquals(original, decoded)
+        }
+    }
+
+    @Test
     fun `parseAll handles embedded newlines inside quoted fields`() {
         val csv = "a,\"b\nstill b\",c\nd,e,f"
         val rows = Csv.parseAll(csv)

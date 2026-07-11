@@ -54,4 +54,14 @@ class FormatParseDecimalTest {
         assertNull(Format.parseDecimal("abc"))
         assertNull(Format.parseDecimal("1.2.3"))
     }
+
+    @Test
+    fun `non-finite values return null`() {
+        // toDoubleOrNull accepts all of these; a stored NaN/Infinity poisons
+        // every aggregation and makes the JSON backup writer throw.
+        assertNull(Format.parseDecimal("NaN"))
+        assertNull(Format.parseDecimal("Infinity"))
+        assertNull(Format.parseDecimal("-Infinity"))
+        assertNull(Format.parseDecimal("1e999"))
+    }
 }

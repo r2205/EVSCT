@@ -80,6 +80,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -128,14 +129,18 @@ fun SessionListScreen(
     // charge starts regardless of the outcome — the permission only gates
     // the notification, not the in-app tracking.
     val context = LocalContext.current
-    var pendingTrackRequest by remember { mutableStateOf(false) }
-    var pendingTrackVehicleId by remember { mutableStateOf<Long?>(null) }
+    // Saveable: the permission dialog covers this screen, and rotating (or
+    // process death) behind it recreates the composition — plain remember
+    // dropped the pending action, so granting the permission did nothing.
+    // The vehicle id uses a -1 sentinel to stay a Bundle-friendly Long.
+    var pendingTrackRequest by rememberSaveable { mutableStateOf(false) }
+    var pendingTrackVehicleId by rememberSaveable { mutableStateOf(-1L) }
     val trackPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { _ ->
         if (pendingTrackRequest) {
             pendingTrackRequest = false
-            viewModel.startTrackedSession(pendingTrackVehicleId) { id ->
+            viewModel.startTrackedSession(pendingTrackVehicleId.takeIf { it > 0 }) { id ->
                 onStartTrackedSession(id)
             }
         }
@@ -149,7 +154,7 @@ fun SessionListScreen(
             ) != PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
             pendingTrackRequest = true
-            pendingTrackVehicleId = vehicleId
+            pendingTrackVehicleId = vehicleId ?: -1L
             trackPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             viewModel.startTrackedSession(vehicleId) { id -> onStartTrackedSession(id) }

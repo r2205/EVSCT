@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +51,9 @@ fun TripListScreen(
     viewModel: TripListViewModel = hiltViewModel(),
 ) {
     val trips by viewModel.trips.collectAsStateWithLifecycle()
-    var dialogOpen by remember { mutableStateOf(false) }
+    // Saveable so rotating (or process death) doesn't dismiss the dialog
+    // and discard everything typed into it.
+    var dialogOpen by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<com.evsct.app.data.entity.Trip?>(null) }
 
     Scaffold(

@@ -36,7 +36,12 @@ object OdometerDistance {
         var total = 0.0
         sessions.groupBy { it.vehicleId }
             .values
-            .map { group -> group.sortedBy { it.sessionStart } }
+            // id tie-break: date-only imports stamp every row on a day with
+            // the same midnight timestamp, and a stable sort would keep the
+            // caller's (newest-first) query order within the tie — walking
+            // the odometer out of order and double-counting the stretch
+            // around the inversion.
+            .map { group -> group.sortedWith(compareBy({ it.sessionStart }, { it.id })) }
             .forEach { sorted ->
                 for (i in 1 until sorted.size) {
                     val prev = sorted[i - 1]

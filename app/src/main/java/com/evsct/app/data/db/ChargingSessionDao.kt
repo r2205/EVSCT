@@ -72,19 +72,62 @@ interface ChargingSessionDao {
     )
     suspend fun setCoordinatesForIds(ids: List<Long>, lat: Double, lng: Double, now: Long): Int
 
+    /**
+     * Android's SQLite caps bound variables at 999 per statement (until
+     * SQLite 3.32, which minSdk 30 predates), and Room expands `IN (:ids)`
+     * to one variable per element — so a "Select all → Assign to trip" over
+     * 1000+ sessions would crash statement compilation. Chunk the id list,
+     * inside one transaction so the bulk update still applies atomically.
+     */
+    @Transaction
+    suspend fun assignTripToIdsChunked(ids: List<Long>, tripId: Long?, now: Long): Int {
+        var updated = 0
+        for (chunk in ids.chunked(MAX_BIND_IDS)) updated += assignTripToIds(chunk, tripId, now)
+        return updated
+    }
+
+    /** See [assignTripToIdsChunked] — same 999-bind-variable cap. */
+    @Transaction
+    suspend fun setCoordinatesForIdsChunked(ids: List<Long>, lat: Double, lng: Double, now: Long): Int {
+        var updated = 0
+        for (chunk in ids.chunked(MAX_BIND_IDS)) {
+            updated += setCoordinatesForIds(chunk, lat, lng, now)
+        }
+        return updated
+    }
+
     @Query("DELETE FROM charging_sessions")
     suspend fun deleteAll()
 
     // `IS` instead of `=` so a null vehicleId matches other null-vehicle
     // sessions; the efficiency analysis groups by vehicleId the same way.
+    // Adjacency is decided in the app's canonical (sessionStart, id)
+    // timeline order — date-only imports stamp several rows with the same
+    // midnight timestamp, and a bare `>=` would count a same-timestamp
+    // LOWER-id row (which sorts before this one everywhere else) as a
+    // "follower". The extra `id != :excludeId` keeps a moved row from
+    // matching the query aimed at its own old position.
     @Query(
         """
         SELECT * FROM charging_sessions
-        WHERE vehicleId IS :vehicleId AND id != :excludeId AND sessionStart >= :start
+        WHERE vehicleId IS :vehicleId AND id != :excludeId
+            AND (sessionStart > :start OR (sessionStart = :start AND id > :excludeId))
         ORDER BY sessionStart ASC, id ASC LIMIT 1
         """
     )
     suspend fun firstAfter(vehicleId: Long?, start: Long, excludeId: Long): ChargingSession?
+
+    // Mirror of [firstAfter]: the session immediately preceding a point on
+    // the same vehicle's timeline, in the same (sessionStart, id) order.
+    @Query(
+        """
+        SELECT * FROM charging_sessions
+        WHERE vehicleId IS :vehicleId AND id != :excludeId
+            AND (sessionStart < :start OR (sessionStart = :start AND id < :excludeId))
+        ORDER BY sessionStart DESC, id DESC LIMIT 1
+        """
+    )
+    suspend fun lastBefore(vehicleId: Long?, start: Long, excludeId: Long): ChargingSession?
 
     @Query("UPDATE charging_sessions SET continuesPrevious = 0, updatedAt = :now WHERE id = :id")
     suspend fun clearContinuesPrevious(id: Long, now: Long)
@@ -125,10 +168,33 @@ interface ChargingSessionDao {
         update(session)
         if (before == null) return
         if (before.vehicleId == session.vehicleId && before.sessionStart == session.sessionStart) return
-        val follower = firstAfter(before.vehicleId, before.sessionStart, before.id) ?: return
-        if (!follower.continuesPrevious) return
-        val stillPredecessor =
-            firstAfter(session.vehicleId, session.sessionStart, session.id)?.id == follower.id
-        if (!stillPredecessor) clearContinuesPrevious(follower.id, now)
+
+        val follower = firstAfter(before.vehicleId, before.sessionStart, before.id)
+        if (follower != null && follower.continuesPrevious) {
+            val stillPredecessor =
+                firstAfter(session.vehicleId, session.sessionStart, session.id)?.id == follower.id
+            if (!stillPredecessor) clearContinuesPrevious(follower.id, now)
+        }
+
+        // The moved session's own flag has the same staleness problem in the
+        // other direction: it attested "nothing untracked since the session
+        // that preceded me at my OLD position". If the move put a different
+        // session in front of it, that attestation was never made about the
+        // new neighbour — clear it rather than silently re-target it. Only
+        // a CARRIED-OVER flag is stale, though: when the user ticked the
+        // box in the same edit that moved the session (before-flag false),
+        // the attestation was made about the new position and must stand.
+        if (session.continuesPrevious && before.continuesPrevious) {
+            val oldPredecessor = lastBefore(before.vehicleId, before.sessionStart, before.id)?.id
+            val newPredecessor = lastBefore(session.vehicleId, session.sessionStart, session.id)?.id
+            if (oldPredecessor != newPredecessor) clearContinuesPrevious(session.id, now)
+        }
+    }
+
+    companion object {
+        /** Chunk size for `IN (:ids)` queries — well under SQLite's
+         *  999-bound-variable statement limit, leaving headroom for the
+         *  other bind args each statement adds. */
+        const val MAX_BIND_IDS = 900
     }
 }

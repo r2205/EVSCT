@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,16 +61,21 @@ fun TripEditDialog(
         else "%.1f".format(Locale.US, display)
     }.orEmpty()
 
-    var name by remember { mutableStateOf(trip?.name.orEmpty()) }
+    // Saveable: a configuration change (rotation, dark-mode toggle,
+    // split-screen resize) recreates the activity, and plain remember would
+    // reset every field to the stored trip's values — silently discarding
+    // whatever was typed. The host's open-flag is saveable too, so the
+    // dialog itself survives to restore these.
+    var name by rememberSaveable { mutableStateOf(trip?.name.orEmpty()) }
     val initialStartText = remember { displayText(trip?.startOdometerKm) }
     val initialEndText = remember { displayText(trip?.endOdometerKm) }
-    var startText by remember { mutableStateOf(initialStartText) }
-    var endText by remember { mutableStateOf(initialEndText) }
-    var startBattText by remember { mutableStateOf(trip?.startBatteryPct?.toString().orEmpty()) }
-    var endBattText by remember { mutableStateOf(trip?.endBatteryPct?.toString().orEmpty()) }
-    var notes by remember { mutableStateOf(trip?.notes.orEmpty()) }
-    var pinColorKey by remember { mutableStateOf(trip?.pinColor) }
-    var showColorPicker by remember { mutableStateOf(false) }
+    var startText by rememberSaveable { mutableStateOf(initialStartText) }
+    var endText by rememberSaveable { mutableStateOf(initialEndText) }
+    var startBattText by rememberSaveable { mutableStateOf(trip?.startBatteryPct?.toString().orEmpty()) }
+    var endBattText by rememberSaveable { mutableStateOf(trip?.endBatteryPct?.toString().orEmpty()) }
+    var notes by rememberSaveable { mutableStateOf(trip?.notes.orEmpty()) }
+    var pinColorKey by rememberSaveable { mutableStateOf(trip?.pinColor) }
+    var showColorPicker by rememberSaveable { mutableStateOf(false) }
 
     val resolvedColor = TripPinColor.fromKey(pinColorKey)
 

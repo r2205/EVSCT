@@ -39,12 +39,12 @@ class SessionRepository @Inject constructor(
 
     suspend fun assignTrip(ids: Collection<Long>, tripId: Long?) {
         if (ids.isEmpty()) return
-        dao.assignTripToIds(ids.toList(), tripId, System.currentTimeMillis())
+        dao.assignTripToIdsChunked(ids.toList(), tripId, System.currentTimeMillis())
     }
 
     suspend fun setCoordinates(ids: Collection<Long>, lat: Double, lng: Double) {
         if (ids.isEmpty()) return
-        dao.setCoordinatesForIds(ids.toList(), lat, lng, System.currentTimeMillis())
+        dao.setCoordinatesForIdsChunked(ids.toList(), lat, lng, System.currentTimeMillis())
     }
 
     suspend fun delete(session: ChargingSession) =

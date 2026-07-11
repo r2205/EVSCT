@@ -98,8 +98,15 @@ class VehicleDetailViewModel @Inject constructor(
         // When mixed, a "$/kWh" or "$/km" number has no single unit.
         val singleTotal = totals.singleTotal
         val avgEff = if (singleTotal != null && totalKwh > 0) singleTotal / totalKwh else null
-        val totalHours = sessions.sumOf { (it.durationSeconds ?: 0L) / 3600.0 }
-        val avgPower = if (totalHours > 0) totalKwh / totalHours else null
+        // Avg power must divide energy by charge time from the SAME
+        // sessions. Summing kWh over all sessions but hours over only the
+        // ones with a duration (imports routinely lack durations) inflated
+        // the stat arbitrarily — ten 50 kWh charges with one recorded hour
+        // read as 500 kW.
+        val powerPaired = sessions.filter { it.energyKwh != null && (it.durationSeconds ?: 0L) > 0L }
+        val pairedKwh = powerPaired.sumOf { it.energyKwh ?: 0.0 }
+        val pairedHours = powerPaired.sumOf { (it.durationSeconds ?: 0L) / 3600.0 }
+        val avgPower = if (pairedHours > 0) pairedKwh / pairedHours else null
         val costPerKm = if (singleTotal != null && totalDistance > 0) singleTotal / totalDistance else null
 
         val fastest = sessions

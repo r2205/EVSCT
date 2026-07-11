@@ -71,6 +71,13 @@ class VehicleEditViewModel @Inject constructor(
      *  edit. Null for brand-new vehicles. */
     private var originalCreatedAt: Long? = null
 
+    /** Loaded row's stored range and the display text it was seeded as. An
+     *  untouched field must save the original km back: for miles users the
+     *  km→mi→km double-rounding otherwise drifts the stored range by ±1 km
+     *  on every save of an unrelated edit. */
+    private var originalRangeKm: Int? = null
+    private var originalRangeText: String = ""
+
     /** Re-entry guard for save()/deleteAndExit() — both suspend on Room and
      *  then pop the back stack, so a double-tap would otherwise insert two
      *  vehicles and pop the navigator twice. Volatile because the reset runs
@@ -115,6 +122,8 @@ class VehicleEditViewModel @Inject constructor(
                     val rangeText = v.nominalRangeKm?.let {
                         Units.kmToDisplay(it.toDouble(), units.useMiles).roundToInt().toString()
                     }.orEmpty()
+                    originalRangeKm = v.nominalRangeKm
+                    originalRangeText = rangeText
                     _state.update {
                         it.copy(
                             isLoading = false,
@@ -199,8 +208,12 @@ class VehicleEditViewModel @Inject constructor(
                 model = s.model.takeIf { it.isNotBlank() },
                 trim = s.trim.takeIf { it.isNotBlank() },
                 batteryCapacityKwh = Format.parseDecimal(s.batteryKwh),
-                nominalRangeKm = Format.parseDecimal(s.rangeText)?.let {
-                    Units.displayToKm(it, s.useMiles).roundToInt()
+                nominalRangeKm = if (s.rangeText.trim() == originalRangeText) {
+                    originalRangeKm
+                } else {
+                    Format.parseDecimal(s.rangeText)?.let {
+                        Units.displayToKm(it, s.useMiles).roundToInt()
+                    }
                 },
                 vin = s.vin.takeIf { it.isNotBlank() },
                 notes = s.notes.takeIf { it.isNotBlank() },
@@ -234,11 +247,21 @@ class VehicleEditViewModel @Inject constructor(
         }.invokeOnCompletion { commitInFlight = false }
     }
 
-    /** Drop every image file we touched during this edit except [finalPath]. */
+    /** Drop every image file we touched during this edit except [finalPath].
+     *  Shared-path guard: restore dedupes equal basenames into one installed
+     *  file, so two vehicle rows can legitimately reference the same path —
+     *  deleting it here would blank the other vehicle's photo, and the
+     *  missing-media sweep would then null that row's imagePath for good.
+     *  (The receipt-side reconcile has the same guard; this is its mirror.)
+     *  Runs after the upsert/delete commits, so "still referenced" means
+     *  referenced by any surviving row. */
     private suspend fun reconcileImageFiles(finalPath: String?) {
         imageCleanupHandled = true
         val toDelete = touchedImagePaths.filter { it != finalPath }
-        toDelete.forEach { imageStore.delete(it) }
+        if (toDelete.isEmpty()) return
+        val stillReferenced = repository.observeAll().first()
+            .mapNotNullTo(mutableSetOf()) { it.imagePath }
+        toDelete.filterNot { it in stillReferenced }.forEach { imageStore.delete(it) }
     }
 
     override fun onCleared() {

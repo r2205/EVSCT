@@ -127,7 +127,11 @@ object Format {
                     t.replace(',', '.')                   // "12,5" / "0,485"
             else -> t
         }
-        return normalized.toDoubleOrNull()
+        // toDoubleOrNull happily parses "NaN", "Infinity", and overflowing
+        // literals like "1e999" (→ Infinity). A non-finite value stored in
+        // the DB poisons every aggregation and makes JSON backup export
+        // throw, so reject it at the boundary like any other bad input.
+        return normalized.toDoubleOrNull()?.takeIf { it.isFinite() }
     }
 
     /** Comma-only input in strict US thousands grouping: 1–3 digit leading

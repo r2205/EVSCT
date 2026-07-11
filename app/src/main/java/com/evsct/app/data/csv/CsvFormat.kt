@@ -7,6 +7,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 import java.util.Locale
 
 object CsvFormat {
@@ -53,7 +54,14 @@ object CsvFormat {
     // rejecting the row — strict resolution now skips them as malformed.
     private val isoDate = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US)
     private val isoTime = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
-    private val isoDateTimeParse = DateTimeFormatter.ofPattern("yyyy-M-d H:m:s", Locale.US)
+
+    // Strict resolution must be set explicitly — ofPattern defaults to
+    // SMART, which silently clamps impossible dates ("2023-2-29" imports as
+    // Feb 28) instead of rejecting the row. STRICT in turn requires the
+    // era-less 'uuuu' year field; with 'yyyy' (year-of-era) every parse
+    // fails for lack of an era.
+    private val isoDateTimeParse = DateTimeFormatter.ofPattern("uuuu-M-d H:m:s", Locale.US)
+        .withResolverStyle(ResolverStyle.STRICT)
 
     fun toRow(session: ChargingSession, tripName: String?, vehicleName: String?): List<String?> {
         val date = Instant.ofEpochMilli(session.sessionStart).atZone(ZoneId.systemDefault())
