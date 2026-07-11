@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,9 +44,10 @@ import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AssistChip
@@ -54,6 +56,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -215,10 +218,10 @@ fun SessionListScreen(
                             Icon(Icons.Default.BarChart, contentDescription = "Stats")
                         }
                         IconButton(onClick = onOpenMap) {
-                            Icon(Icons.Default.Place, contentDescription = "Map")
+                            Icon(Icons.Default.Map, contentDescription = "Map")
                         }
                         IconButton(onClick = onOpenTrips) {
-                            Icon(Icons.Default.Map, contentDescription = "Trips")
+                            Icon(Icons.Default.Route, contentDescription = "Trips")
                         }
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -277,9 +280,32 @@ fun SessionListScreen(
                     )
                 }
             }
-            SummaryCard(state)
-            if (state.sessions.isEmpty()) {
-                if (state.vehicleFilterId == null && state.vehicles.isEmpty()) {
+            if (state.isLoading) {
+                // Room hasn't emitted yet. Zero-state UI here would flash
+                // "Welcome"/"No sessions" on every open and read as data loss.
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (state.sessions.isEmpty()) {
+                if (state.filters.hasActive) {
+                    // The log has sessions — the active search/filters just
+                    // match none of them. The first-launch copy ("No sessions
+                    // yet") would wrongly imply the whole log is empty.
+                    com.evsct.app.ui.EmptyState(
+                        icon = Icons.Default.SearchOff,
+                        title = "No matching sessions",
+                        body = "Your search and filters don't match any " +
+                            "sessions.",
+                        actionLabel = "Clear filters",
+                        onAction = {
+                            showSearch = false
+                            viewModel.clearFilters()
+                        },
+                    )
+                } else if (state.vehicleFilterId == null && state.vehicles.isEmpty()) {
                     // First-launch path: no vehicles, no sessions. Saving a
                     // session without a vehicle works but leaves it untagged
                     // and skews per-vehicle stats, so route the user to set
@@ -296,6 +322,7 @@ fun SessionListScreen(
                     EmptyState(state.vehicleFilterId != null)
                 }
             } else {
+                SummaryCard(state)
                 LazyColumn(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
                         horizontal = 12.dp, vertical = 8.dp
@@ -1093,7 +1120,12 @@ private fun FilterSheet(
         sheetState = sheetState,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            // Scrollable: with many brands/tags (or large fonts) the Apply
+            // row lands below the fold and would otherwise be unreachable.
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
         ) {
             Text(
                 "Filter sessions",

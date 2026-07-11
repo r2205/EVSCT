@@ -175,7 +175,13 @@ fun SessionEditScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (state.isNew) "New session" else "Edit session",
+                        when {
+                            // Until the load lands, isNew defaults true even
+                            // for an existing session — don't claim either.
+                            state.isLoading -> ""
+                            state.isNew -> "New session"
+                            else -> "Edit session"
+                        },
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
                 },
@@ -196,13 +202,28 @@ fun SessionEditScreen(
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     }
-                    IconButton(onClick = { trySave() }) {
+                    // Saving before the load lands would insert a blank NEW
+                    // row (isNew still defaults true), not update the one
+                    // being opened.
+                    IconButton(onClick = { trySave() }, enabled = !state.isLoading) {
                         Icon(Icons.Default.Check, contentDescription = "Save")
                     }
                 },
             )
         },
     ) { padding ->
+        if (state.isLoading) {
+            // Fields aren't seeded yet — rendering the form now shows a
+            // blank "new session" shell for an existing session, and
+            // anything typed would be clobbered when the load lands.
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .padding(padding)

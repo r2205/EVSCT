@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,6 +86,19 @@ fun StatsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
+            if (state.isLoading) {
+                // First frame: nothing has emitted yet. The headline would
+                // show all zeros and the zero-session branch would flash
+                // "No sessions yet" over real data.
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+                return@Column
+            }
+
             if (state.vehicles.size >= 2) {
                 VehicleTabs(state.vehicles, state.vehicleFilterId, viewModel::setVehicleFilter)
             }

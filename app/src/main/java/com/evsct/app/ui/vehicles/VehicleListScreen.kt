@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -78,7 +79,16 @@ fun VehicleListScreen(
             }
         },
     ) { padding ->
-        if (vehicles.isEmpty()) {
+        val loaded = vehicles
+        if (loaded == null) {
+            // Still waiting on the first database emission.
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (loaded.isEmpty()) {
             com.evsct.app.ui.EmptyState(
                 icon = Icons.Default.DirectionsCar,
                 title = "No vehicles yet",
@@ -92,7 +102,7 @@ fun VehicleListScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(padding),
             ) {
-                items(vehicles, key = { it.id }) { v ->
+                items(loaded, key = { it.id }) { v ->
                     VehicleRow(v, onClick = { onOpenVehicle(v.id) })
                 }
                 item { Spacer(Modifier.padding(top = 56.dp)) }

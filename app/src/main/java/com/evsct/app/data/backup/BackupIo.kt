@@ -280,6 +280,25 @@ class BackupIo @Inject constructor(
         }
     }
 
+    /** Write the safety snapshot from the CURRENT data ahead of a
+     *  destructive replace that doesn't go through [restore] — the CSV
+     *  replace-import. Unlike the restore path there is no undo-of-undo
+     *  hazard: the replace reads a user-picked file, never the snapshot
+     *  itself, so the snapshot is promoted immediately rather than staged
+     *  until a transaction commits. Returns null on success or a
+     *  user-facing error message; the caller must abort the replace when
+     *  non-null, mirroring how a snapshot failure aborts a restore. */
+    suspend fun snapshotBeforeReplace(): String? = withContext(Dispatchers.IO) {
+        try {
+            promoteSnapshot(stageSnapshotOfCurrentData())
+            null
+        } catch (e: Exception) {
+            "Could not write the safety snapshot" +
+                (e.message?.let { " ($it)" } ?: "") +
+                ". Import cancelled — nothing was changed."
+        }
+    }
+
     // NonCancellable for the same reason as export: back-navigation from
     // Settings cancels the caller's scope, and a cancellation delivered
     // between the wipe transaction committing and installFiles/promote

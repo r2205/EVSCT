@@ -347,7 +347,9 @@ fun MapScreen(
             if (state.backfillRunning) {
                 BackfillBanner(text = "Locating ${state.unlocatedDistinct} stops…")
             }
-            if (state.stops.isEmpty() && !state.backfillRunning) {
+            // isLoading: before the first emission every log looks empty —
+            // let the basemap show alone rather than flash "No locations".
+            if (!state.isLoading && state.stops.isEmpty() && !state.backfillRunning) {
                 EmptyState(
                     message = when {
                         state.totalDistinct == 0 ->
@@ -566,7 +568,14 @@ private fun FilterSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+        Column(
+            // Scrollable: a long trip list would otherwise push the lower
+            // rows (and Show all / Hide all) off the bottom of the sheet.
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 16.dp),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,

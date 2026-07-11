@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -110,7 +111,12 @@ fun VehicleDetailScreen(
             Box(
                 modifier = Modifier.padding(padding).fillMaxSize(),
                 contentAlignment = Alignment.Center,
-            ) { Text("Vehicle not found.") }
+            ) {
+                // Only claim "not found" once the lookup has actually run —
+                // before that this is just the load in flight.
+                if (state.isLoading) CircularProgressIndicator()
+                else Text("Vehicle not found.")
+            }
             return@Scaffold
         }
 
