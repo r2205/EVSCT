@@ -47,6 +47,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.IconButton
@@ -71,7 +72,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -83,6 +88,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import java.io.File
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingType
@@ -132,11 +138,21 @@ fun SessionEditScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showOdometerWarning by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+    val odometerFocusRequester = remember { FocusRequester() }
 
     fun trySave() {
         if (state.odometerText.isBlank()) showOdometerWarning = true
         else viewModel.save(onDone)
     }
+
+    val dirty = viewModel.isDirty(state)
+    fun requestExit() {
+        if (dirty) showDiscardConfirm = true else onDone()
+    }
+    // System back gets the same guard as the toolbar arrow. Enabled only
+    // while dirty so a clean form keeps the default (unintercepted) pop.
+    BackHandler(enabled = dirty) { showDiscardConfirm = true }
 
     val locationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
@@ -192,7 +208,7 @@ fun SessionEditScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
                 navigationIcon = {
-                    IconButton(onClick = onDone) {
+                    IconButton(onClick = { requestExit() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -261,6 +277,9 @@ fun SessionEditScreen(
             NumberField(
                 label = "Odometer (${com.evsct.app.util.Units.distanceUnit(state.useMiles)})",
                 value = state.odometerText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(odometerFocusRequester),
                 isError = HintField.ODOMETER in warnedFields,
             ) { v -> viewModel.update { it.copy(odometerText = v) } }
             NumberField(
@@ -433,6 +452,10 @@ fun SessionEditScreen(
             SectionLabel("Tags")
             TagsField(
                 tags = state.tags,
+                draft = state.tagDraft,
+                onDraftChange = { v ->
+                    viewModel.update { it.copy(tagDraft = v) }
+                },
                 onAdd = { tag ->
                     viewModel.update { it.copy(tags = Tags.add(it.tags, tag)) }
                 },
@@ -507,13 +530,42 @@ fun SessionEditScreen(
                 }) { Text("Save anyway") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showOdometerWarning = false }) {
+                androidx.compose.material3.TextButton(onClick = {
+                    showOdometerWarning = false
+                    // Take the user TO the field they agreed to fill in —
+                    // focusing it opens the keyboard and auto-scrolls it
+                    // into view, instead of dropping them back wherever
+                    // they were on this long form.
+                    odometerFocusRequester.requestFocus()
+                }) {
                     Text("Add odometer")
                 }
             },
         )
     }
 
+    if (showDiscardConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDiscardConfirm = false },
+            title = { Text("Discard changes?") },
+            text = { Text("This session has unsaved edits. Leaving now throws them away.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showDiscardConfirm = false
+                        onDone()
+                    },
+                ) {
+                    Text("Discard", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDiscardConfirm = false }) {
+                    Text("Keep editing")
+                }
+            },
+        )
+    }
 
     if (showDeleteConfirm) {
         androidx.compose.material3.AlertDialog(
@@ -542,6 +594,21 @@ fun SessionEditScreen(
         )
     }
 }
+
+/** Checkmark for a selected FilterChip. M3's FilterChip only tints the
+ *  selected chip — the canonical leading check has to be passed in
+ *  explicitly, or selection reads as a subtle color change. Shared by
+ *  every single-select chip row on this form. */
+private fun selectedCheck(selected: Boolean): (@Composable () -> Unit)? =
+    if (!selected) null else {
+        {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                modifier = Modifier.size(FilterChipDefaults.IconSize),
+            )
+        }
+    }
 
 @Composable
 private fun SectionLabel(text: String) {
@@ -607,30 +674,43 @@ private fun DateTimeRow(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChargingTypeRow(current: ChargingType, onPick: (ChargingType) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // FlowRow, not Row: at large font scales the chips exceed the screen
+    // width, and a fixed Row clips the trailing options off-screen.
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         ChargingType.entries.forEach { t ->
             FilterChip(
                 selected = t == current,
                 onClick = { onPick(t) },
                 label = { Text(t.displayName()) },
+                leadingIcon = selectedCheck(t == current),
             )
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PricingModelRow(current: PricingModel, onPick: (PricingModel) -> Unit) {
-    Row(
+    // Five chips overflow a narrow screen even at normal font scale —
+    // wrap to a second line instead of clipping Free/Hybrid off-screen.
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         PricingModel.entries.forEach { p ->
             FilterChip(
                 selected = p == current,
                 onClick = { onPick(p) },
                 label = { Text(p.displayName()) },
+                leadingIcon = selectedCheck(p == current),
             )
         }
     }
@@ -661,6 +741,7 @@ private fun CurrencyChips(selected: String, onSelect: (String) -> Unit) {
                 selected = selected == code,
                 onClick = { onSelect(code) },
                 label = { Text(code) },
+                leadingIcon = selectedCheck(selected == code),
             )
         }
     }
@@ -862,20 +943,22 @@ private fun TripPicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        AssistChip(
+        // FilterChip (not AssistChip + container tint): it announces the
+        // selected state to TalkBack and adds the checkmark, so selection
+        // isn't conveyed by background color alone. Matches the charging
+        // type / pricing / currency pickers.
+        FilterChip(
+            selected = state.tripId == null,
             onClick = { onPick(null) },
             label = { Text("None") },
-            colors = if (state.tripId == null) AssistChipDefaults.assistChipColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-            ) else AssistChipDefaults.assistChipColors(),
+            leadingIcon = selectedCheck(state.tripId == null),
         )
         state.trips.forEach { trip ->
-            AssistChip(
+            FilterChip(
+                selected = state.tripId == trip.id,
                 onClick = { onPick(trip.id) },
                 label = { Text(trip.name) },
-                colors = if (state.tripId == trip.id) AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                ) else AssistChipDefaults.assistChipColors(),
+                leadingIcon = selectedCheck(state.tripId == trip.id),
             )
         }
     }
@@ -920,20 +1003,20 @@ private fun VehiclePicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        AssistChip(
+        // FilterChip for the same reason as the trip picker: selection gets
+        // a checkmark + semantics instead of a background tint only.
+        FilterChip(
+            selected = state.vehicleId == null,
             onClick = { onPick(null) },
             label = { Text("Unassigned") },
-            colors = if (state.vehicleId == null) AssistChipDefaults.assistChipColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-            ) else AssistChipDefaults.assistChipColors(),
+            leadingIcon = selectedCheck(state.vehicleId == null),
         )
         state.vehicles.forEach { vehicle ->
-            AssistChip(
+            FilterChip(
+                selected = state.vehicleId == vehicle.id,
                 onClick = { onPick(vehicle.id) },
                 label = { Text(vehicle.name) },
-                colors = if (state.vehicleId == vehicle.id) AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                ) else AssistChipDefaults.assistChipColors(),
+                leadingIcon = selectedCheck(state.vehicleId == vehicle.id),
             )
         }
     }
@@ -946,11 +1029,16 @@ private fun RegionField(
     onValue: (String) -> Unit,
 ) {
     var hasFocus by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = value,
         onValueChange = onValue,
         label = { Text("Prov / State") },
         placeholder = { Text("e.g. SK") },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        keyboardActions = KeyboardActions(
+            onNext = { focusManager.moveFocus(FocusDirection.Next) },
+        ),
         singleLine = true,
         modifier = modifier.onFocusChanged { focusState ->
             val nowFocused = focusState.isFocused
@@ -1196,6 +1284,7 @@ private fun DurationField(
         }
     }
 
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = fieldValue,
         onValueChange = { fv ->
@@ -1204,7 +1293,13 @@ private fun DurationField(
         },
         label = { Text("Charging duration") },
         placeholder = { Text("e.g. 25  ·  1:25  ·  0:11:00") },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Phone,
+            imeAction = ImeAction.Next,
+        ),
+        keyboardActions = KeyboardActions(
+            onNext = { focusManager.moveFocus(FocusDirection.Next) },
+        ),
         singleLine = true,
         isError = isError,
         trailingIcon = {
@@ -1259,14 +1354,18 @@ private fun DurationField(
 @Composable
 private fun TagsField(
     tags: List<String>,
+    // Draft lives in the ViewModel (not local remember) so the top-bar
+    // Save can fold an uncommitted tag into the session instead of
+    // silently dropping it.
+    draft: String,
+    onDraftChange: (String) -> Unit,
     onAdd: (String) -> Unit,
     onRemove: (String) -> Unit,
 ) {
-    var draft by remember { mutableStateOf("") }
     val commit: () -> Unit = {
         val trimmed = draft.trim()
         if (trimmed.isNotEmpty()) onAdd(trimmed)
-        draft = ""
+        onDraftChange("")
     }
     Column(modifier = Modifier.fillMaxWidth()) {
         if (tags.isNotEmpty()) {
@@ -1300,9 +1399,9 @@ private fun TagsField(
                 if (v.endsWith(",")) {
                     val candidate = v.dropLast(1).trim()
                     if (candidate.isNotEmpty()) onAdd(candidate)
-                    draft = ""
+                    onDraftChange("")
                 } else {
-                    draft = v
+                    onDraftChange(v)
                 }
             },
             label = { Text("Add tag…") },
@@ -1323,11 +1422,18 @@ private fun NumberField(
     isError: Boolean = false,
     onValue: (String) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = value,
         onValueChange = onValue,
         label = { Text(label) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Decimal,
+            imeAction = ImeAction.Next,
+        ),
+        keyboardActions = KeyboardActions(
+            onNext = { focusManager.moveFocus(FocusDirection.Next) },
+        ),
         singleLine = true,
         isError = isError,
         modifier = modifier,
@@ -1341,10 +1447,15 @@ private fun TextFieldPlain(
     modifier: Modifier = Modifier.fillMaxWidth(),
     onValue: (String) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = value,
         onValueChange = onValue,
         label = { Text(label) },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        keyboardActions = KeyboardActions(
+            onNext = { focusManager.moveFocus(FocusDirection.Next) },
+        ),
         singleLine = true,
         modifier = modifier,
     )
