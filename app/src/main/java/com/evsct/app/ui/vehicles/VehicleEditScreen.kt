@@ -1,5 +1,6 @@
 package com.evsct.app.ui.vehicles
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -50,6 +52,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -83,6 +88,7 @@ fun VehicleEditScreen(
     ) { uri -> uri?.let { viewModel.pickImage(it) } }
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(state.transientMessage) {
         state.transientMessage?.let { msg ->
@@ -90,6 +96,14 @@ fun VehicleEditScreen(
             viewModel.clearTransientMessage()
         }
     }
+
+    val dirty = viewModel.isDirty(state)
+    fun requestExit() {
+        if (dirty) showDiscardConfirm = true else onDone()
+    }
+    // System back gets the same guard as the toolbar arrow. Enabled only
+    // while dirty so a clean form keeps the default (unintercepted) pop.
+    BackHandler(enabled = dirty) { showDiscardConfirm = true }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -114,7 +128,7 @@ fun VehicleEditScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
                 navigationIcon = {
-                    IconButton(onClick = onDone) {
+                    IconButton(onClick = { requestExit() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -163,11 +177,16 @@ fun VehicleEditScreen(
                 onClear = { viewModel.clearImage() },
             )
 
+            val focusManager = LocalFocusManager.current
             OutlinedTextField(
                 value = state.name,
                 onValueChange = { v -> viewModel.update { it.copy(name = v) } },
                 label = { Text("Display name") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(
+                    onNext = { focusManager.moveFocus(FocusDirection.Next) },
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -250,6 +269,29 @@ fun VehicleEditScreen(
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (showDiscardConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDiscardConfirm = false },
+            title = { Text("Discard changes?") },
+            text = { Text("This vehicle has unsaved edits. Leaving now throws them away.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showDiscardConfirm = false
+                        onDone()
+                    },
+                ) {
+                    Text("Discard", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDiscardConfirm = false }) {
+                    Text("Keep editing")
+                }
+            },
+        )
     }
 
     if (showDeleteConfirm) {
@@ -340,11 +382,18 @@ private fun NumField(
     modifier: Modifier = Modifier.fillMaxWidth(),
     onValue: (String) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = value,
         onValueChange = onValue,
         label = { Text(label) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Decimal,
+            imeAction = ImeAction.Next,
+        ),
+        keyboardActions = KeyboardActions(
+            onNext = { focusManager.moveFocus(FocusDirection.Next) },
+        ),
         singleLine = true,
         modifier = modifier,
     )
@@ -357,10 +406,15 @@ private fun TextEntry(
     modifier: Modifier = Modifier.fillMaxWidth(),
     onValue: (String) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = value,
         onValueChange = onValue,
         label = { Text(label) },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        keyboardActions = KeyboardActions(
+            onNext = { focusManager.moveFocus(FocusDirection.Next) },
+        ),
         singleLine = true,
         modifier = modifier,
     )

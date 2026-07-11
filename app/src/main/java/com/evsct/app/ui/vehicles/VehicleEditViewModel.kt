@@ -156,8 +156,30 @@ class VehicleEditViewModel @Inject constructor(
                     )
                 }
             }
+            // Every load path above has finished seeding the form; whatever
+            // the state holds now is "as loaded" for the dirty check.
+            dirtyBaseline = _state.value
         }
     }
+
+    /** Snapshot of the form exactly as it finished loading — the reference
+     *  point for [isDirty]. Captured once per screen instance. */
+    private var dirtyBaseline: VehicleEditUi? = null
+
+    /** Neutralize the non-form fields so transient churn (loading flags,
+     *  snackbar text) never reads as a user edit. */
+    private fun formOnly(s: VehicleEditUi) = s.copy(
+        isLoading = false,
+        isNew = false,
+        useMiles = false,
+        transientMessage = null,
+    )
+
+    /** True when the form differs from what was loaded. Drives the
+     *  "Discard changes?" guard on back navigation. Always false until the
+     *  load lands (there is nothing to lose yet). */
+    fun isDirty(current: VehicleEditUi): Boolean =
+        dirtyBaseline?.let { formOnly(current) != formOnly(it) } ?: false
 
     fun update(transform: (VehicleEditUi) -> VehicleEditUi) = _state.update(transform)
 

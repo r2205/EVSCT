@@ -146,6 +146,10 @@ data class SessionEditUi(
     /** Free-form tags for this session, parsed from the comma-joined storage
      *  string. The screen renders these as removable chips. */
     val tags: List<String> = emptyList(),
+    /** Text sitting uncommitted in the "Add tag…" field. Hoisted here so
+     *  save() can fold it into [tags] — otherwise a tag typed without
+     *  pressing Enter/comma is silently dropped by the top-bar Save. */
+    val tagDraft: String = "",
     /** Receipts currently attached to this session — already-saved DB rows
      *  plus speculative copies the user just attached. `id == null` means
      *  "not yet in the DB"; save() inserts those rows. The screen renders
@@ -354,6 +358,11 @@ class SessionEditViewModel @Inject constructor(
                     )
                 }
             }
+            // Every path above (loadFrom included) has finished seeding the
+            // form; whatever the state holds now is "as loaded". Capturing
+            // here rather than per-path also folds in the tracked-charge
+            // duration seed, so opening a tracked session isn't "dirty".
+            dirtyBaseline = _state.value
         }
     }
 
@@ -514,6 +523,35 @@ class SessionEditViewModel @Inject constructor(
             if (next.postedTimeRateText != prev.postedTimeRateText) timeRateFlipUndo = null
             withHints(next)
         }
+
+    /** Snapshot of the form exactly as it finished loading — the reference
+     *  point for [isDirty]. Captured once per screen instance. */
+    private var dirtyBaseline: SessionEditUi? = null
+
+    /** Neutralize everything the user can't edit (data lists, transient
+     *  flags) so background refreshes — trips/vehicles emissions, hint
+     *  recomputes, snackbar text — never read as user edits. A field left
+     *  out here fails LOUD (a spurious discard prompt), not silent. */
+    private fun formOnly(s: SessionEditUi) = s.copy(
+        isLoading = false,
+        isNew = false,
+        useMiles = false,
+        brandSuggestions = emptyList(),
+        citySuggestions = emptyList(),
+        recentStops = emptyList(),
+        trips = emptyList(),
+        vehicles = emptyList(),
+        isFetchingLocation = false,
+        transientMessage = null,
+        hints = emptyList(),
+        isTracking = false,
+    )
+
+    /** True when the form differs from what was loaded. Drives the
+     *  "Discard changes?" guard on back navigation. Always false until the
+     *  load lands (there is nothing to lose yet). */
+    fun isDirty(current: SessionEditUi): Boolean =
+        dirtyBaseline?.let { formOnly(current) != formOnly(it) } ?: false
 
     /** Whole-number fields (battery %, wait minutes) offer a Decimal
      *  keyboard, so fractional input like "82.5" — or "82,5" on a
@@ -849,7 +887,15 @@ class SessionEditViewModel @Inject constructor(
                 continuesPrevious = s.continuesPrevious,
                 vehicleId = s.vehicleId,
                 notes = s.notes.takeIf { it.isNotBlank() },
-                tags = Tags.serialize(s.tags),
+                // Fold in a tag still sitting uncommitted in the "Add tag…"
+                // field — typing "roadtrip" and hitting Save without
+                // Enter/comma should keep the tag, not drop it.
+                tags = Tags.serialize(
+                    s.tagDraft.trim()
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { Tags.add(s.tags, it) }
+                        ?: s.tags,
+                ),
                 // Always null: receipts live in their own table now. The
                 // column remains in the schema only to avoid a table rebuild.
                 receiptImagePath = null,
