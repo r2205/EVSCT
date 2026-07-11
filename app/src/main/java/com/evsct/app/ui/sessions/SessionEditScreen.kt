@@ -47,6 +47,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.IconButton
@@ -594,6 +595,21 @@ fun SessionEditScreen(
     }
 }
 
+/** Checkmark for a selected FilterChip. M3's FilterChip only tints the
+ *  selected chip — the canonical leading check has to be passed in
+ *  explicitly, or selection reads as a subtle color change. Shared by
+ *  every single-select chip row on this form. */
+private fun selectedCheck(selected: Boolean): (@Composable () -> Unit)? =
+    if (!selected) null else {
+        {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                modifier = Modifier.size(FilterChipDefaults.IconSize),
+            )
+        }
+    }
+
 @Composable
 private fun SectionLabel(text: String) {
     Text(
@@ -673,6 +689,7 @@ private fun ChargingTypeRow(current: ChargingType, onPick: (ChargingType) -> Uni
                 selected = t == current,
                 onClick = { onPick(t) },
                 label = { Text(t.displayName()) },
+                leadingIcon = selectedCheck(t == current),
             )
         }
     }
@@ -693,6 +710,7 @@ private fun PricingModelRow(current: PricingModel, onPick: (PricingModel) -> Uni
                 selected = p == current,
                 onClick = { onPick(p) },
                 label = { Text(p.displayName()) },
+                leadingIcon = selectedCheck(p == current),
             )
         }
     }
@@ -723,6 +741,7 @@ private fun CurrencyChips(selected: String, onSelect: (String) -> Unit) {
                 selected = selected == code,
                 onClick = { onSelect(code) },
                 label = { Text(code) },
+                leadingIcon = selectedCheck(selected == code),
             )
         }
     }
@@ -932,12 +951,14 @@ private fun TripPicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
             selected = state.tripId == null,
             onClick = { onPick(null) },
             label = { Text("None") },
+            leadingIcon = selectedCheck(state.tripId == null),
         )
         state.trips.forEach { trip ->
             FilterChip(
                 selected = state.tripId == trip.id,
                 onClick = { onPick(trip.id) },
                 label = { Text(trip.name) },
+                leadingIcon = selectedCheck(state.tripId == trip.id),
             )
         }
     }
@@ -988,12 +1009,14 @@ private fun VehiclePicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
             selected = state.vehicleId == null,
             onClick = { onPick(null) },
             label = { Text("Unassigned") },
+            leadingIcon = selectedCheck(state.vehicleId == null),
         )
         state.vehicles.forEach { vehicle ->
             FilterChip(
                 selected = state.vehicleId == vehicle.id,
                 onClick = { onPick(vehicle.id) },
                 label = { Text(vehicle.name) },
+                leadingIcon = selectedCheck(state.vehicleId == vehicle.id),
             )
         }
     }
