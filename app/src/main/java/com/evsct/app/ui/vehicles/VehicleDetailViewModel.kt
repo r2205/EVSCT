@@ -27,6 +27,9 @@ data class VehicleHighlight(
 )
 
 data class VehicleDetailUi(
+    /** True until the first vehicle lookup completes. Distinguishes "still
+     *  loading" (spinner) from "vehicle genuinely missing" (not-found). */
+    val isLoading: Boolean = true,
     val vehicle: Vehicle? = null,
     val sessions: List<ChargingSession> = emptyList(),
     val sessionCount: Int = 0,
@@ -68,15 +71,20 @@ class VehicleDetailViewModel @Inject constructor(
     private val vehicleId: Long = savedStateHandle.get<Long>(Routes.VEHICLE_DETAIL_ARG) ?: -1L
 
     private val _vehicle = MutableStateFlow<Vehicle?>(null)
+    private val _vehicleLookedUp = MutableStateFlow(false)
     val state: StateFlow<VehicleDetailUi>
 
     init {
         viewModelScope.launch { refreshVehicle() }
 
-        state = combine(_vehicle.asStateFlow(), sessionRepository.observeAll()) { vehicle, allSessions ->
+        state = combine(
+            _vehicle.asStateFlow(),
+            _vehicleLookedUp.asStateFlow(),
+            sessionRepository.observeAll(),
+        ) { vehicle, lookedUp, allSessions ->
             val sessions = allSessions.filter { it.vehicleId == vehicleId }
                 .sortedByDescending { it.sessionStart }
-            buildUi(vehicle, sessions)
+            buildUi(vehicle, sessions).copy(isLoading = !lookedUp)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VehicleDetailUi())
     }
 
@@ -84,6 +92,7 @@ class VehicleDetailViewModel @Inject constructor(
 
     private suspend fun refreshVehicle() {
         _vehicle.value = vehicleRepository.findById(vehicleId)
+        _vehicleLookedUp.value = true
     }
 
     private fun buildUi(vehicle: Vehicle?, sessions: List<ChargingSession>): VehicleDetailUi {

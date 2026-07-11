@@ -146,6 +146,17 @@ class SettingsViewModel @Inject constructor(
 
     fun importCsv(uri: Uri, replaceExisting: Boolean) = viewModelScope.launch {
         transient.update { it.copy(busy = true, message = null) }
+        if (replaceExisting) {
+            // Same safety net as restore: snapshot the current data before
+            // the wipe so a wrong file is recoverable via "Undo" in the
+            // Full backup card. A snapshot failure aborts the import.
+            val snapshotError = backupIo.snapshotBeforeReplace()
+            if (snapshotError != null) {
+                transient.update { it.copy(busy = false, message = snapshotError) }
+                refreshSnapshotInfo()
+                return@launch
+            }
+        }
         runCatching { csvIo.import(uri, replaceExisting) }
             .onSuccess { (imported, skipped): CsvImportResult ->
                 transient.update {
@@ -155,6 +166,7 @@ class SettingsViewModel @Inject constructor(
             .onFailure { e ->
                 transient.update { it.copy(busy = false, message = "Import failed: ${e.message}") }
             }
+        if (replaceExisting) refreshSnapshotInfo()
     }
 
     fun importXlsx(uri: Uri) = viewModelScope.launch {

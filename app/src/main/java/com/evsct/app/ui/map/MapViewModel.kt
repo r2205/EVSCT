@@ -79,6 +79,9 @@ data class MapFilters(
 )
 
 data class MapUi(
+    /** True until the first database emission lands, so the screen doesn't
+     *  flash "No locations to map yet" over a log that has plenty. */
+    val isLoading: Boolean = true,
     val stops: List<MapStop> = emptyList(),
     val totalDistinct: Int = 0,
     val unlocatedDistinct: Int = 0,
@@ -231,6 +234,7 @@ class MapViewModel @Inject constructor(
             .orEmpty()
 
         MapUi(
+            isLoading = false,
             stops = stops,
             totalDistinct = groups.size,
             unlocatedDistinct = unlocated,

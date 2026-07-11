@@ -90,6 +90,7 @@ fun SettingsScreen(
     var showXlsxConfirm by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf<android.net.Uri?>(null) }
     var showUndoRestoreConfirm by remember { mutableStateOf(false) }
+    var showCsvReplaceConfirm by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv"),
@@ -97,7 +98,14 @@ fun SettingsScreen(
 
     val csvImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let { viewModel.importCsv(it, replaceOnImport) } }
+    ) { uri ->
+        uri?.let {
+            // Replace-mode wipes the whole log — confirm like Restore does.
+            // Append-mode stays a one-step flow.
+            if (replaceOnImport) showCsvReplaceConfirm = it
+            else viewModel.importCsv(it, replaceExisting = false)
+        }
+    }
 
     val xlsxImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -291,10 +299,10 @@ fun SettingsScreen(
                             onClick = { showUndoRestoreConfirm = true },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !state.busy,
-                        ) { Text("Undo last restore…") }
+                        ) { Text("Undo last restore or import…") }
                         Text(
                             "Brings back the data as it was just before your last " +
-                                "restore (snapshot taken automatically " +
+                                "restore or replace-import (snapshot taken automatically " +
                                 java.text.DateFormat.getDateTimeInstance(
                                     java.text.DateFormat.MEDIUM,
                                     java.text.DateFormat.SHORT,
@@ -405,6 +413,33 @@ fun SettingsScreen(
         )
     }
 
+    showCsvReplaceConfirm?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { showCsvReplaceConfirm = null },
+            title = { Text("Replace all sessions?") },
+            text = {
+                Text(
+                    "\"Replace existing\" is ticked: this will erase every " +
+                        "session currently in the app and replace them with " +
+                        "the contents of the CSV. A snapshot of your current " +
+                        "data is saved automatically first, so you can undo " +
+                        "this from Settings if it's the wrong file."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCsvReplaceConfirm = null
+                    viewModel.importCsv(uri, replaceExisting = true)
+                }) {
+                    Text("Erase and import", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCsvReplaceConfirm = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     showRestoreConfirm?.let { uri ->
         AlertDialog(
             onDismissRequest = { showRestoreConfirm = null },
@@ -434,13 +469,13 @@ fun SettingsScreen(
     if (showUndoRestoreConfirm) {
         AlertDialog(
             onDismissRequest = { showUndoRestoreConfirm = false },
-            title = { Text("Undo last restore?") },
+            title = { Text("Undo last restore or import?") },
             text = {
                 Text(
                     "This replaces everything currently in the app with the " +
-                        "snapshot taken just before your last restore. The data " +
-                        "you're replacing is snapshotted first, so you can undo " +
-                        "the undo."
+                        "snapshot taken just before your last restore or " +
+                        "replace-import. The data you're replacing is " +
+                        "snapshotted first, so you can undo the undo."
                 )
             },
             confirmButton = {
@@ -448,7 +483,7 @@ fun SettingsScreen(
                     showUndoRestoreConfirm = false
                     viewModel.undoRestore()
                 }) {
-                    Text("Undo restore", color = MaterialTheme.colorScheme.error)
+                    Text("Undo", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {

@@ -59,6 +59,10 @@ data class BackupNudge(
 )
 
 data class SessionListUi(
+    /** True until the first database emission lands. Distinguishes "still
+     *  loading" from "loaded and genuinely empty" so the screen doesn't
+     *  flash its zero-data UI on every open. */
+    val isLoading: Boolean = true,
     val sessions: List<ChargingSession> = emptyList(),
     val trips: List<Trip> = emptyList(),
     val vehicles: List<Vehicle> = emptyList(),
@@ -151,6 +155,7 @@ class SessionListViewModel @Inject constructor(
             val cleanedSelection = selectedIds.intersect(sessionIdSet)
 
             SessionListUi(
+                isLoading = false,
                 sessions = sessions,
                 trips = trips,
                 vehicles = vehicles,

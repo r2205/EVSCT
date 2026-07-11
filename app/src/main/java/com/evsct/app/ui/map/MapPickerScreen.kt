@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -167,14 +168,19 @@ fun MapPickerScreen(
             )
             // Centered crosshair overlay — the pin stays in screen center
             // while the map moves under it. The camera target is whatever
-            // is under the pin.
+            // is under the pin's TIP, so the icon is shifted up: the Place
+            // glyph's tip sits at y≈21.5 of its 24dp viewport, i.e. 43dp
+            // down a 48dp icon — 19dp below the icon's center. Without the
+            // shift every picked location lands ~19dp south of where the
+            // pin visibly points.
             Icon(
                 imageVector = Icons.Default.Place,
                 contentDescription = "Selected location",
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .size(48.dp),
+                    .size(48.dp)
+                    .offset(y = (-19).dp),
             )
             Spacer(modifier = Modifier.width(0.dp))  // No-op; keeps layout tree stable.
         }

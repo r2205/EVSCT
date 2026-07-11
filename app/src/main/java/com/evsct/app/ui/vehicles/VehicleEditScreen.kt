@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -96,7 +97,13 @@ fun VehicleEditScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (state.isNew) "New vehicle" else "Edit vehicle",
+                        when {
+                            // Until the load lands, isNew defaults true even
+                            // for an existing vehicle — don't claim either.
+                            state.isLoading -> ""
+                            state.isNew -> "New vehicle"
+                            else -> "Edit vehicle"
+                        },
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
                 },
@@ -117,13 +124,27 @@ fun VehicleEditScreen(
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     }
-                    IconButton(onClick = { viewModel.save(onDone) }) {
+                    // Saving before the load lands would insert a blank NEW
+                    // row (isNew still defaults true), not update the one
+                    // being opened.
+                    IconButton(onClick = { viewModel.save(onDone) }, enabled = !state.isLoading) {
                         Icon(Icons.Default.Check, contentDescription = "Save")
                     }
                 },
             )
         },
     ) { padding ->
+        if (state.isLoading) {
+            // Fields aren't seeded yet — rendering the form now shows a
+            // blank shell whose values pop in a beat later.
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .padding(padding)

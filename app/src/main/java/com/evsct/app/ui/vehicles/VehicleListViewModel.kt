@@ -15,9 +15,12 @@ class VehicleListViewModel @Inject constructor(
     repository: VehicleRepository,
 ) : ViewModel() {
 
-    val vehicles: StateFlow<List<Vehicle>> =
+    /** null until the first database emission lands, so the screen can show
+     *  a loading indicator instead of flashing "No vehicles yet" over real
+     *  data on every open. */
+    val vehicles: StateFlow<List<Vehicle>?> =
         repository.observeAll()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // Deliberately no list-level delete. The edit screen's deleteAndExit
     // is the one delete path — it cleans up the profile image and any

@@ -3,6 +3,8 @@ package com.evsct.app.ui.trips
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -103,7 +105,13 @@ fun TripEditDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (trip == null) "New trip" else "Edit trip") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                // Scrollable: seven controls plus helper/error rows exceed
+                // the dialog's height on short screens and in landscape,
+                // clipping the lower fields.
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
