@@ -5,6 +5,21 @@ to testers so they land in a populated app instead of an empty one. It's the
 same `.zip` shape the app writes from **Settings → Full backup → Save / Share**
 (schema v5): a `backup.json` plus generated vehicle photos and receipt files.
 
+There are two packs:
+
+| Pack | Sessions | Trips | Use it for |
+| --- | --- | --- | --- |
+| `evsct-sample-backup.zip` | 87 | 5 | the standard tester pack |
+| `evsct-sample-backup-large.zip` | 163 | 10 | long lists, scroll checks, denser map/stats |
+
+The large pack is a strict superset: the same three vehicles and all of the
+small pack's data, plus five more trips (Toronto Christmas run, Montréal long
+weekend, Kingston family visit, Bruce Peninsula/Tobermory, Gatineau Park
+weekend) and ~76 more sessions — a denser home/work charging cadence, winter
+DC stops, three more receipts, and enough trips that **all ten map pin
+colors** are in use. Same physical-consistency guarantees as the small pack
+(see below); data runs Apr 2025 → Jul 2026.
+
 ## What's inside
 
 - **3 vehicles** — 2023 Tesla Model Y (default), 2022 Hyundai Ioniq 5, 2021
@@ -51,8 +66,12 @@ random seed). It needs Python 3 and Pillow:
 
 ```bash
 pip install Pillow
-python3 generate_sample_backup.py   # rewrites evsct-sample-backup.zip
+python3 generate_sample_backup.py         # rewrites evsct-sample-backup.zip
+python3 generate_sample_backup_large.py   # rewrites evsct-sample-backup-large.zip
 ```
 
 Tweak the vehicle list, station table, or per-vehicle session blocks in that
-script to reshape the sample.
+script to reshape the sample. The large generator imports the base one,
+rebuilds its dataset verbatim as the starting point, and layers the extra
+trips/sessions on top before re-running the shared odometer/trip-window
+consistency passes — so edits to the base script flow into both packs.

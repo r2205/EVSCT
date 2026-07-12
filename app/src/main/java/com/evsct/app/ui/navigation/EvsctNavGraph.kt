@@ -1,12 +1,29 @@
 package com.evsct.app.ui.navigation
 
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Route
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.evsct.app.ui.map.MapPickerScreen
 import com.evsct.app.ui.map.MapScreen
@@ -88,9 +105,71 @@ private inline fun NavBackStackEntry.ifResumed(block: () -> Unit) {
     if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) block()
 }
 
+/** A destination surfaced in the bottom navigation bar. */
+private data class TopLevelDestination(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+)
+
+private val TOP_LEVEL_DESTINATIONS = listOf(
+    TopLevelDestination(Routes.SESSION_LIST, "Log", Icons.Default.Bolt),
+    TopLevelDestination(Routes.MAP, "Map", Icons.Default.Map),
+    TopLevelDestination(Routes.STATS, "Stats", Icons.Default.BarChart),
+    TopLevelDestination(Routes.TRIP_LIST, "Trips", Icons.Default.Route),
+)
+
 @Composable
 fun EvsctNavGraph(navController: NavHostController) {
-    NavHost(navController = navController, startDestination = Routes.SESSION_LIST) {
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    // The bar lives on the four top-level screens only. Sub-screens
+    // (edit forms, detail pages, settings, the map picker) keep their
+    // full height and their own back semantics.
+    val showBottomBar = TOP_LEVEL_DESTINATIONS.any { it.route == currentRoute }
+
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar {
+                    TOP_LEVEL_DESTINATIONS.forEach { dest ->
+                        NavigationBarItem(
+                            selected = currentRoute == dest.route,
+                            onClick = {
+                                // Same mid-transition guard as every other
+                                // navigation lambda in this graph.
+                                backStackEntry?.ifResumed {
+                                    navController.navigate(dest.route) {
+                                        // Canonical tab behavior: one stack
+                                        // segment per tab, saved when you
+                                        // leave and restored when you return,
+                                        // with back always landing on the Log.
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
+                            // Label text carries the name for TalkBack; the
+                            // icon is decorative alongside it.
+                            icon = { Icon(dest.icon, contentDescription = null) },
+                            label = { Text(dest.label) },
+                        )
+                    }
+                }
+            }
+        },
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = Routes.SESSION_LIST,
+            // consumeWindowInsets: the outer Scaffold already accounts for
+            // the bar; without consuming, each screen's own Scaffold would
+            // re-add bottom system-bar padding above it.
+            modifier = Modifier.padding(padding).consumeWindowInsets(padding),
+        ) {
         composable(Routes.SESSION_LIST) { entry ->
             SessionListScreen(
                 onAddSession = { preselectVehicleId ->
@@ -104,15 +183,11 @@ fun EvsctNavGraph(navController: NavHostController) {
                 onEditSession = { id ->
                     entry.ifResumed { navController.navigate(Routes.sessionEdit(id)) }
                 },
-                onOpenTrips = { entry.ifResumed { navController.navigate(Routes.TRIP_LIST) } },
-                onOpenStats = { entry.ifResumed { navController.navigate(Routes.STATS) } },
-                onOpenMap = { entry.ifResumed { navController.navigate(Routes.MAP) } },
                 onOpenSettings = { entry.ifResumed { navController.navigate(Routes.SETTINGS) } },
             )
         }
         composable(Routes.STATS) { entry ->
             StatsScreen(
-                onBack = { entry.ifResumed { navController.popBackStack() } },
                 onOpenYearRecap = { vehicleId ->
                     entry.ifResumed { navController.navigate(Routes.yearRecap(vehicleId)) }
                 },
@@ -131,7 +206,6 @@ fun EvsctNavGraph(navController: NavHostController) {
         }
         composable(Routes.MAP) { entry ->
             MapScreen(
-                onBack = { entry.ifResumed { navController.popBackStack() } },
                 onEditSession = { id ->
                     entry.ifResumed { navController.navigate(Routes.sessionEdit(id)) }
                 },
@@ -203,7 +277,6 @@ fun EvsctNavGraph(navController: NavHostController) {
         }
         composable(Routes.TRIP_LIST) { entry ->
             TripListScreen(
-                onBack = { entry.ifResumed { navController.popBackStack() } },
                 onOpenTrip = { id ->
                     entry.ifResumed { navController.navigate(Routes.tripDetail(id)) }
                 },
@@ -259,6 +332,7 @@ fun EvsctNavGraph(navController: NavHostController) {
                 onBack = { entry.ifResumed { navController.popBackStack() } },
                 onOpenVehicles = { entry.ifResumed { navController.navigate(Routes.VEHICLE_LIST) } },
             )
+        }
         }
     }
 }

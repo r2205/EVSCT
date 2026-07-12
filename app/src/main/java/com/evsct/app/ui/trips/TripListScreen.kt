@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.AlertDialog
@@ -46,7 +45,6 @@ import com.evsct.app.util.Money
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TripListScreen(
-    onBack: () -> Unit,
     onOpenTrip: (Long) -> Unit,
     viewModel: TripListViewModel = hiltViewModel(),
 ) {
@@ -63,13 +61,7 @@ fun TripListScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
             )
         },
         floatingActionButton = {

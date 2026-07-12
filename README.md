@@ -133,7 +133,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   field fall to the end.
 - **Multi-select** — long-press to enter selection mode, then bulk-assign
   selected sessions to a trip.
-- Top bar entries: Search · **Sort** · Stats · **Map** · Trips · Settings.
+- Top bar entries: Search · **Sort** · Settings. Log / Map / Stats /
+  Trips switch via the **bottom navigation bar**, which preserves each
+  tab's state (scroll position, camera, filters) across switches.
 
 ### Map view
 - Google Maps full-screen view with **one pin per distinct charging stop**
