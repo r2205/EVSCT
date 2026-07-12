@@ -426,7 +426,11 @@ private fun TimeOfDayHeatmap(
     var selected by remember(grid) { mutableStateOf<Pair<Int, Int>?>(null) }
     val labelStyle = MaterialTheme.typography.labelSmall
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val emptyCellColor = MaterialTheme.colorScheme.surfaceVariant
+    // outlineVariant, not surfaceVariant: in light mode surfaceVariant is
+    // nearly the card's own tone, so zero-count cells vanished. In dark
+    // this palette's outlineVariant IS surfaceVariant (same hex), so the
+    // dark grid — which already read well — is untouched.
+    val emptyCellColor = MaterialTheme.colorScheme.outlineVariant
     val selectedOutline = MaterialTheme.colorScheme.onSurface
     val dayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
