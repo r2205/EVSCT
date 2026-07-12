@@ -75,6 +75,10 @@ class AppPreferences @Inject constructor(
          *  same-trip sessions in chronological order. Sits next to the
          *  heatmap toggle in the layers menu. */
         private val MAP_POLYLINES_ENABLED = booleanPreferencesKey("map_polylines_enabled")
+        /** Whether map pins are tinted by their trip's color. When false,
+         *  every pin renders in the default red. A display mode like the
+         *  toggles above, so it persists across app restarts too. */
+        private val MAP_COLOR_BY_TRIP = booleanPreferencesKey("map_color_by_trip")
 
         val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
         val SUPPORTED_MAP_TYPES = listOf("NORMAL", "SATELLITE", "HYBRID", "TERRAIN")
@@ -220,6 +224,16 @@ class AppPreferences @Inject constructor(
 
     suspend fun setMapPolylinesEnabled(enabled: Boolean) {
         dataStore.edit { it[MAP_POLYLINES_ENABLED] = enabled }
+    }
+
+    /** Whether map pins are tinted by trip color. Defaults to true — the
+     *  colored map is the feature's selling point. */
+    val mapColorByTrip: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[MAP_COLOR_BY_TRIP] ?: true
+    }
+
+    suspend fun setMapColorByTrip(enabled: Boolean) {
+        dataStore.edit { it[MAP_COLOR_BY_TRIP] = enabled }
     }
 
     suspend fun snapshot(): Snapshot {

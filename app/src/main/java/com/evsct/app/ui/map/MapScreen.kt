@@ -1,5 +1,8 @@
 package com.evsct.app.ui.map
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,11 +20,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Badge
@@ -30,13 +35,17 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,11 +65,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.util.Format
+import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -80,6 +92,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.heatmaps.HeatmapTileProvider
 import com.google.maps.android.heatmaps.WeightedLatLng
 import kotlin.math.ln
+import kotlinx.coroutines.launch
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -114,6 +127,46 @@ fun MapScreen(
         mutableStateOf<ChargingStopClusterRenderer?>(null)
     }
 
+    // My-location: the blue dot renders whenever permission is held; the
+    // FAB below either jumps the camera to the current fix or requests the
+    // permission first. The SDK's own button is disabled so there's exactly
+    // one control, in one place, with a spinner while the fix is fetched.
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var hasLocationPermission by remember { mutableStateOf(viewModel.hasLocationPermission()) }
+    var locating by remember { mutableStateOf(false) }
+    fun jumpToMyLocation() {
+        if (locating) return
+        scope.launch {
+            locating = true
+            val fix = viewModel.currentLatLng()
+            locating = false
+            if (fix != null) {
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngZoom(LatLng(fix.first, fix.second), 14f),
+                )
+            } else {
+                snackbarHostState.showSnackbar(
+                    "Couldn't get a location fix. Check that location is turned on.",
+                )
+            }
+        }
+    }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        hasLocationPermission = grants.values.any { it }
+        if (hasLocationPermission) {
+            jumpToMyLocation()
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    "Location permission is off — the map can't jump to where you are.",
+                )
+            }
+        }
+    }
+
     // Auto-frame on the first non-empty stops emission only. After that the
     // camera is the user's — toggling a trip filter, finishing a backfill,
     // or adding a session would otherwise yank the view away from wherever
@@ -139,7 +192,24 @@ fun MapScreen(
         hasFramedCamera = true
     }
 
+    // Geocode failures used to vanish silently — the backfill counted them
+    // but nothing surfaced the number, so stops just never appeared. Tell
+    // the user once per completed pass.
+    LaunchedEffect(state.backfillCompleted, state.backfillFailed) {
+        if (state.backfillCompleted && state.backfillFailed > 0) {
+            val n = state.backfillFailed
+            snackbarHostState.showSnackbar(
+                message = (if (n == 1) "1 address couldn't be located"
+                else "$n addresses couldn't be located") +
+                    " — those stops stay off the map. Check the address, or open the " +
+                    "session and use Pick on map.",
+                duration = SnackbarDuration.Long,
+            )
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -184,6 +254,16 @@ fun MapScreen(
                                 showLayersMenu = false
                             },
                             polylinesAvailable = !state.heatmapEnabled,
+                            colorByTripEnabled = state.colorByTrip,
+                            onToggleColorByTrip = { enabled ->
+                                viewModel.setColorByTrip(enabled)
+                                showLayersMenu = false
+                            },
+                            clusteringEnabled = state.clusteringEnabled,
+                            onToggleClustering = { enabled ->
+                                viewModel.setClusteringEnabled(enabled)
+                                showLayersMenu = false
+                            },
                         )
                     }
                     IconButton(onClick = { showFilters = true }) {
@@ -206,13 +286,17 @@ fun MapScreen(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
-                    isMyLocationEnabled = false,
+                    isMyLocationEnabled = hasLocationPermission,
                     mapType = mapTypeOf(state.mapType),
                 ),
                 uiSettings = MapUiSettings(
                     zoomControlsEnabled = false,
                     compassEnabled = true,
                     mapToolbarEnabled = true,
+                    // Our FAB below replaces the SDK button, so the control
+                    // exists (and can ask for permission) even before the
+                    // permission is granted.
+                    myLocationButtonEnabled = false,
                 ),
             ) {
                 // Construct the ClusterManager + custom renderer once, the
@@ -353,6 +437,47 @@ fun MapScreen(
                     },
                 )
             }
+
+            // What the pin colors mean, at a glance. Only rendered when the
+            // colors are actually in play (colorByTrip on, pins visible, at
+            // least one visible trip); tapping it opens the filter sheet
+            // where the same trips can be toggled.
+            val legendEntries = legendEntriesFor(state)
+            if (state.colorByTrip && !state.heatmapEnabled && legendEntries.isNotEmpty()) {
+                TripLegendOverlay(
+                    entries = legendEntries,
+                    onClick = { showFilters = true },
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 12.dp, bottom = 16.dp),
+                )
+            }
+
+            FloatingActionButton(
+                onClick = {
+                    if (hasLocationPermission) {
+                        jumpToMyLocation()
+                    } else {
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION,
+                            ),
+                        )
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+            ) {
+                if (locating) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.MyLocation, contentDescription = "My location")
+                }
+            }
         }
     }
 
@@ -363,8 +488,6 @@ fun MapScreen(
             onShowAllTrips = viewModel::showAllTrips,
             onHideAllTrips = viewModel::hideAllTrips,
             onSetVehicleFilter = viewModel::setVehicleFilter,
-            onSetColorByTrip = viewModel::setColorByTrip,
-            onSetClusteringEnabled = viewModel::setClusteringEnabled,
             onResetAll = viewModel::resetFilters,
             onDismiss = { showFilters = false },
         )
@@ -385,6 +508,78 @@ fun MapScreen(
         )
     }
 }
+
+/** (label, dot color) rows for the on-map legend: each visible trip, then
+ *  the untripped bucket, then the shared-stop gray when any pin uses it.
+ *  Empty when no visible trip is contributing pins — a legend that only
+ *  says "Untripped" would be noise. */
+private fun legendEntriesFor(ui: MapUi): List<Pair<String, Color>> {
+    if (ui.stops.isEmpty()) return emptyList()
+    val visibleTrips = ui.tripOptions.filter { it.visible }
+    if (visibleTrips.isEmpty()) return emptyList()
+    return buildList {
+        visibleTrips.forEach { option ->
+            add(option.name to (TripPinColor.fromKey(option.pinColorKey)?.swatch ?: SHARED_PIN_COLOR))
+        }
+        if (ui.showUntrippedOption && ui.untrippedVisible) add("Untripped" to UNTRIPPED_PIN_COLOR)
+        if (ui.stops.any { it.pinKind == PinKind.Shared }) add("Multiple trips" to SHARED_PIN_COLOR)
+    }
+}
+
+/** Compact translucent legend card overlaid on the map. Shows at most
+ *  [MAX_LEGEND_ROWS] rows plus a "+N more" line; the full list lives in
+ *  the filter sheet, which tapping the legend opens. */
+@Composable
+private fun TripLegendOverlay(
+    entries: List<Pair<String, Color>>,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        modifier = modifier.widthIn(max = 180.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            entries.take(MAX_LEGEND_ROWS).forEach { (label, color) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(color),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (entries.size > MAX_LEGEND_ROWS) {
+                Text(
+                    "+${entries.size - MAX_LEGEND_ROWS} more…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private const val MAX_LEGEND_ROWS = 6
+
+/** Fallback/shared gray — matches the shared-stop pin bitmap. */
+private val SHARED_PIN_COLOR = Color(0xFF6E6E6E)
+
+/** The Maps SDK's default red marker, which untripped stops keep. */
+private val UNTRIPPED_PIN_COLOR = Color(0xFFE53935)
 
 private fun subtitleFor(ui: MapUi): String? {
     if (ui.stops.isEmpty() && ui.totalDistinct == 0) return null
@@ -553,8 +748,6 @@ private fun FilterSheet(
     onShowAllTrips: () -> Unit,
     onHideAllTrips: () -> Unit,
     onSetVehicleFilter: (Long?) -> Unit,
-    onSetColorByTrip: (Boolean) -> Unit,
-    onSetClusteringEnabled: (Boolean) -> Unit,
     onResetAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -582,61 +775,13 @@ private fun FilterSheet(
                     TextButton(onClick = onResetAll) { Text("Reset") }
                 }
             }
-
-            // --- Color toggle ---
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Color pins by trip",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        "Off shows every pin in red instead.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = ui.colorByTrip,
-                    onCheckedChange = onSetColorByTrip,
-                )
-            }
-
-            // --- Clustering toggle ---
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Cluster nearby pins",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        "Off shows every pin individually regardless of zoom.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = ui.clusteringEnabled,
-                    onCheckedChange = onSetClusteringEnabled,
-                )
-            }
+            // NOTE: display-mode toggles (trip colors, clustering, heatmap,
+            // routes) live in the Layers menu — this sheet only decides
+            // WHICH stops show, not how the map looks.
 
             // --- Vehicle filter (hidden when there's only one vehicle to choose
             //     from, since the chips would be a no-op). ---
             if (ui.vehicles.size >= 2) {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                 Text(
                     "Show pins for vehicle",
                     style = MaterialTheme.typography.titleSmall,

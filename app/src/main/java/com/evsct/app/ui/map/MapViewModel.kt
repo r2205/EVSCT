@@ -73,7 +73,6 @@ data class TripPolyline(
 data class MapFilters(
     /** Trip IDs (and null = "untripped") whose pins are hidden. Empty = show all. */
     val hiddenKeys: Set<Long?> = emptySet(),
-    val colorByTrip: Boolean = true,
     /** When non-null, only sessions tagged to this vehicle contribute to pins. */
     val vehicleFilter: Long? = null,
 )
@@ -148,8 +147,9 @@ class MapViewModel @Inject constructor(
         appPreferences.mapClusteringEnabled,
         appPreferences.mapHeatmapEnabled,
         appPreferences.mapPolylinesEnabled,
-    ) { type, clustering, heatmap, polylines ->
-        MapPrefs(type, clustering, heatmap, polylines)
+        appPreferences.mapColorByTrip,
+    ) { type, clustering, heatmap, polylines, colorByTrip ->
+        MapPrefs(type, clustering, heatmap, polylines, colorByTrip)
     }
 
     // Pair trips + vehicles so the outer combine still fits in 5 args.
@@ -166,7 +166,7 @@ class MapViewModel @Inject constructor(
         mapPrefs,
     ) { allSessions, (trips, vehicles), status, fs, prefs ->
         val (f, currentSelectedStop) = fs
-        val (mapType, clusteringEnabled, heatmapEnabled, polylinesEnabled) = prefs
+        val (mapType, clusteringEnabled, heatmapEnabled, polylinesEnabled, colorByTrip) = prefs
 
         // Drop a vehicle filter that points to a deleted vehicle so the
         // sheet doesn't keep advertising a phantom selection.
@@ -246,9 +246,8 @@ class MapViewModel @Inject constructor(
             untrippedVisible = untrippedVisible,
             vehicles = vehicles,
             vehicleFilterId = effectiveVehicleFilter,
-            colorByTrip = f.colorByTrip,
+            colorByTrip = colorByTrip,
             anyFilterActive = f.hiddenKeys.isNotEmpty() ||
-                !f.colorByTrip ||
                 effectiveVehicleFilter != null,
             mapType = mapType,
             clusteringEnabled = clusteringEnabled,
@@ -314,12 +313,20 @@ class MapViewModel @Inject constructor(
     }
 
     fun setColorByTrip(enabled: Boolean) {
-        filters.update { it.copy(colorByTrip = enabled) }
+        viewModelScope.launch { appPreferences.setMapColorByTrip(enabled) }
     }
 
     fun resetFilters() {
         filters.value = MapFilters()
     }
+
+    /** Whether the app currently holds a location permission — the screen's
+     *  my-location button asks before choosing "request" vs "locate". */
+    fun hasLocationPermission(): Boolean = locationAutofill.hasPermission()
+
+    /** Device's current coordinates for the my-location button, or null
+     *  when permission/provider/fix is unavailable. */
+    suspend fun currentLatLng(): Pair<Double, Double>? = locationAutofill.currentLatLng()
 
     /**
      * Geocode every distinct stop that has no coordinates yet. Runs once per
@@ -445,6 +452,7 @@ class MapViewModel @Inject constructor(
         val clusteringEnabled: Boolean,
         val heatmapEnabled: Boolean,
         val polylinesEnabled: Boolean,
+        val colorByTrip: Boolean,
     )
 
     companion object {
