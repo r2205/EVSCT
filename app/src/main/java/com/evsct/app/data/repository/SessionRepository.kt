@@ -50,5 +50,21 @@ class SessionRepository @Inject constructor(
     suspend fun delete(session: ChargingSession) =
         dao.deleteAndClearStaleContinuity(session, System.currentTimeMillis())
 
+    suspend fun deleteMany(sessions: List<ChargingSession>) {
+        if (sessions.isEmpty()) return
+        dao.deleteAllAndClearStaleContinuity(sessions, System.currentTimeMillis())
+    }
+
+    /** Reinstate just-deleted rows exactly as they were (same ids, same
+     *  timestamps) — the delete-undo path. Bypasses [upsert]'s existing-row
+     *  routing, whose @Update would silently no-op on rows that no longer
+     *  exist. A follower's continuesPrevious flag cleared by the delete is
+     *  NOT re-set: the flag is an attestation, and conservatively staying
+     *  cleared only costs the user a re-tick. */
+    suspend fun restoreAll(sessions: List<ChargingSession>) {
+        if (sessions.isEmpty()) return
+        dao.insertAll(sessions)
+    }
+
     suspend fun deleteAll() = dao.deleteAll()
 }

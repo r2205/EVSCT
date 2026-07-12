@@ -34,6 +34,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -53,6 +55,7 @@ fun TripListScreen(
     // and discard everything typed into it.
     var dialogOpen by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<com.evsct.app.data.entity.Trip?>(null) }
+    val haptics = LocalHapticFeedback.current
 
     Scaffold(
         topBar = {
@@ -142,6 +145,7 @@ fun TripListScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.delete(trip)
                     pendingDelete = null
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
