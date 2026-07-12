@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -253,7 +255,17 @@ fun VehicleEditScreen(
             )
 
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                // One merged toggle target: the whole row flips the switch
+                // and TalkBack reads "Default vehicle, switch, on" instead
+                // of an unlabeled switch after two loose text nodes.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .toggleable(
+                        value = state.isDefault,
+                        role = Role.Switch,
+                        onValueChange = { v -> viewModel.update { it.copy(isDefault = v) } },
+                    ),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -266,7 +278,7 @@ fun VehicleEditScreen(
                 }
                 Switch(
                     checked = state.isDefault,
-                    onCheckedChange = { v -> viewModel.update { it.copy(isDefault = v) } },
+                    onCheckedChange = null,
                 )
             }
 

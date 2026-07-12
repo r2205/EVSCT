@@ -48,6 +48,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -382,7 +385,10 @@ private fun TypeSplitBar(byType: Map<ChargingType, Int>) {
             .fillMaxWidth()
             .height(18.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            // Decorative for TalkBack: the legend right below carries the
+            // same counts and percentages as real text.
+            .clearAndSetSemantics { },
     ) {
         ChargingType.entries.forEach { type ->
             val count = byType[type] ?: 0
@@ -469,7 +475,15 @@ private fun TimeOfDayHeatmap(
             }
         }
         Spacer(Modifier.height(8.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+            // 168 cells are useless to TalkBack one at a time; the grid
+            // reads as one summary instead. Sighted-only affordances (tap
+            // a square) have their info in the Peak label and this text.
+            modifier = Modifier.semantics {
+                contentDescription = heatmapSummary(title, grid)
+            },
+        ) {
             for (day in 0..6) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -575,6 +589,14 @@ private fun TimeOfDayHeatmap(
 /** "5–6 pm" style label for the one-hour bucket starting at [hour]. */
 private fun hourRange(hour: Int): String =
     "${formatHour12(hour)}–${formatHour12((hour + 1) % 24)}"
+
+/** One-sentence TalkBack summary standing in for the whole heatmap grid. */
+private fun heatmapSummary(title: String, grid: List<List<Int>>): String {
+    val total = grid.sumOf { row -> row.sum() }
+    val peak = peakLabel(grid)?.let { " Busiest: $it." } ?: ""
+    return "$title heatmap of charging by day of week and hour: " +
+        "$total session" + (if (total == 1) "" else "s") + " total." + peak
+}
 
 /** "Sat 2 pm" string for the busiest cell, or null when the grid is empty. */
 private fun peakLabel(grid: List<List<Int>>): String? {

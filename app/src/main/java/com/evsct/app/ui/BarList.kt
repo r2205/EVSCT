@@ -1,5 +1,7 @@
 package com.evsct.app.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,9 +21,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -47,13 +52,22 @@ fun BarList(
         items.forEach { (label, value) ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = if (onRowClick != null) {
-                    Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable { onRowClick(label) }
-                } else {
-                    Modifier
-                },
+                modifier = Modifier
+                    // One merged TalkBack node per row, phrased as
+                    // "label: value" — without this the bar is an opaque
+                    // colored box between two loose text fragments.
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "$label: ${formatValue(value)}"
+                    }
+                    .then(
+                        if (onRowClick != null) {
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { onRowClick(label) }
+                        } else {
+                            Modifier
+                        },
+                    ),
             ) {
                 Text(
                     label,
@@ -74,11 +88,19 @@ fun BarList(
                         .background(MaterialTheme.colorScheme.outlineVariant),
                 ) {
                     val frac = if (maxValue > 0) (value / maxValue).toFloat() else 0f
-                    if (frac > 0f) {
+                    val target = if (frac > 0f) frac.coerceAtLeast(MIN_BAR_FRACTION) else 0f
+                    // Bars grow into place (and re-flow when the data set
+                    // changes, e.g. flipping months ↔ years on Stats).
+                    val animatedFrac by animateFloatAsState(
+                        targetValue = target,
+                        animationSpec = tween(durationMillis = 350),
+                        label = "barFill",
+                    )
+                    if (animatedFrac > 0f) {
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
-                                .fillMaxWidth(frac.coerceAtLeast(MIN_BAR_FRACTION))
+                                .fillMaxWidth(animatedFrac)
                                 .background(MaterialTheme.colorScheme.primary),
                         )
                     }

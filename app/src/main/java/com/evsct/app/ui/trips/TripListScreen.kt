@@ -94,6 +94,9 @@ fun TripListScreen(
                 items(trips, key = { it.trip.id }) { tws ->
                     Card(
                         modifier = Modifier
+                            // Rows glide to their new slot when a date edit
+                            // re-sorts the list or a trip is deleted.
+                            .animateItem()
                             .fillMaxWidth()
                             .clickable { onOpenTrip(tws.trip.id) }
                     ) {

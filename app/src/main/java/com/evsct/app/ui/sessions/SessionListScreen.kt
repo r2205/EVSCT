@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
@@ -66,7 +68,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,7 +79,9 @@ import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -85,9 +89,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -98,6 +104,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -113,8 +122,12 @@ import com.evsct.app.ui.theme.LocalEvAccents
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
 import com.evsct.app.util.Tags
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SessionListScreen(
     onAddSession: (preselectVehicleId: Long?) -> Unit,
@@ -149,6 +162,17 @@ fun SessionListScreen(
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    // derivedStateOf: recompose only when the threshold is crossed, not on
+    // every scrolled pixel. A dozen rows down is where "fling back by hand"
+    // starts to feel like work.
+    val showScrollToTop by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 12 }
+    }
+    val fabExpanded by remember {
+        derivedStateOf { listState.firstVisibleItemIndex == 0 }
+    }
 
     // A delete just happened — one session from the edit screen, or a
     // multi-select batch from this screen: offer a window to take it back.
@@ -276,13 +300,39 @@ fun SessionListScreen(
             }
         },
         floatingActionButton = {
-            if (!state.isSelectionMode) {
-                FloatingActionButton(
-                    onClick = { showAddSheet = true },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add session")
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                // Back-to-top appears once the user is deep in the list;
+                // available in selection mode too (long lists are exactly
+                // where multi-select happens).
+                androidx.compose.animation.AnimatedVisibility(visible = showScrollToTop) {
+                    SmallFloatingActionButton(
+                        onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Back to top")
+                    }
+                }
+                if (!state.isSelectionMode) {
+                    // Labeled at the top of the list ("Add session"), then
+                    // collapses to the bare + once the user scrolls — the
+                    // label aids discovery, the collapse returns the space.
+                    ExtendedFloatingActionButton(
+                        onClick = { showAddSheet = true },
+                        expanded = fabExpanded,
+                        icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                        text = { Text("Add session") },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        // Stable TalkBack name whether expanded (visible
+                        // label) or collapsed (icon only, label gone).
+                        modifier = Modifier.semantics {
+                            contentDescription = "Add session"
+                        },
+                    )
                 }
             }
         },
@@ -368,36 +418,58 @@ fun SessionListScreen(
                 }
             } else {
                 SummaryCard(state)
+                // Month headers only make sense while the list is in date
+                // order; a cost- or brand-sorted list interleaves months.
+                val groupedByMonth = remember(state.sessions, state.sortOption) {
+                    if (state.sortOption == SortOption.DATE) monthGroups(state.sessions)
+                    else null
+                }
                 LazyColumn(
+                    state = listState,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
                         horizontal = 12.dp, vertical = 8.dp
                     ),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(state.sessions, key = { it.id }) { s ->
-                        val isSelected = s.id in state.selectedIds
-                        // Only surface the vehicle name when the user is on the
-                        // "All" tab — otherwise every row would carry the same
-                        // tag.
-                        val vehicleName = if (state.vehicleFilterId == null) {
-                            s.vehicleId?.let { state.vehicleNamesById[it] }
-                        } else null
-                        SessionRow(
-                            session = s,
-                            tripName = s.tripId?.let { state.tripNamesById[it] },
-                            vehicleName = vehicleName,
-                            hasReceipt = s.id in state.sessionsWithReceipts,
-                            isSelected = isSelected,
-                            isSelectionMode = state.isSelectionMode,
-                            onClick = {
-                                if (state.isSelectionMode) viewModel.toggleSelection(s.id)
-                                else onEditSession(s.id)
-                            },
-                            onLongClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.toggleSelection(s.id)
-                            },
-                        )
+                    fun sessionItems(sessions: List<ChargingSession>) {
+                        items(sessions, key = { it.id }) { s ->
+                            val isSelected = s.id in state.selectedIds
+                            // Only surface the vehicle name when the user is on the
+                            // "All" tab — otherwise every row would carry the same
+                            // tag.
+                            val vehicleName = if (state.vehicleFilterId == null) {
+                                s.vehicleId?.let { state.vehicleNamesById[it] }
+                            } else null
+                            SessionRow(
+                                session = s,
+                                tripName = s.tripId?.let { state.tripNamesById[it] },
+                                vehicleName = vehicleName,
+                                hasReceipt = s.id in state.sessionsWithReceipts,
+                                isSelected = isSelected,
+                                isSelectionMode = state.isSelectionMode,
+                                onClick = {
+                                    if (state.isSelectionMode) viewModel.toggleSelection(s.id)
+                                    else onEditSession(s.id)
+                                },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.toggleSelection(s.id)
+                                },
+                                // Rows glide when a delete/undo or re-sort
+                                // moves them instead of teleporting.
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+                    if (groupedByMonth != null) {
+                        groupedByMonth.forEach { group ->
+                            stickyHeader(key = "month-${group.key}") {
+                                MonthHeader(group.label)
+                            }
+                            sessionItems(group.sessions)
+                        }
+                    } else {
+                        sessionItems(state.sessions)
                     }
                     item { Spacer(Modifier.height(80.dp)) }
                 }
@@ -781,14 +853,20 @@ private fun SessionRow(
     isSelectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val units = LocalUserUnits.current
     val typeAccent = LocalEvAccents.current.forType(session.chargingType)
     val barColor = typeAccent.accent
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            // TalkBack announces "selected"/"not selected" while
+            // multi-selecting — the check circle alone is visual-only.
+            .semantics {
+                if (isSelectionMode) selected = isSelected
+            },
         shape = RoundedCornerShape(14.dp),
         colors = if (isSelected) CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -1043,6 +1121,48 @@ private fun ChargingType.shortLabel(): String = when (this) {
     ChargingType.DC_FAST -> "DC FAST"
     ChargingType.AC_L2 -> "AC L2"
     ChargingType.AC_L1 -> "AC L1"
+}
+
+/** One month's worth of consecutive sessions in the date-sorted list. */
+private data class MonthGroup(
+    /** Stable "yyyy-MM" key for the sticky header's LazyColumn identity. */
+    val key: String,
+    /** Display label, e.g. "July 2026". */
+    val label: String,
+    val sessions: List<ChargingSession>,
+)
+
+/** Bucket a date-sorted (newest-first) session list into month groups,
+ *  preserving order. LinkedHashMap keyed by month keeps one group per
+ *  month even in the degenerate case of stray out-of-order timestamps. */
+private fun monthGroups(sessions: List<ChargingSession>): List<MonthGroup> {
+    if (sessions.isEmpty()) return emptyList()
+    val keyFmt = SimpleDateFormat("yyyy-MM", Locale.US)
+    val labelFmt = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+    val byMonth = LinkedHashMap<String, MutableList<ChargingSession>>()
+    sessions.forEach { s ->
+        byMonth.getOrPut(keyFmt.format(Date(s.sessionStart))) { mutableListOf() }.add(s)
+    }
+    return byMonth.map { (key, group) ->
+        MonthGroup(key, labelFmt.format(Date(group.first().sessionStart)), group)
+    }
+}
+
+/** Sticky month divider. Opaque background so rows visibly slide beneath
+ *  it while it holds the top edge. */
+@Composable
+private fun MonthHeader(label: String) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
