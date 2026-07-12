@@ -303,6 +303,11 @@ class SessionListViewModel @Inject constructor(
 
     fun finalizeDeleteUndo() = undoHolder.finalize()
 
+    /** Screen-teardown variant: forfeit [pending] only if it's still the
+     *  live offer (see [DeletedSessionUndoHolder.finalizeIf]). */
+    fun finalizeDeleteUndoIf(pending: DeletedSessionUndoHolder.Pending) =
+        undoHolder.finalizeIf(pending)
+
     /**
      * Bulk delete for the selection top bar, routed through the receipt-safe
      * sequence: receipt rows are read per session BEFORE the delete cascades

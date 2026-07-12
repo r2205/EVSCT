@@ -180,18 +180,29 @@ fun SessionListScreen(
     // on disk until this offer resolves).
     val pendingUndo by viewModel.pendingDeleteUndo.collectAsStateWithLifecycle()
     LaunchedEffect(pendingUndo) {
-        val pending = pendingUndo
-        if (pending != null) {
+        val pending = pendingUndo ?: return@LaunchedEffect
+        var resolved = false
+        try {
             val n = pending.sessions.size
             val result = snackbarHostState.showSnackbar(
                 message = if (n == 1) "Session deleted" else "$n sessions deleted",
                 actionLabel = "Undo",
                 duration = SnackbarDuration.Long,
             )
+            resolved = true
             when (result) {
                 SnackbarResult.ActionPerformed -> viewModel.undoDelete()
                 SnackbarResult.Dismissed -> viewModel.finalizeDeleteUndo()
             }
+        } finally {
+            // Torn down mid-offer (the user left the Log while the snackbar
+            // was still up): without this the never-resolved offer haunts
+            // the NEXT visit as a ghost "Session deleted" — device testing
+            // hit it right after saving an unrelated session. Forfeit the
+            // offer we were showing — and only that one: a replacement
+            // offer restarts this effect, and the old instance's teardown
+            // must not kill the new offer.
+            if (!resolved) viewModel.finalizeDeleteUndoIf(pending)
         }
     }
 
