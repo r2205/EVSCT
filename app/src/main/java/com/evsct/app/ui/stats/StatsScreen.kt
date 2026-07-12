@@ -1,6 +1,8 @@
 package com.evsct.app.ui.stats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,30 +29,40 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.Vehicle
-import com.evsct.app.ui.LocalUserUnits
-import com.evsct.app.ui.theme.EvAccents
+import com.evsct.app.ui.BarList
+import com.evsct.app.ui.MoneyStat
+import com.evsct.app.ui.forType
+import com.evsct.app.ui.theme.LocalEvAccents
 import com.evsct.app.util.Format
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(
     onOpenYearRecap: (vehicleId: Long?) -> Unit,
+    onOpenLogForBrand: (brand: String, vehicleId: Long?) -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -112,29 +124,43 @@ fun StatsScreen(
                 return@Column
             }
 
-            val units = LocalUserUnits.current
-            ChartCard("Cost by month") {
+            ChartWindowSelector(
+                selected = state.chartWindow,
+                onSelect = viewModel::setChartWindow,
+            )
+
+            val bucketNoun = when (state.chartWindow) {
+                StatsChartWindow.LAST_12_MONTHS -> "month"
+                StatsChartWindow.ALL_YEARS -> "year"
+            }
+            ChartCard("Cost by $bucketNoun") {
                 BarList(
-                    items = state.monthlyCost,
+                    items = state.costSeries,
                     labelWidth = 64.dp,
                     formatValue = { Format.money(it, state.costCurrency) },
                 )
             }
 
-            ChartCard("Energy by month") {
+            ChartCard("Energy by $bucketNoun") {
                 BarList(
-                    items = state.monthlyEnergy,
+                    items = state.energySeries,
                     labelWidth = 64.dp,
                     formatValue = { Format.kwh(it) },
                 )
             }
 
             if (state.byBrandCost.isNotEmpty()) {
-                ChartCard("Top brands by spend") {
+                ChartCard(
+                    "Top brands by spend",
+                    subtitle = "Tap a brand to see its sessions in the Log",
+                ) {
                     BarList(
                         items = state.byBrandCost,
                         labelWidth = 130.dp,
                         formatValue = { Format.money(it, state.costCurrency) },
+                        onRowClick = { brand ->
+                            onOpenLogForBrand(brand, state.vehicleFilterId)
+                        },
                     )
                 }
             }
@@ -150,20 +176,24 @@ fun StatsScreen(
             val anyDc = state.dcFastByDayHour.any { row -> row.any { it > 0 } }
             val anyAc = state.acByDayHour.any { row -> row.any { it > 0 } }
             if (anyDc || anyAc) {
-                ChartCard("When you charge") {
+                ChartCard(
+                    "When you charge",
+                    subtitle = "Rows are days, columns are hours — tap a square for its count",
+                ) {
                     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        val accents = LocalEvAccents.current
                         if (anyDc) {
                             TimeOfDayHeatmap(
                                 title = "DC Fast",
                                 grid = state.dcFastByDayHour,
-                                accent = EvAccents.DcFast,
+                                accent = accents.dcFast.accent,
                             )
                         }
                         if (anyAc) {
                             TimeOfDayHeatmap(
                                 title = "AC (L2 + L1)",
                                 grid = state.acByDayHour,
-                                accent = EvAccents.AcL2,
+                                accent = accents.acL2.accent,
                             )
                         }
                     }
@@ -177,7 +207,6 @@ fun StatsScreen(
 
 @Composable
 private fun HeadlineCard(state: StatsUi) {
-    val units = LocalUserUnits.current
     Card(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         colors = CardDefaults.cardColors(
@@ -191,7 +220,10 @@ private fun HeadlineCard(state: StatsUi) {
                 horizontalArrangement = Arrangement.SpaceAround,
             ) {
                 Stat("Sessions", state.sessionCount.toString())
-                Stat("Total cost", Format.money(state.totalCost, state.costCurrency))
+                // Shared multi-currency stat: one line per currency, so the
+                // headline never has to silently drop foreign-currency spend
+                // the way the single-currency charts below do.
+                MoneyStat("Total cost", state.totalCostByCurrency)
                 Stat("Energy", Format.kwh(state.totalEnergyKwh))
             }
             Spacer(Modifier.height(12.dp))
@@ -203,15 +235,40 @@ private fun HeadlineCard(state: StatsUi) {
                 Stat("Avg power", Format.kw(state.avgPowerKw))
             }
             if (state.excludedByCurrency > 0) {
+                val n = state.excludedByCurrency
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Cost totals are in ${state.costCurrency}. " +
-                        "${state.excludedByCurrency} session" +
-                        (if (state.excludedByCurrency == 1) "" else "s") +
-                        " in another currency excluded.",
+                    "Cost charts below are in ${state.costCurrency}. " +
+                        if (n == 1) "1 session in another currency doesn't appear in them."
+                        else "$n sessions in another currency don't appear in them.",
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
+        }
+    }
+}
+
+/** Two-way window toggle for the cost/energy trend charts directly below
+ *  it — also serves as the honest label for what those charts cover. */
+@Composable
+private fun ChartWindowSelector(
+    selected: StatsChartWindow,
+    onSelect: (StatsChartWindow) -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        StatsChartWindow.entries.forEachIndexed { index, window ->
+            SegmentedButton(
+                selected = window == selected,
+                onClick = { onSelect(window) },
+                shape = SegmentedButtonDefaults.itemShape(
+                    index = index,
+                    count = StatsChartWindow.entries.size,
+                ),
+            ) { Text(window.label) }
         }
     }
 }
@@ -271,7 +328,11 @@ private fun Stat(label: String, value: String) {
 }
 
 @Composable
-private fun ChartCard(title: String, content: @Composable () -> Unit) {
+private fun ChartCard(
+    title: String,
+    subtitle: String? = null,
+    content: @Composable () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
@@ -281,62 +342,22 @@ private fun ChartCard(title: String, content: @Composable () -> Unit) {
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             content()
         }
     }
 }
 
-/**
- * Horizontal bar list. Each row is `[label] [bar───] [value]`.
- * Bars are normalized against the largest value in [items].
- */
-@Composable
-private fun BarList(
-    items: List<Pair<String, Double>>,
-    labelWidth: androidx.compose.ui.unit.Dp,
-    formatValue: (Double) -> String,
-) {
-    val maxValue = items.maxOfOrNull { it.second } ?: 0.0
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items.forEach { (label, value) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(labelWidth),
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(14.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    val frac = if (maxValue > 0) (value / maxValue).toFloat() else 0f
-                    if (frac > 0f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(frac)
-                                .background(MaterialTheme.colorScheme.primary),
-                        )
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    formatValue(value),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.width(82.dp),
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun TypeSplitBar(byType: Map<ChargingType, Int>) {
+    val accents = LocalEvAccents.current
     val total = byType.values.sum().coerceAtLeast(1)
     Row(
         modifier = Modifier
@@ -353,7 +374,7 @@ private fun TypeSplitBar(byType: Map<ChargingType, Int>) {
                 modifier = Modifier
                     .weight(frac)
                     .fillMaxHeight()
-                    .background(typeColor(type)),
+                    .background(accents.forType(type).accent),
             )
         }
     }
@@ -361,6 +382,7 @@ private fun TypeSplitBar(byType: Map<ChargingType, Int>) {
 
 @Composable
 private fun TypeLegend(byType: Map<ChargingType, Int>) {
+    val accents = LocalEvAccents.current
     val total = byType.values.sum().coerceAtLeast(1)
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         ChargingType.entries.forEach { type ->
@@ -373,7 +395,7 @@ private fun TypeLegend(byType: Map<ChargingType, Int>) {
                         .width(10.dp)
                         .height(10.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(typeColor(type)),
+                        .background(accents.forType(type).accent),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
@@ -389,7 +411,8 @@ private fun TypeLegend(byType: Map<ChargingType, Int>) {
  * Day-of-week × hour-of-day heatmap. Sunday on top, midnight on the left.
  * Cell shading is alpha-scaled against [grid]'s busiest hour so a few-stop
  * vehicle still has visibly-shaded cells without the busiest one going off
- * the deep end.
+ * the deep end. Tapping a row selects the cell under the finger (outlined)
+ * and prints its exact count below the legend; tapping it again clears it.
  */
 @Composable
 private fun TimeOfDayHeatmap(
@@ -398,9 +421,13 @@ private fun TimeOfDayHeatmap(
     accent: Color,
 ) {
     val maxCount = grid.flatten().max()
+    // Keyed on the grid: new data invalidates both the selection and the
+    // tap handlers below, so a stale (day, hour) can't describe old counts.
+    var selected by remember(grid) { mutableStateOf<Pair<Int, Int>?>(null) }
     val labelStyle = MaterialTheme.typography.labelSmall
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val emptyCellColor = MaterialTheme.colorScheme.surfaceVariant
+    val selectedOutline = MaterialTheme.colorScheme.onSurface
     val dayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
     Column {
@@ -424,7 +451,6 @@ private fun TimeOfDayHeatmap(
             for (day in 0..6) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(1.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -433,19 +459,49 @@ private fun TimeOfDayHeatmap(
                         color = labelColor,
                         modifier = Modifier.width(24.dp),
                     )
-                    for (hour in 0..23) {
-                        val count = grid[day][hour]
-                        // 0.20..1.00 alpha range so even single-session
-                        // cells visibly tint, but the busiest still pop.
-                        val cellColor = if (count == 0) emptyCellColor
-                        else accent.copy(alpha = 0.20f + (count.toFloat() / maxCount) * 0.80f)
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(10.dp)
-                                .clip(RoundedCornerShape(1.dp))
-                                .background(cellColor),
-                        )
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            // One tap handler per day strip, mapping the tap's
+                            // x to an hour column. Cheaper and more accurate
+                            // than 168 tiny clickables, whose enforced minimum
+                            // touch targets would overlap ambiguously.
+                            .pointerInput(grid) {
+                                detectTapGestures { offset ->
+                                    val hour = (offset.x / size.width * 24)
+                                        .toInt()
+                                        .coerceIn(0, 23)
+                                    val cell = day to hour
+                                    selected = if (selected == cell) null else cell
+                                }
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(1.dp),
+                    ) {
+                        for (hour in 0..23) {
+                            val count = grid[day][hour]
+                            // 0.20..1.00 alpha range so even single-session
+                            // cells visibly tint, but the busiest still pop.
+                            val cellColor = if (count == 0) emptyCellColor
+                            else accent.copy(alpha = 0.20f + (count.toFloat() / maxCount) * 0.80f)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(12.dp)
+                                    .clip(RoundedCornerShape(1.dp))
+                                    .background(cellColor)
+                                    .then(
+                                        if (selected == day to hour) {
+                                            Modifier.border(
+                                                1.dp,
+                                                selectedOutline,
+                                                RoundedCornerShape(1.dp),
+                                            )
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                            )
+                        }
                     }
                 }
             }
@@ -464,8 +520,39 @@ private fun TimeOfDayHeatmap(
                 Text(tick, style = labelStyle, color = labelColor)
             }
         }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Less", style = labelStyle, color = labelColor)
+            Spacer(Modifier.width(4.dp))
+            listOf(0.2f, 0.4f, 0.6f, 0.8f, 1f).forEach { alpha ->
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 1.dp)
+                        .width(10.dp)
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(accent.copy(alpha = alpha)),
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Text("More", style = labelStyle, color = labelColor)
+        }
+        selected?.let { (day, hour) ->
+            val count = grid[day][hour]
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${dayLabels[day]} ${hourRange(hour)} · $count session" +
+                    (if (count == 1) "" else "s"),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+            )
+        }
     }
 }
+
+/** "5–6 pm" style label for the one-hour bucket starting at [hour]. */
+private fun hourRange(hour: Int): String =
+    "${formatHour12(hour)}–${formatHour12((hour + 1) % 24)}"
 
 /** "Sat 2 pm" string for the busiest cell, or null when the grid is empty. */
 private fun peakLabel(grid: List<List<Int>>): String? {
@@ -488,12 +575,6 @@ private fun formatHour12(h: Int): String = when {
     h < 12 -> "$h am"
     h == 12 -> "noon"
     else -> "${h - 12} pm"
-}
-
-private fun typeColor(type: ChargingType): Color = when (type) {
-    ChargingType.DC_FAST -> EvAccents.DcFast
-    ChargingType.AC_L2 -> EvAccents.AcL2
-    ChargingType.AC_L1 -> EvAccents.AcL1
 }
 
 private fun ChargingType.shortLabel(): String = when (this) {

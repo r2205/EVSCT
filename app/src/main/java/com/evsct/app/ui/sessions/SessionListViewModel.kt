@@ -1,5 +1,6 @@
 package com.evsct.app.ui.sessions
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
@@ -11,6 +12,7 @@ import com.evsct.app.data.repository.SessionReceiptRepository
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
+import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.Tags
@@ -105,6 +107,7 @@ class SessionListViewModel @Inject constructor(
     private val appPreferences: AppPreferences,
     private val inProgressChargeNotifier: InProgressChargeNotifier,
     private val undoHolder: DeletedSessionUndoHolder,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
@@ -113,6 +116,28 @@ class SessionListViewModel @Inject constructor(
     private val filters = MutableStateFlow(SessionFilters())
     private val sortOption = MutableStateFlow(SortOption.DATE)
     private val backupNudgeDismissed = MutableStateFlow(false)
+
+    init {
+        // Brand drill-down: Stats writes a brand (and its vehicle-tab
+        // scope) onto this entry's SavedStateHandle before switching tabs.
+        // Applying it replaces the whole filter set — the drill-down
+        // promises "sessions at this brand", so a leftover date or tag
+        // filter mustn't quietly shrink the result. The key is cleared
+        // after applying so later visits to the Log don't re-apply it.
+        viewModelScope.launch {
+            savedStateHandle
+                .getStateFlow<String?>(Routes.LOG_BRAND_FILTER_KEY, null)
+                .collect { brand ->
+                    if (brand == null) return@collect
+                    vehicleFilter.value = savedStateHandle
+                        .get<Long>(Routes.LOG_BRAND_VEHICLE_KEY)
+                        ?.takeIf { it >= 0 }
+                    filters.value = SessionFilters(brand = brand)
+                    clearSelection()
+                    savedStateHandle[Routes.LOG_BRAND_FILTER_KEY] = null
+                }
+        }
+    }
 
     /** The edit screen's delete parks here; the log offers Undo off it. */
     val pendingDeleteUndo = undoHolder.pending

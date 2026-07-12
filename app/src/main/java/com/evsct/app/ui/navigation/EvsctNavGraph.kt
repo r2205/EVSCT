@@ -62,6 +62,14 @@ object Routes {
     const val PICKED_LNG_KEY = "picked_lng"
     const val SETTINGS = "settings"
 
+    /** SavedStateHandle keys the Stats screen writes onto the Log entry
+     *  before switching tabs — the brand drill-down payload. The Log's
+     *  ViewModel watches the brand key, applies both as a fresh filter
+     *  set, and clears it. Vehicle uses a -1 sentinel for "all vehicles"
+     *  (same convention as [yearRecap]). */
+    const val LOG_BRAND_FILTER_KEY = "log_brand_filter"
+    const val LOG_BRAND_VEHICLE_KEY = "log_brand_vehicle"
+
     fun mapPicker(lat: Double?, lng: Double?): String {
         // Floats lose precision; pass via String query params and parse back.
         val latArg = lat?.toString().orEmpty()
@@ -190,6 +198,30 @@ fun EvsctNavGraph(navController: NavHostController) {
             StatsScreen(
                 onOpenYearRecap = { vehicleId ->
                     entry.ifResumed { navController.navigate(Routes.yearRecap(vehicleId)) }
+                },
+                onOpenLogForBrand = { brand, vehicleId ->
+                    entry.ifResumed {
+                        // Hand the Log its drill-down payload, then switch
+                        // tabs with the same stack-preserving pattern as the
+                        // bottom bar. The Log is the start destination, so
+                        // its entry is always on the stack; the runCatching
+                        // just downgrades a surprise to "switch without
+                        // filter" instead of a crash.
+                        runCatching { navController.getBackStackEntry(Routes.SESSION_LIST) }
+                            .getOrNull()
+                            ?.savedStateHandle
+                            ?.let { handle ->
+                                handle[Routes.LOG_BRAND_VEHICLE_KEY] = vehicleId ?: -1L
+                                handle[Routes.LOG_BRAND_FILTER_KEY] = brand
+                            }
+                        navController.navigate(Routes.SESSION_LIST) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 },
             )
         }

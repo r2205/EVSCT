@@ -3,6 +3,8 @@ package com.evsct.app.ui.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /* ----------------------------- Light tones ----------------------------- */
@@ -121,12 +123,66 @@ val EvsctDarkScheme: ColorScheme = darkColorScheme(
     outlineVariant = md_outlineVariant_dark,
 )
 
-/* Domain accents used to color-code charging types. */
-object EvAccents {
-    val DcFast = Color(0xFFFFA000)         // amber – fast/hot
-    val DcFastContainer = Color(0xFFFFE0B2)
-    val AcL2 = Color(0xFF1976D2)           // blue – steady AC
-    val AcL2Container = Color(0xFFBBDEFB)
-    val AcL1 = Color(0xFF7E57C2)           // purple – slow trickle
-    val AcL1Container = Color(0xFFD1C4E9)
-}
+/* ------------------- Domain accents (charging types) ------------------- */
+
+/** One charging type's color trio: the saturated [accent] for bars, heatmap
+ *  cells, and row stripes; a soft [container] fill for badges; and the
+ *  [onContainer] text color that stays readable on that fill. */
+@Immutable
+data class TypeAccent(
+    val accent: Color,
+    val container: Color,
+    val onContainer: Color,
+)
+
+/** Accent trios for the three charging types. The light values washed out
+ *  (blue/purple) or seared (light containers) against dark surfaces, so the
+ *  palette is theme-scoped: [EvsctTheme] provides the matching set through
+ *  [LocalEvAccents]. */
+@Immutable
+data class EvAccentPalette(
+    val dcFast: TypeAccent,
+    val acL2: TypeAccent,
+    val acL1: TypeAccent,
+)
+
+val LightEvAccents = EvAccentPalette(
+    dcFast = TypeAccent(                   // amber – fast/hot
+        accent = Color(0xFFFFA000),
+        container = Color(0xFFFFE0B2),
+        onContainer = Color(0xFF3B2400),
+    ),
+    acL2 = TypeAccent(                     // blue – steady AC
+        accent = Color(0xFF1976D2),
+        container = Color(0xFFBBDEFB),
+        onContainer = Color(0xFF002B57),
+    ),
+    acL1 = TypeAccent(                     // purple – slow trickle
+        accent = Color(0xFF7E57C2),
+        container = Color(0xFFD1C4E9),
+        onContainer = Color(0xFF200052),
+    ),
+)
+
+/** Same hues re-toned for dark surfaces: accents lifted two Material tones
+ *  so charts keep their pop, containers dropped to deep fills with pale
+ *  content on top. */
+val DarkEvAccents = EvAccentPalette(
+    dcFast = TypeAccent(
+        accent = Color(0xFFFFB74D),
+        container = Color(0xFF4A3500),
+        onContainer = Color(0xFFFFDEA8),
+    ),
+    acL2 = TypeAccent(
+        accent = Color(0xFF90CAF9),
+        container = Color(0xFF0D3A5E),
+        onContainer = Color(0xFFD3E4FD),
+    ),
+    acL1 = TypeAccent(
+        accent = Color(0xFFB39DDB),
+        container = Color(0xFF36275A),
+        onContainer = Color(0xFFE8DEF8),
+    ),
+)
+
+val LocalEvAccents = staticCompositionLocalOf { LightEvAccents }
