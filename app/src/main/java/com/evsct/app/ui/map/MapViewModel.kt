@@ -132,7 +132,7 @@ class MapViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val backfillStatus = MutableStateFlow(BackfillState())
-    private var backfillRequested = false
+    private var backfillInFlight = false
     private val filters = MutableStateFlow(MapFilters())
     private val selectedStop = MutableStateFlow<MapStop?>(null)
 
@@ -329,70 +329,82 @@ class MapViewModel @Inject constructor(
     suspend fun currentLatLng(): Pair<Double, Double>? = locationAutofill.currentLatLng()
 
     /**
-     * Geocode every distinct stop that has no coordinates yet. Runs once per
-     * VM lifetime; results are written back to the matching session rows so
-     * the next open is instant.
+     * Geocode every distinct stop that has no coordinates yet; results are
+     * written back to the matching session rows so the next open is instant.
+     * Called on every map entry — cheap when there's nothing new to do.
      */
     fun runBackfillIfNeeded() {
-        if (backfillRequested) return
-        backfillRequested = true
+        if (backfillInFlight) return
+        backfillInFlight = true
         viewModelScope.launch {
-            // Snapshot the current sessions list without retaining a long-lived collector.
-            val sessions = sessionRepository.observeAll().first()
-            // Work on the sessions that still need coordinates, grouped by
-            // (stop, exact geocode inputs). Grouping by StopKey alone was
-            // too coarse both ways: a brand-only key can mix physically
-            // different stations (stamping one sample's point onto all of
-            // them collapsed distinct stops onto one pin), and once part of
-            // a group was located the rest of it was never retried — those
-            // sessions simply stayed off the map forever.
-            val groups = sessions
-                .filter { !it.hasCoordinates() && !it.geocodeQuery().isNullOrBlank() }
-                .filter { StopKey.of(it).isNotBlank() }
-                .groupBy { StopKey.of(it) to it.geocodeQuery() }
-            if (groups.isEmpty()) {
-                backfillStatus.value = BackfillState(completed = true)
-                return@launch
+            try {
+                runBackfill()
+            } finally {
+                backfillInFlight = false
             }
-            // Persisted throttle: addresses that didn't resolve last time
-            // (no network, ambiguous, etc.) would otherwise be retried on
-            // every cold start. Skip the pass entirely if we attempted one
-            // recently; the user can still force a retry by waiting it out
-            // or by editing the address (which clears that session's coords
-            // and re-geocodes immediately on save).
-            val lastAttempt = appPreferences.lastMapBackfillAt() ?: 0L
-            val sinceLast = System.currentTimeMillis() - lastAttempt
-            if (lastAttempt > 0 && sinceLast < BACKFILL_THROTTLE_MS) {
-                backfillStatus.value = BackfillState(completed = true)
-                return@launch
-            }
-            backfillStatus.value = BackfillState(running = true)
-            var failed = 0
-            for ((_, group) in groups) {
-                // Every member of the group shares the same geocode inputs
-                // by construction, so one lookup locates them all — and a
-                // group that shares only a brand with some other station is
-                // its own group here, so it can never be stamped with that
-                // station's point. The structured geocoder validates the
-                // result against the city it was given.
-                val sample = group.first()
-                val located = locationAutofill.geocode(
-                    address = sample.locationAddress?.takeIf { it.isNotBlank() }
-                        ?: sample.stationName?.takeIf { it.isNotBlank() },
-                    city = sample.locationCity?.takeIf { it.isNotBlank() },
-                    province = sample.locationProvince?.takeIf { it.isNotBlank() },
-                )
-                val lat = located?.latitude
-                val lng = located?.longitude
-                if (lat != null && lng != null) {
-                    sessionRepository.setCoordinates(group.map { it.id }, lat, lng)
-                } else {
-                    failed += 1
-                }
-            }
-            appPreferences.recordMapBackfillAttempt()
-            backfillStatus.value = BackfillState(completed = true, failed = failed)
         }
+    }
+
+    private suspend fun runBackfill() {
+        // Snapshot the current sessions list without retaining a long-lived collector.
+        val sessions = sessionRepository.observeAll().first()
+        // Work on the sessions that still need coordinates, grouped by
+        // (stop, exact geocode inputs). Grouping by StopKey alone was
+        // too coarse both ways: a brand-only key can mix physically
+        // different stations (stamping one sample's point onto all of
+        // them collapsed distinct stops onto one pin), and once part of
+        // a group was located the rest of it was never retried — those
+        // sessions simply stayed off the map forever.
+        val groups = sessions
+            .filter { !it.hasCoordinates() && !it.geocodeQuery().isNullOrBlank() }
+            .filter { StopKey.of(it).isNotBlank() }
+            .groupBy { StopKey.of(it) to it.geocodeQuery() }
+        if (groups.isEmpty()) {
+            backfillStatus.value = BackfillState(completed = true)
+            return
+        }
+        // Persisted throttle: addresses that didn't resolve last time
+        // (no network, ambiguous, truly bogus) would otherwise be
+        // retried on every map open. But an address created or edited
+        // SINCE the last attempt has never been tried at all — skipping
+        // it isn't throttling a retry, it's ignoring fresh input (and
+        // it delayed the couldn't-locate snackbar by up to a day). So
+        // inside the window, only the new work runs.
+        val lastAttempt = appPreferences.lastMapBackfillAt() ?: 0L
+        val sinceLast = System.currentTimeMillis() - lastAttempt
+        val throttled = lastAttempt > 0 && sinceLast < BACKFILL_THROTTLE_MS
+        val groupsToTry = if (!throttled) groups
+        else groups.filterValues { group -> group.any { it.updatedAt > lastAttempt } }
+        if (groupsToTry.isEmpty()) {
+            backfillStatus.value = BackfillState(completed = true)
+            return
+        }
+        backfillStatus.value = BackfillState(running = true)
+        var failed = 0
+        for ((_, group) in groupsToTry) {
+            // Every member of the group shares the same geocode inputs
+            // by construction, so one lookup locates them all — and a
+            // group that shares only a brand with some other station is
+            // its own group here, so it can never be stamped with that
+            // station's point. The structured geocoder validates the
+            // result against the city it was given.
+            val sample = group.first()
+            val located = locationAutofill.geocode(
+                address = sample.locationAddress?.takeIf { it.isNotBlank() }
+                    ?: sample.stationName?.takeIf { it.isNotBlank() },
+                city = sample.locationCity?.takeIf { it.isNotBlank() },
+                province = sample.locationProvince?.takeIf { it.isNotBlank() },
+            )
+            val lat = located?.latitude
+            val lng = located?.longitude
+            if (lat != null && lng != null) {
+                sessionRepository.setCoordinates(group.map { it.id }, lat, lng)
+            } else {
+                failed += 1
+            }
+        }
+        appPreferences.recordMapBackfillAttempt()
+        backfillStatus.value = BackfillState(completed = true, failed = failed)
     }
 
     private fun buildStop(
