@@ -94,6 +94,9 @@ fun TripListScreen(
                 items(trips, key = { it.trip.id }) { tws ->
                     Card(
                         modifier = Modifier
+                            // Rows glide to their new slot when a date edit
+                            // re-sorts the list or a trip is deleted.
+                            .animateItem()
                             .fillMaxWidth()
                             .clickable { onOpenTrip(tws.trip.id) }
                     ) {
@@ -108,6 +111,13 @@ fun TripListScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Medium,
                                 )
+                                tripDateLabel(tws.trip)?.let { dates ->
+                                    Text(
+                                        dates,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                                 val units = LocalUserUnits.current
                                 Text(
                                     "${tws.sessionCount} sessions · " +

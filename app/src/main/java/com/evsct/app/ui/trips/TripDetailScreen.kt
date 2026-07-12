@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -96,6 +97,14 @@ fun TripDetailScreen(
                 val distUnit = Units.distanceUnit(units.useMiles)
                 Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
+                        tripDateLabel(st.trip)?.let { dates ->
+                            Text(
+                                dates,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -147,6 +156,22 @@ fun TripDetailScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // trip != null distinguishes "loaded and genuinely empty"
+                // from the pre-load frame, same idea as the other screens'
+                // isLoading gates.
+                if (state.trip != null && state.sessions.isEmpty()) {
+                    item {
+                        com.evsct.app.ui.EmptyState(
+                            icon = Icons.Default.Bolt,
+                            title = "No sessions in this trip yet",
+                            body = "Tag sessions from the Log: tap Select (or " +
+                                "long-press a session), choose the ones from this " +
+                                "trip, then Assign to trip. A session's edit form " +
+                                "can also pick this trip directly.",
+                            modifier = Modifier.fillParentMaxWidth().padding(24.dp),
+                        )
+                    }
+                }
                 items(state.sessions, key = { it.id }) { s ->
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { onEditSession(s.id) },

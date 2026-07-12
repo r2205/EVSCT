@@ -1,5 +1,8 @@
 package com.evsct.app.ui.navigation
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -139,7 +142,14 @@ fun EvsctNavGraph(navController: NavHostController) {
 
     Scaffold(
         bottomBar = {
-            if (showBottomBar) {
+            // Slide the bar out under sub-screens instead of blinking away —
+            // enter/exit mirror each other so tab↔detail transitions feel
+            // like one continuous surface.
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it }),
+            ) {
                 NavigationBar {
                     TOP_LEVEL_DESTINATIONS.forEach { dest ->
                         NavigationBarItem(

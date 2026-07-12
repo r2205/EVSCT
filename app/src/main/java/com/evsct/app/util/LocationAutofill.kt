@@ -82,6 +82,18 @@ class LocationAutofill @Inject constructor(
         )
     }
 
+    /** Just the device's current coordinates — no reverse geocoding. Null
+     *  when permission is missing, no usable provider is enabled, or the
+     *  fix times out. Backs the map screens' my-location button and the
+     *  location picker's initial camera seed. */
+    suspend fun currentLatLng(): Pair<Double, Double>? = withContext(Dispatchers.IO) {
+        if (!hasPermission()) return@withContext null
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            ?: return@withContext null
+        val provider = pickProvider(lm) ?: return@withContext null
+        getCurrentLocation(lm, provider)?.let { it.latitude to it.longitude }
+    }
+
     /**
      * Reverse-geocode an address string (no GPS fix involved). Returns null
      * when geocoding isn't available or no result is found. Used by the map

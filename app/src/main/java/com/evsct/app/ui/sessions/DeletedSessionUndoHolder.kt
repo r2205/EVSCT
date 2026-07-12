@@ -68,6 +68,15 @@ class DeletedSessionUndoHolder @Inject constructor(
         }
     }
 
+    /** Finalize only if [expected] is still the live offer. The log's
+     *  snackbar effect calls this from its teardown when the user leaves
+     *  mid-offer — that offer is forfeited so it can't resurface as a
+     *  ghost snackbar on the next visit. An offer that was already
+     *  resolved or replaced is someone else's to manage and stays put. */
+    fun finalizeIf(expected: Pending) {
+        if (_pending.value === expected) finalize()
+    }
+
     /** Reinstate the session rows (same ids) and fresh receipt rows
      *  pointing at the still-on-disk files. */
     fun undo() {

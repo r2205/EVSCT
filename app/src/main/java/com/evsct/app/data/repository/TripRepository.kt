@@ -34,22 +34,29 @@ class TripRepository @Inject constructor(
 
     suspend fun findById(id: Long): Trip? = tripDao.findById(id)
 
-    suspend fun upsert(trip: Trip): Long =
-        if (trip.id == 0L) {
-            // Auto-pick a map-pin color for new trips so each one stands out
-            // on the map without making the user choose every time.
-            val withColor = if (trip.pinColor == null) {
-                val used = tripDao.observeAll().first().map { it.pinColor }
-                trip.copy(pinColor = TripPinColor.nextDefault(used).name)
-            } else trip
+    suspend fun upsert(trip: Trip): Long {
+        // Auto-pick a map-pin color when none is set — for new trips, and
+        // for existing ones reset to "Auto" in the color picker. The trip's
+        // own row is excluded from the usage count so a re-pick spreads
+        // across the palette instead of counting itself.
+        val withColor = if (trip.pinColor == null) {
+            val used = tripDao.observeAll().first()
+                .filter { it.id != trip.id }
+                .map { it.pinColor }
+            trip.copy(pinColor = TripPinColor.nextDefault(used).name)
+        } else {
+            trip
+        }
+        return if (withColor.id == 0L) {
             tripDao.insert(withColor)
         } else {
             // Avoid REPLACE-on-conflict: it would delete the existing row first,
             // which fires ON DELETE SET NULL on charging_sessions.tripId and
             // strips every session of its trip tag.
-            tripDao.update(trip)
-            trip.id
+            tripDao.update(withColor)
+            withColor.id
         }
+    }
 
     suspend fun delete(trip: Trip) = tripDao.delete(trip)
 

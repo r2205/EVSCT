@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -617,7 +619,18 @@ private fun BackupReminderCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                // The whole row is one toggle target: bigger touch area, and
+                // TalkBack announces "Backup reminder, switch, on" instead
+                // of a bare unlabeled switch. The Switch itself goes inert
+                // (null handler) so the row isn't two competing targets.
+                modifier = Modifier.toggleable(
+                    value = reminder.enabled,
+                    role = Role.Switch,
+                    onValueChange = onToggleEnabled,
+                ),
+            ) {
                 Icon(
                     Icons.Default.NotificationsActive,
                     contentDescription = null,
@@ -637,7 +650,7 @@ private fun BackupReminderCard(
                 }
                 Switch(
                     checked = reminder.enabled,
-                    onCheckedChange = onToggleEnabled,
+                    onCheckedChange = null,
                 )
             }
 
@@ -668,7 +681,17 @@ private fun BackupReminderCard(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.toggleable(
+                    value = reminder.notifyEnabled,
+                    enabled = reminder.enabled,
+                    role = Role.Switch,
+                    onValueChange = { wantOn ->
+                        if (wantOn) requestNotifyOn() else onToggleNotify(false)
+                    },
+                ),
+            ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "Also send Android notification",
@@ -683,9 +706,7 @@ private fun BackupReminderCard(
                 Switch(
                     checked = reminder.notifyEnabled,
                     enabled = reminder.enabled,
-                    onCheckedChange = { wantOn ->
-                        if (wantOn) requestNotifyOn() else onToggleNotify(false)
-                    },
+                    onCheckedChange = null,
                 )
             }
         }
