@@ -133,14 +133,17 @@ fun SessionListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
 
-    // The edit screen just deleted a session and popped back here: offer a
-    // window to take it back. Undo re-inserts the row (and re-links any
-    // receipt files, which stay on disk until this offer resolves).
+    // A delete just happened — one session from the edit screen, or a
+    // multi-select batch from this screen: offer a window to take it back.
+    // Undo re-inserts the rows (and re-links any receipt files, which stay
+    // on disk until this offer resolves).
     val pendingUndo by viewModel.pendingDeleteUndo.collectAsStateWithLifecycle()
     LaunchedEffect(pendingUndo) {
-        if (pendingUndo != null) {
+        val pending = pendingUndo
+        if (pending != null) {
+            val n = pending.sessions.size
             val result = snackbarHostState.showSnackbar(
-                message = "Session deleted",
+                message = if (n == 1) "Session deleted" else "$n sessions deleted",
                 actionLabel = "Undo",
                 duration = SnackbarDuration.Long,
             )

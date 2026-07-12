@@ -1176,7 +1176,7 @@ class SessionEditViewModel @Inject constructor(
                     // away, then park everything for the log's Undo snackbar.
                     val receiptRows = sessionReceiptRepository.findForSession(targetId)
                     sessionRepository.delete(row)
-                    undoHolder.offer(row, receiptRows)
+                    undoHolder.offer(listOf(row), receiptRows)
                     deferredPaths = receiptRows.mapTo(mutableSetOf()) { it.filePath }
                 }
                 // The session no longer exists; the in-progress notification

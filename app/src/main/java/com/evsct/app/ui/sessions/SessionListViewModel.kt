@@ -13,7 +13,6 @@ import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.InProgressChargeNotifier
-import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Tags
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -105,7 +104,6 @@ class SessionListViewModel @Inject constructor(
     private val sessionReceiptRepository: SessionReceiptRepository,
     private val appPreferences: AppPreferences,
     private val inProgressChargeNotifier: InProgressChargeNotifier,
-    private val receiptImageStore: ReceiptImageStore,
     private val undoHolder: DeletedSessionUndoHolder,
 ) : ViewModel() {
 
@@ -293,24 +291,24 @@ class SessionListViewModel @Inject constructor(
     fun finalizeDeleteUndo() = undoHolder.finalize()
 
     /**
-     * Bulk delete for the selection top bar. Unlike the deliberately-absent
-     * bare list delete (see below), this routes through the receipt-safe
+     * Bulk delete for the selection top bar, routed through the receipt-safe
      * sequence: receipt rows are read per session BEFORE the delete cascades
-     * them away, the rows go in one continuity-aware transaction, and the
-     * files are removed only after the rows are gone. No undo here — the
-     * confirmation dialog is the guard for bulk operations.
+     * them away, and the rows go in one continuity-aware transaction. The
+     * whole batch is then parked on the undo holder — same safety net as a
+     * single delete from the edit screen — which owns deleting the receipt
+     * files if the Undo offer lapses.
      */
     fun deleteSelectedSessions() {
         val ids = state.value.selectedIds
         if (ids.isEmpty()) return
         viewModelScope.launch {
             val rows = state.value.sessions.filter { it.id in ids }
-            val receiptPaths = rows.flatMap { row ->
+            val receiptRows = rows.flatMap { row ->
                 sessionReceiptRepository.findForSession(row.id)
-            }.map { it.filePath }
+            }
             sessionRepository.deleteMany(rows)
             rows.forEach { inProgressChargeNotifier.cancelIfFor(it.id) }
-            receiptPaths.forEach { receiptImageStore.delete(it) }
+            undoHolder.offer(rows, receiptRows)
             clearSelection()
         }
     }

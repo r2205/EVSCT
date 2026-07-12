@@ -14,19 +14,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * One-slot parking spot for the most recently deleted session, giving the
- * charging log a window to offer "Undo" after the edit screen deletes and
- * pops. The edit screen's ViewModel is gone by the time the snackbar shows,
- * so the pending state lives here, app-scoped.
+ * One-slot parking spot for the most recently deleted batch of sessions —
+ * a single session from the edit screen's Delete, or several from the
+ * log's multi-select — giving the charging log a window to offer "Undo".
+ * The deleting ViewModel may be gone by the time the snackbar shows (the
+ * edit screen pops), so the pending state lives here, app-scoped.
  *
- * Deleting a session normally deletes its receipt files too; while an undo
- * is pending those files stay on disk (their DB rows are already gone) and
- * are only removed when the offer resolves — [finalize] on dismiss/timeout,
- * or kept alive by [undo], which reinstates the row and its receipt rows.
- * A new [offer] finalizes the previous one, so at most one session's files
- * are ever in limbo. If the process dies inside the undo window the
- * deferred files are orphaned on disk (a few hundred KB, worst case); the
- * next restore's orphan sweep reclaims them. Accepted trade-off for not
+ * Deleting sessions normally deletes their receipt files too; while an
+ * undo is pending those files stay on disk (their DB rows are already
+ * gone) and are only removed when the offer resolves — [finalize] on
+ * dismiss/timeout, or kept alive by [undo], which reinstates the rows and
+ * their receipt rows. A new [offer] finalizes the previous one, so at
+ * most one batch's files are ever in limbo. If the process dies inside
+ * the undo window the deferred files are orphaned on disk; the next
+ * restore's orphan sweep reclaims them. Accepted trade-off for not
  * needing a soft-delete schema.
  */
 @Singleton
@@ -38,7 +39,7 @@ class DeletedSessionUndoHolder @Inject constructor(
 ) {
 
     data class Pending(
-        val session: ChargingSession,
+        val sessions: List<ChargingSession>,
         val receipts: List<SessionReceipt>,
     )
 
@@ -48,11 +49,12 @@ class DeletedSessionUndoHolder @Inject constructor(
      *  snackbar off this. */
     val pending: StateFlow<Pending?> = _pending
 
-    /** Park a just-deleted session (rows already gone, receipt files still
+    /** Park a just-deleted batch (rows already gone, receipt files still
      *  on disk). Any previous offer is finalized first. */
-    fun offer(session: ChargingSession, receipts: List<SessionReceipt>) {
+    fun offer(sessions: List<ChargingSession>, receipts: List<SessionReceipt>) {
+        if (sessions.isEmpty()) return
         finalize()
-        _pending.value = Pending(session, receipts)
+        _pending.value = Pending(sessions, receipts)
     }
 
     /** The offer lapsed (snackbar dismissed or timed out): delete the
@@ -66,19 +68,19 @@ class DeletedSessionUndoHolder @Inject constructor(
         }
     }
 
-    /** Reinstate the session row (same id) and fresh receipt rows pointing
-     *  at the still-on-disk files. */
+    /** Reinstate the session rows (same ids) and fresh receipt rows
+     *  pointing at the still-on-disk files. */
     fun undo() {
         val p = _pending.value ?: return
         _pending.value = null
         appScope.launch {
             runCatching {
-                sessionRepository.restore(p.session)
+                sessionRepository.restoreAll(p.sessions)
                 if (p.receipts.isNotEmpty()) {
                     sessionReceiptRepository.insertAll(p.receipts.map { it.copy(id = 0) })
                 }
             }.onFailure {
-                // Couldn't reinstate (e.g. the session's vehicle was deleted
+                // Couldn't reinstate (e.g. a session's vehicle was deleted
                 // in the window and the FK refused). The files are
                 // unreferenced now — drop them like a lapsed offer.
                 p.receipts.forEach { receiptImageStore.delete(it.filePath) }
