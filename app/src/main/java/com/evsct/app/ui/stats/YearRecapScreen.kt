@@ -353,7 +353,12 @@ private fun RecapMapCard(state: YearRecapUi, basemap: NaBasemap?) {
     } ?: return
 
     RecapCard("Charging map") {
-        val coastColor = MaterialTheme.colorScheme.outlineVariant
+        // NOT outlineVariant: in this palette's dark scheme it's the very
+        // same tone as the map's surfaceVariant fill (0xFF414940 for both,
+        // mirroring baseline M3), which made the coastlines invisible in
+        // dark mode. outline is the slot defined to contrast with surfaces
+        // in both themes; softened so the basemap stays behind the pins.
+        val coastColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
         val pinHalo = MaterialTheme.colorScheme.surface
         Canvas(
             modifier = Modifier
