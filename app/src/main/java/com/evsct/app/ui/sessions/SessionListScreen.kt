@@ -121,9 +121,26 @@ fun SessionListScreen(
     onStartTrackedSession: (sessionId: Long) -> Unit,
     onEditSession: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    /** Brand-drill-down payload from Stats, read off this entry's
+     *  SavedStateHandle by the nav graph (same relay the map picker
+     *  uses). Vehicle id uses a -1 sentinel for "all vehicles". */
+    requestedBrandFilter: String? = null,
+    requestedBrandVehicleId: Long? = null,
+    onBrandFilterRequestConsumed: () -> Unit = {},
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // Apply the Stats drill-down once, then clear the handle keys so a
+    // later visit to the Log doesn't re-apply a stale request.
+    LaunchedEffect(requestedBrandFilter, requestedBrandVehicleId) {
+        val brand = requestedBrandFilter ?: return@LaunchedEffect
+        viewModel.applyBrandDrilldown(
+            brand = brand,
+            vehicleId = requestedBrandVehicleId?.takeIf { it >= 0 },
+        )
+        onBrandFilterRequestConsumed()
+    }
     var showTripPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }

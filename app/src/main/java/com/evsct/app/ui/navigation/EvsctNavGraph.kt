@@ -64,9 +64,10 @@ object Routes {
 
     /** SavedStateHandle keys the Stats screen writes onto the Log entry
      *  before switching tabs — the brand drill-down payload. The Log's
-     *  ViewModel watches the brand key, applies both as a fresh filter
-     *  set, and clears it. Vehicle uses a -1 sentinel for "all vehicles"
-     *  (same convention as [yearRecap]). */
+     *  composable reads them off the entry handle, applies both as a
+     *  fresh filter set via the ViewModel, and clears them. Vehicle uses
+     *  a -1 sentinel for "all vehicles" (same convention as
+     *  [yearRecap]). */
     const val LOG_BRAND_FILTER_KEY = "log_brand_filter"
     const val LOG_BRAND_VEHICLE_KEY = "log_brand_vehicle"
 
@@ -179,6 +180,13 @@ fun EvsctNavGraph(navController: NavHostController) {
             modifier = Modifier.padding(padding).consumeWindowInsets(padding),
         ) {
         composable(Routes.SESSION_LIST) { entry ->
+            // The Stats brand drill-down parks its payload on this entry's
+            // SavedStateHandle before switching tabs (same relay the map
+            // picker uses). It must be read HERE and handed to the screen:
+            // this handle belongs to the nav entry, and is a different
+            // object from the SavedStateHandle Hilt injects into the
+            // screen's ViewModel — values written here never appear there.
+            val handle = entry.savedStateHandle
             SessionListScreen(
                 onAddSession = { preselectVehicleId ->
                     entry.ifResumed {
@@ -192,6 +200,12 @@ fun EvsctNavGraph(navController: NavHostController) {
                     entry.ifResumed { navController.navigate(Routes.sessionEdit(id)) }
                 },
                 onOpenSettings = { entry.ifResumed { navController.navigate(Routes.SETTINGS) } },
+                requestedBrandFilter = handle.get<String>(Routes.LOG_BRAND_FILTER_KEY),
+                requestedBrandVehicleId = handle.get<Long>(Routes.LOG_BRAND_VEHICLE_KEY),
+                onBrandFilterRequestConsumed = {
+                    handle.remove<String>(Routes.LOG_BRAND_FILTER_KEY)
+                    handle.remove<Long>(Routes.LOG_BRAND_VEHICLE_KEY)
+                },
             )
         }
         composable(Routes.STATS) { entry ->
