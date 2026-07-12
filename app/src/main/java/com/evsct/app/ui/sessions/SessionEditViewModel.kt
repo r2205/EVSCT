@@ -188,6 +188,7 @@ class SessionEditViewModel @Inject constructor(
     private val receiptImageStore: ReceiptImageStore,
     private val appPreferences: AppPreferences,
     private val inProgressChargeNotifier: InProgressChargeNotifier,
+    private val undoHolder: DeletedSessionUndoHolder,
     @AppScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
@@ -1167,18 +1168,26 @@ class SessionEditViewModel @Inject constructor(
             // when the entry opened as "new" (dropped-pop recovery) —
             // Delete must target that row, not just the nav-arg id.
             val targetId = committedSessionId ?: sessionId
+            var deferredPaths: Set<String> = emptySet()
             if (targetId > 0) {
-                sessionRepository.findById(targetId)?.let {
-                    sessionRepository.delete(it)
+                val row = sessionRepository.findById(targetId)
+                if (row != null) {
+                    // Stash the receipt rows BEFORE the delete cascades them
+                    // away, then park everything for the log's Undo snackbar.
+                    val receiptRows = sessionReceiptRepository.findForSession(targetId)
+                    sessionRepository.delete(row)
+                    undoHolder.offer(row, receiptRows)
+                    deferredPaths = receiptRows.mapTo(mutableSetOf()) { it.filePath }
                 }
                 // The session no longer exists; the in-progress notification
                 // for it would tap into a deleted row, so always clear it.
                 inProgressChargeNotifier.cancelIfFor(targetId)
             }
-            // No row left, so drop every file we touched (originals plus
-            // speculative copies). FK CASCADE has already removed the
-            // session_receipts rows for the deleted session.
-            reconcileReceiptFiles(finalPaths = emptySet())
+            // Drop every file we touched EXCEPT the deferred ones — those
+            // must survive on disk while the Undo offer is live (the holder
+            // deletes them if the offer lapses, or re-links them on undo).
+            // Speculative copies from this edit still go now.
+            reconcileReceiptFiles(finalPaths = deferredPaths)
             exitRequested = true
             onDeleted()
         }.invokeOnCompletion { commitInFlight = false }

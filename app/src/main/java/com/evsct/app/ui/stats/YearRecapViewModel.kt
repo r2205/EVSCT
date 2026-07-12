@@ -13,6 +13,7 @@ import com.evsct.app.data.prefs.UserUnits
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
+import com.evsct.app.ui.OpFeedback
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.BrandSpend
 import com.evsct.app.util.OdometerDistance
@@ -119,9 +120,15 @@ data class YearRecapUi(
     /** PDF that was just written to cacheDir and is ready to be shared.
      *  Cleared by [consumePendingShare] after the chooser fires. */
     val pendingShareFile: File? = null,
-    val message: String? = null,
-    val busy: Boolean = false,
-)
+    val feedback: OpFeedback? = null,
+    /** Which export is running, so the spinner shows on the button that
+     *  was tapped instead of a bar at the top of the scroll. */
+    val busyOp: RecapOp? = null,
+) {
+    val busy: Boolean get() = busyOp != null
+}
+
+enum class RecapOp { SAVE_PDF, SHARE_PDF, SAVE_HTML, SHARE_HTML }
 
 private fun emptyMonthly(): List<Pair<String, Double>> {
     val labels = DateFormatSymbols.getInstance().shortMonths.take(12)
@@ -179,7 +186,7 @@ class YearRecapViewModel @Inject constructor(
      *  (busy / message / pendingShareFile) the screen toggles via the VM
      *  methods below. */
     val state: StateFlow<YearRecapUi> = combine(computed, transient) { c, t ->
-        c.copy(busy = t.busy, message = t.message, pendingShareFile = t.pendingShareFile)
+        c.copy(busyOp = t.busyOp, feedback = t.feedback, pendingShareFile = t.pendingShareFile)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearRecapUi(isLoading = true))
 
     fun setYear(year: Int) { selectedYear.value = year }
@@ -246,7 +253,7 @@ class YearRecapViewModel @Inject constructor(
     /** Save the recap to a SAF-picked Uri. The screen wires a CreateDocument
      *  launcher; this method runs the actual write. */
     fun saveAsPdf(uri: Uri) = viewModelScope.launch {
-        transient.update { it.copy(busy = true, message = null) }
+        transient.update { it.copy(busyOp = RecapOp.SAVE_PDF, feedback = null) }
         runCatching {
             withContext(Dispatchers.IO) {
                 val ui = computed.value
@@ -254,16 +261,27 @@ class YearRecapViewModel @Inject constructor(
                 stagedWriteTo(uri, "pdf") { writeYearRecapPdf(it, ui, units) }
             }
         }.onSuccess {
-            transient.update { it.copy(busy = false, message = "Recap saved.") }
+            finish(OpFeedback("Recap saved", "PDF recap saved."))
         }.onFailure { e ->
-            transient.update { it.copy(busy = false, message = "Save failed: ${e.message}") }
+            finish(saveFailure(e))
         }
     }
+
+    private fun finish(feedback: OpFeedback?) =
+        transient.update { it.copy(busyOp = null, feedback = feedback) }
+
+    /** stagedWriteTo's own messages are already user-facing; wrap anything
+     *  else in a plain sentence with the raw detail in parentheses. */
+    private fun saveFailure(e: Throwable) = OpFeedback(
+        title = "Save failed",
+        body = e.message ?: "The recap couldn't be written.",
+        isError = true,
+    )
 
     /** Build the recap PDF in a private cache subdir and post the file to
      *  the screen for an ACTION_SEND chooser dispatch. */
     fun shareAsPdf() = viewModelScope.launch {
-        transient.update { it.copy(busy = true, message = null) }
+        transient.update { it.copy(busyOp = RecapOp.SHARE_PDF, feedback = null) }
         runCatching {
             withContext(Dispatchers.IO) {
                 val ui = computed.value
@@ -277,17 +295,24 @@ class YearRecapViewModel @Inject constructor(
                 target
             }
         }.onSuccess { file ->
-            transient.update { it.copy(busy = false, pendingShareFile = file) }
+            transient.update { it.copy(busyOp = null, pendingShareFile = file) }
         }.onFailure { e ->
-            transient.update { it.copy(busy = false, message = "Share failed: ${e.message}") }
+            finish(shareFailure(e))
         }
     }
+
+    private fun shareFailure(e: Throwable) = OpFeedback(
+        title = "Share failed",
+        body = "The recap couldn't be prepared for sharing." +
+            (e.message?.let { " ($it)" } ?: ""),
+        isError = true,
+    )
 
     /** Save the recap as a self-contained HTML file to a SAF-picked Uri.
      *  Twin of [saveAsPdf]; the screen wires a separate CreateDocument
      *  launcher for the text/html mime type. */
     fun saveAsHtml(uri: Uri) = viewModelScope.launch {
-        transient.update { it.copy(busy = true, message = null) }
+        transient.update { it.copy(busyOp = RecapOp.SAVE_HTML, feedback = null) }
         runCatching {
             withContext(Dispatchers.IO) {
                 val ui = computed.value
@@ -297,9 +322,9 @@ class YearRecapViewModel @Inject constructor(
                 stagedWriteTo(uri, "html") { writeYearRecapHtml(it, ui, units, basemap, logo) }
             }
         }.onSuccess {
-            transient.update { it.copy(busy = false, message = "Recap saved.") }
+            finish(OpFeedback("Recap saved", "HTML recap saved."))
         }.onFailure { e ->
-            transient.update { it.copy(busy = false, message = "Save failed: ${e.message}") }
+            finish(saveFailure(e))
         }
     }
 
@@ -308,7 +333,7 @@ class YearRecapViewModel @Inject constructor(
      *  the share dir is cleared on every prepare so the two formats never
      *  leave a stale file behind. */
     fun shareAsHtml() = viewModelScope.launch {
-        transient.update { it.copy(busy = true, message = null) }
+        transient.update { it.copy(busyOp = RecapOp.SHARE_HTML, feedback = null) }
         runCatching {
             withContext(Dispatchers.IO) {
                 val ui = computed.value
@@ -324,14 +349,14 @@ class YearRecapViewModel @Inject constructor(
                 target
             }
         }.onSuccess { file ->
-            transient.update { it.copy(busy = false, pendingShareFile = file) }
+            transient.update { it.copy(busyOp = null, pendingShareFile = file) }
         }.onFailure { e ->
-            transient.update { it.copy(busy = false, message = "Share failed: ${e.message}") }
+            finish(shareFailure(e))
         }
     }
 
     fun consumePendingShare() = transient.update { it.copy(pendingShareFile = null) }
-    fun clearMessage() = transient.update { it.copy(message = null) }
+    fun clearFeedback() = transient.update { it.copy(feedback = null) }
 
     /* --- computation --- */
 

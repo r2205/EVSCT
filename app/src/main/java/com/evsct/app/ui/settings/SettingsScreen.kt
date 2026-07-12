@@ -39,7 +39,10 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -166,7 +169,19 @@ fun SettingsScreen(
         viewModel.consumePendingShare()
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Routine successes go to a snackbar; failures and destructive-replace
+    // results render as the titled dialog below.
+    LaunchedEffect(state.feedback) {
+        val fb = state.feedback
+        if (fb != null && !fb.asDialog) {
+            snackbarHostState.showSnackbar(fb.body)
+            viewModel.clearFeedback()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
@@ -191,8 +206,6 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (state.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -276,12 +289,16 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                    ) { Text("Save backup file…") }
+                    ) {
+                        BusyButtonContent("Save backup file…", state.busyOp == SettingsOp.EXPORT_BACKUP)
+                    }
                     OutlinedButton(
                         onClick = { viewModel.shareBackup() },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                    ) { Text("Share backup file…") }
+                    ) {
+                        BusyButtonContent("Share backup file…", state.busyOp == SettingsOp.SHARE_BACKUP)
+                    }
                     OutlinedButton(
                         onClick = {
                             backupImportLauncher.launch(
@@ -293,13 +310,20 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                    ) { Text("Restore from backup…") }
+                    ) {
+                        BusyButtonContent("Restore from backup…", state.busyOp == SettingsOp.RESTORE)
+                    }
                     state.preRestoreSnapshotAt?.let { snapAt ->
                         OutlinedButton(
                             onClick = { showUndoRestoreConfirm = true },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !state.busy,
-                        ) { Text("Undo last restore or import…") }
+                        ) {
+                            BusyButtonContent(
+                                "Undo last restore or import…",
+                                state.busyOp == SettingsOp.UNDO_RESTORE,
+                            )
+                        }
                         Text(
                             "Brings back the data as it was just before your last " +
                                 "restore or replace-import (snapshot taken automatically " +
@@ -337,12 +361,16 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                    ) { Text("Export to CSV…") }
+                    ) {
+                        BusyButtonContent("Export to CSV…", state.busyOp == SettingsOp.EXPORT_CSV)
+                    }
                     OutlinedButton(
                         onClick = { viewModel.shareCsv() },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                    ) { Text("Share CSV file…") }
+                    ) {
+                        BusyButtonContent("Share CSV file…", state.busyOp == SettingsOp.SHARE_CSV)
+                    }
                 }
             }
 
@@ -364,7 +392,9 @@ fun SettingsScreen(
                         onClick = { csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/csv")) },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                    ) { Text("Import CSV…") }
+                    ) {
+                        BusyButtonContent("Import CSV…", state.busyOp == SettingsOp.IMPORT_CSV)
+                    }
                 }
             }
 
@@ -380,7 +410,9 @@ fun SettingsScreen(
                         onClick = { showXlsxConfirm = true },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                    ) { Text("Import legacy XLSX…") }
+                    ) {
+                        BusyButtonContent("Import legacy XLSX…", state.busyOp == SettingsOp.IMPORT_XLSX)
+                    }
                 }
             }
 
@@ -492,14 +524,42 @@ fun SettingsScreen(
         )
     }
 
-    state.message?.let { msg ->
-        AlertDialog(
-            onDismissRequest = { viewModel.clearMessage() },
-            title = { Text("Result") },
-            text = { Text(msg) },
-            confirmButton = { TextButton(onClick = { viewModel.clearMessage() }) { Text("OK") } },
-        )
+    state.feedback?.let { fb ->
+        if (fb.asDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.clearFeedback() },
+                icon = if (fb.isError) {
+                    {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else null,
+                title = { Text(fb.title) },
+                text = { Text(fb.body) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.clearFeedback() }) { Text("OK") }
+                },
+            )
+        }
     }
+}
+
+/** Button label that swaps in a leading spinner while its operation runs —
+ *  progress lives ON the button the user tapped, not in a bar that may
+ *  have scrolled off-screen. */
+@Composable
+private fun BusyButtonContent(text: String, busy: Boolean) {
+    if (busy) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(16.dp),
+            strokeWidth = 2.dp,
+        )
+        Spacer(Modifier.size(8.dp))
+    }
+    Text(text)
 }
 
 @Composable

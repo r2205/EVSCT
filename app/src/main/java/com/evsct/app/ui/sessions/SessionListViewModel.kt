@@ -13,6 +13,7 @@ import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.InProgressChargeNotifier
+import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.Tags
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -79,6 +80,10 @@ data class SessionListUi(
     val totalKwh: Double = 0.0,
     val sessionCount: Int = 0,
     val selectedIds: Set<Long> = emptySet(),
+    /** True after the top bar's "Select" action, so selection mode can be
+     *  entered with nothing selected yet (mode is otherwise derived from a
+     *  non-empty selection, which a button tap can't produce). */
+    val selectionRequested: Boolean = false,
     val vehicleFilterId: Long? = null,
     val filters: SessionFilters = SessionFilters(),
     val sortOption: SortOption = SortOption.DATE,
@@ -89,7 +94,7 @@ data class SessionListUi(
      *  nothing is tracked or the charge is still young. */
     val staleTrackedSession: ChargingSession? = null,
 ) {
-    val isSelectionMode: Boolean get() = selectedIds.isNotEmpty()
+    val isSelectionMode: Boolean get() = selectionRequested || selectedIds.isNotEmpty()
 }
 
 @HiltViewModel
@@ -100,16 +105,25 @@ class SessionListViewModel @Inject constructor(
     private val sessionReceiptRepository: SessionReceiptRepository,
     private val appPreferences: AppPreferences,
     private val inProgressChargeNotifier: InProgressChargeNotifier,
+    private val receiptImageStore: ReceiptImageStore,
+    private val undoHolder: DeletedSessionUndoHolder,
 ) : ViewModel() {
 
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
+    private val selectionRequested = MutableStateFlow(false)
     private val vehicleFilter = MutableStateFlow<Long?>(null)
     private val filters = MutableStateFlow(SessionFilters())
     private val sortOption = MutableStateFlow(SortOption.DATE)
     private val backupNudgeDismissed = MutableStateFlow(false)
 
+    /** The edit screen's delete parks here; the log offers Undo off it. */
+    val pendingDeleteUndo = undoHolder.pending
+
     /** Bundle filter + sort so the outer combine still fits the 5-arg combine. */
     private val filtersAndSort = combine(filters, sortOption) { f, s -> f to s }
+
+    /** Bundle the two selection inputs for the same 5-arg-combine reason. */
+    private val selectionState = combine(selected, selectionRequested) { s, r -> s to r }
 
     /** Bundle the slow-changing data into one Triple so the outer combine fits the
      *  built-in 5-arg overload comfortably. */
@@ -120,8 +134,9 @@ class SessionListViewModel @Inject constructor(
     ) { sessions, trips, vehicles -> Triple(sessions, trips, vehicles) }
 
     private val baseUi: kotlinx.coroutines.flow.Flow<Pair<SessionListUi, Int>> =
-        combine(coreData, selected, vehicleFilter, filtersAndSort) { core, selectedIds, filter, fs ->
+        combine(coreData, selectionState, vehicleFilter, filtersAndSort) { core, sel, filter, fs ->
             val (allSessions, trips, vehicles) = core
+            val (selectedIds, selectionRequestedNow) = sel
             val (f, sort) = fs
 
             // Drop a vehicle filter that points to a deleted vehicle.
@@ -167,6 +182,7 @@ class SessionListViewModel @Inject constructor(
                 totalKwh = sessions.sumOf { it.energyKwh ?: 0.0 },
                 sessionCount = sessions.size,
                 selectedIds = cleanedSelection,
+                selectionRequested = selectionRequestedNow,
                 vehicleFilterId = effectiveVehicleFilter,
                 filters = f,
                 sortOption = sort,
@@ -225,7 +241,7 @@ class SessionListViewModel @Inject constructor(
 
     fun setVehicleFilter(vehicleId: Long?) {
         vehicleFilter.value = vehicleId
-        if (selected.value.isNotEmpty()) selected.value = emptySet()
+        clearSelection()
     }
 
     fun setQuery(query: String) {
@@ -258,12 +274,45 @@ class SessionListViewModel @Inject constructor(
         }
     }
 
+    /** Top-bar "Select": enter selection mode with nothing picked yet. */
+    fun requestSelectionMode() {
+        selectionRequested.value = true
+    }
+
     fun clearSelection() {
         selected.value = emptySet()
+        selectionRequested.value = false
     }
 
     fun selectAll() {
         selected.value = state.value.sessions.mapTo(mutableSetOf()) { it.id }
+    }
+
+    fun undoDelete() = undoHolder.undo()
+
+    fun finalizeDeleteUndo() = undoHolder.finalize()
+
+    /**
+     * Bulk delete for the selection top bar. Unlike the deliberately-absent
+     * bare list delete (see below), this routes through the receipt-safe
+     * sequence: receipt rows are read per session BEFORE the delete cascades
+     * them away, the rows go in one continuity-aware transaction, and the
+     * files are removed only after the rows are gone. No undo here — the
+     * confirmation dialog is the guard for bulk operations.
+     */
+    fun deleteSelectedSessions() {
+        val ids = state.value.selectedIds
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val rows = state.value.sessions.filter { it.id in ids }
+            val receiptPaths = rows.flatMap { row ->
+                sessionReceiptRepository.findForSession(row.id)
+            }.map { it.filePath }
+            sessionRepository.deleteMany(rows)
+            rows.forEach { inProgressChargeNotifier.cancelIfFor(it.id) }
+            receiptPaths.forEach { receiptImageStore.delete(it) }
+            clearSelection()
+        }
     }
 
     fun assignTripToSelection(tripId: Long?) {
@@ -280,11 +329,12 @@ class SessionListViewModel @Inject constructor(
         }
     }
 
-    // Deliberately no list-level delete here. A bare repository.delete
-    // would CASCADE the session_receipts rows but leak their files on
-    // disk permanently — the edit screen's deleteAndExit is the one
-    // correct session-delete path (it reconciles receipt files). If
-    // list-side delete is ever added, route it through that logic.
+    // NOTE: a BARE repository.delete must never be added here — it would
+    // CASCADE the session_receipts rows and permanently leak their files
+    // on disk. Single-session deletes go through the edit screen's
+    // deleteAndExit (which reconciles files and parks an Undo offer);
+    // bulk deletes go through deleteSelectedSessions above, which reads
+    // the receipt rows first and removes the files after the rows.
 
     /**
      * Quick-track entry point for the "Start charge" FAB. Persists a fresh

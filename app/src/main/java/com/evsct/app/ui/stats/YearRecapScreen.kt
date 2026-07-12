@@ -21,15 +21,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -42,6 +44,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -91,7 +94,19 @@ fun YearRecapScreen(
         viewModel.consumePendingShare()
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Routine successes go to a snackbar; failures render as the titled
+    // dialog at the bottom of this composable.
+    LaunchedEffect(state.feedback) {
+        val fb = state.feedback
+        if (fb != null && !fb.asDialog) {
+            snackbarHostState.showSnackbar(fb.body)
+            viewModel.clearFeedback()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Year recap", fontWeight = FontWeight.SemiBold) },
@@ -114,8 +129,6 @@ fun YearRecapScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
-            if (state.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-
             if (state.isLoading) {
                 // Before the first emission, availableYears is empty and the
                 // zero-session branch would flash "No sessions in <year> yet."
@@ -157,7 +170,7 @@ fun YearRecapScreen(
 
             Spacer(Modifier.height(16.dp))
             ExportButtons(
-                busy = state.busy,
+                busyOp = state.busyOp,
                 onSavePdf = {
                     savePdfLauncher.launch(
                         defaultRecapFilename(state.selectedYear, state.vehicleName, "pdf"),
@@ -175,15 +188,26 @@ fun YearRecapScreen(
         }
     }
 
-    state.message?.let { msg ->
-        AlertDialog(
-            onDismissRequest = { viewModel.clearMessage() },
-            title = { Text("Result") },
-            text = { Text(msg) },
-            confirmButton = {
-                TextButton(onClick = { viewModel.clearMessage() }) { Text("OK") }
-            },
-        )
+    state.feedback?.let { fb ->
+        if (fb.asDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.clearFeedback() },
+                icon = if (fb.isError) {
+                    {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else null,
+                title = { Text(fb.title) },
+                text = { Text(fb.body) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.clearFeedback() }) { Text("OK") }
+                },
+            )
+        }
     }
 }
 
@@ -369,12 +393,13 @@ private fun SimpleBarList(
 
 @Composable
 private fun ExportButtons(
-    busy: Boolean,
+    busyOp: RecapOp?,
     onSavePdf: () -> Unit,
     onSharePdf: () -> Unit,
     onSaveHtml: () -> Unit,
     onShareHtml: () -> Unit,
 ) {
+    val busy = busyOp != null
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -383,21 +408,35 @@ private fun ExportButtons(
             onClick = onSavePdf,
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy,
-        ) { Text("Save as PDF…") }
+        ) { ExportButtonContent("Save as PDF…", busyOp == RecapOp.SAVE_PDF) }
         OutlinedButton(
             onClick = onSharePdf,
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy,
-        ) { Text("Share PDF…") }
+        ) { ExportButtonContent("Share PDF…", busyOp == RecapOp.SHARE_PDF) }
         Button(
             onClick = onSaveHtml,
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy,
-        ) { Text("Save as HTML…") }
+        ) { ExportButtonContent("Save as HTML…", busyOp == RecapOp.SAVE_HTML) }
         OutlinedButton(
             onClick = onShareHtml,
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy,
-        ) { Text("Share HTML…") }
+        ) { ExportButtonContent("Share HTML…", busyOp == RecapOp.SHARE_HTML) }
     }
+}
+
+/** Button label with a leading spinner while its export runs — progress
+ *  shows where the user tapped, not in a bar at the top of the scroll. */
+@Composable
+private fun ExportButtonContent(text: String, busy: Boolean) {
+    if (busy) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(16.dp),
+            strokeWidth = 2.dp,
+        )
+        Spacer(Modifier.width(8.dp))
+    }
+    Text(text)
 }

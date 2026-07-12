@@ -35,8 +35,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.automirrored.filled.Label
@@ -47,6 +49,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Badge
@@ -71,12 +74,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,7 +96,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -119,6 +129,27 @@ fun SessionListScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showAddSheet by remember { mutableStateOf(false) }
+    var showBulkDeleteConfirm by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val haptics = LocalHapticFeedback.current
+
+    // The edit screen just deleted a session and popped back here: offer a
+    // window to take it back. Undo re-inserts the row (and re-links any
+    // receipt files, which stay on disk until this offer resolves).
+    val pendingUndo by viewModel.pendingDeleteUndo.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingUndo) {
+        if (pendingUndo != null) {
+            val result = snackbarHostState.showSnackbar(
+                message = "Session deleted",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Long,
+            )
+            when (result) {
+                SnackbarResult.ActionPerformed -> viewModel.undoDelete()
+                SnackbarResult.Dismissed -> viewModel.finalizeDeleteUndo()
+            }
+        }
+    }
 
     // POST_NOTIFICATIONS is runtime-granted on Android 13+ and nothing else
     // in the quick-track flow requests it, so without this prompt the
@@ -171,6 +202,7 @@ fun SessionListScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (state.isSelectionMode) {
                 SelectionTopBar(
@@ -178,6 +210,7 @@ fun SessionListScreen(
                     onClear = { viewModel.clearSelection() },
                     onSelectAll = { viewModel.selectAll() },
                     onAssignTrip = { showTripPicker = true },
+                    onDelete = { showBulkDeleteConfirm = true },
                 )
             } else {
                 TopAppBar(
@@ -207,6 +240,13 @@ fun SessionListScreen(
                                 },
                                 onDismiss = { showSortMenu = false },
                             )
+                        }
+                        if (state.sessions.isNotEmpty()) {
+                            // Visible route into multi-select — long-press
+                            // on a row also works but nothing advertised it.
+                            IconButton(onClick = { viewModel.requestSelectionMode() }) {
+                                Icon(Icons.Default.Checklist, contentDescription = "Select sessions")
+                            }
                         }
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -333,13 +373,43 @@ fun SessionListScreen(
                                 if (state.isSelectionMode) viewModel.toggleSelection(s.id)
                                 else onEditSession(s.id)
                             },
-                            onLongClick = { viewModel.toggleSelection(s.id) },
+                            onLongClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.toggleSelection(s.id)
+                            },
                         )
                     }
                     item { Spacer(Modifier.height(80.dp)) }
                 }
             }
         }
+    }
+
+    if (showBulkDeleteConfirm) {
+        val n = state.selectedIds.size
+        AlertDialog(
+            onDismissRequest = { showBulkDeleteConfirm = false },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            title = { Text(if (n == 1) "Delete 1 session?" else "Delete $n sessions?") },
+            text = {
+                Text(
+                    "This permanently removes the selected sessions and any " +
+                        "receipts attached to them."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    showBulkDeleteConfirm = false
+                    viewModel.deleteSelectedSessions()
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBulkDeleteConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showAddSheet) {
@@ -415,6 +485,7 @@ private fun SelectionTopBar(
     onClear: () -> Unit,
     onSelectAll: () -> Unit,
     onAssignTrip: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     TopAppBar(
         title = { Text("$selectedCount selected", fontWeight = FontWeight.SemiBold) },
@@ -433,8 +504,11 @@ private fun SelectionTopBar(
             IconButton(onClick = onSelectAll) {
                 Icon(Icons.Default.DoneAll, contentDescription = "Select all")
             }
-            IconButton(onClick = onAssignTrip) {
+            IconButton(onClick = onAssignTrip, enabled = selectedCount > 0) {
                 Icon(Icons.AutoMirrored.Filled.Label, contentDescription = "Assign trip")
+            }
+            IconButton(onClick = onDelete, enabled = selectedCount > 0) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete selected")
             }
         },
     )

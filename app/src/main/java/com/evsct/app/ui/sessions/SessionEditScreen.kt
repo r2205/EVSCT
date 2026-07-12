@@ -76,7 +76,9 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -140,6 +142,7 @@ fun SessionEditScreen(
     var showOdometerWarning by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
     val odometerFocusRequester = remember { FocusRequester() }
+    val haptics = LocalHapticFeedback.current
 
     fun trySave() {
         if (state.odometerText.isBlank()) showOdometerWarning = true
@@ -576,6 +579,7 @@ fun SessionEditScreen(
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         showDeleteConfirm = false
                         viewModel.deleteAndExit(onDone)
                     },

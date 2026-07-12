@@ -149,6 +149,16 @@ interface ChargingSessionDao {
         }
     }
 
+    /** Bulk form of [deleteAndClearStaleContinuity]: one transaction over
+     *  the whole selection, so a mid-batch failure can't leave it half
+     *  deleted, with the same per-session stale-flag repair. Followers
+     *  inside the batch get their flag cleared and are then deleted
+     *  themselves — harmless. */
+    @Transaction
+    suspend fun deleteAllAndClearStaleContinuity(sessions: List<ChargingSession>, now: Long) {
+        for (s in sessions) deleteAndClearStaleContinuity(s, now)
+    }
+
     /**
      * Updates [session] and, when the edit moved it (new start time or
      * vehicle) out from directly in front of a flagged follower, clears that
