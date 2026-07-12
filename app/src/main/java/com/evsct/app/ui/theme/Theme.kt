@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -27,5 +28,10 @@ fun EvsctTheme(
         darkTheme -> EvsctDarkScheme
         else -> EvsctLightScheme
     }
-    MaterialTheme(colorScheme = colors, content = content)
+    // Charging-type accents follow dark/light alongside the scheme — the
+    // fixed light trios washed out on dark surfaces.
+    val accents = if (darkTheme) DarkEvAccents else LightEvAccents
+    CompositionLocalProvider(LocalEvAccents provides accents) {
+        MaterialTheme(colorScheme = colors, content = content)
+    }
 }

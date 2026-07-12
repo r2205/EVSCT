@@ -62,6 +62,15 @@ object Routes {
     const val PICKED_LNG_KEY = "picked_lng"
     const val SETTINGS = "settings"
 
+    /** SavedStateHandle keys the Stats screen writes onto the Log entry
+     *  before switching tabs — the brand drill-down payload. The Log's
+     *  composable reads them off the entry handle, applies both as a
+     *  fresh filter set via the ViewModel, and clears them. Vehicle uses
+     *  a -1 sentinel for "all vehicles" (same convention as
+     *  [yearRecap]). */
+    const val LOG_BRAND_FILTER_KEY = "log_brand_filter"
+    const val LOG_BRAND_VEHICLE_KEY = "log_brand_vehicle"
+
     fun mapPicker(lat: Double?, lng: Double?): String {
         // Floats lose precision; pass via String query params and parse back.
         val latArg = lat?.toString().orEmpty()
@@ -171,6 +180,13 @@ fun EvsctNavGraph(navController: NavHostController) {
             modifier = Modifier.padding(padding).consumeWindowInsets(padding),
         ) {
         composable(Routes.SESSION_LIST) { entry ->
+            // The Stats brand drill-down parks its payload on this entry's
+            // SavedStateHandle before switching tabs (same relay the map
+            // picker uses). It must be read HERE and handed to the screen:
+            // this handle belongs to the nav entry, and is a different
+            // object from the SavedStateHandle Hilt injects into the
+            // screen's ViewModel — values written here never appear there.
+            val handle = entry.savedStateHandle
             SessionListScreen(
                 onAddSession = { preselectVehicleId ->
                     entry.ifResumed {
@@ -184,12 +200,42 @@ fun EvsctNavGraph(navController: NavHostController) {
                     entry.ifResumed { navController.navigate(Routes.sessionEdit(id)) }
                 },
                 onOpenSettings = { entry.ifResumed { navController.navigate(Routes.SETTINGS) } },
+                requestedBrandFilter = handle.get<String>(Routes.LOG_BRAND_FILTER_KEY),
+                requestedBrandVehicleId = handle.get<Long>(Routes.LOG_BRAND_VEHICLE_KEY),
+                onBrandFilterRequestConsumed = {
+                    handle.remove<String>(Routes.LOG_BRAND_FILTER_KEY)
+                    handle.remove<Long>(Routes.LOG_BRAND_VEHICLE_KEY)
+                },
             )
         }
         composable(Routes.STATS) { entry ->
             StatsScreen(
                 onOpenYearRecap = { vehicleId ->
                     entry.ifResumed { navController.navigate(Routes.yearRecap(vehicleId)) }
+                },
+                onOpenLogForBrand = { brand, vehicleId ->
+                    entry.ifResumed {
+                        // Hand the Log its drill-down payload, then switch
+                        // tabs with the same stack-preserving pattern as the
+                        // bottom bar. The Log is the start destination, so
+                        // its entry is always on the stack; the runCatching
+                        // just downgrades a surprise to "switch without
+                        // filter" instead of a crash.
+                        runCatching { navController.getBackStackEntry(Routes.SESSION_LIST) }
+                            .getOrNull()
+                            ?.savedStateHandle
+                            ?.let { handle ->
+                                handle[Routes.LOG_BRAND_VEHICLE_KEY] = vehicleId ?: -1L
+                                handle[Routes.LOG_BRAND_FILTER_KEY] = brand
+                            }
+                        navController.navigate(Routes.SESSION_LIST) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 },
             )
         }

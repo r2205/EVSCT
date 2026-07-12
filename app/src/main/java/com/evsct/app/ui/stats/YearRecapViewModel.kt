@@ -98,9 +98,13 @@ data class YearRecapUi(
     val totalDistanceKm: Double = 0.0,
     /** Top brands by spend (in [costCurrency]), descending, capped at 8. */
     val topBrands: List<Pair<String, Double>> = emptyList(),
-    /** 12 entries Jan→Dec; (label, $ in [costCurrency]). */
+    /** Jan onward; (label, $ in [costCurrency]). Past years carry all 12
+     *  months, the current year only the months that have happened (so
+     *  July's recap isn't padded with five empty rows). Always the same
+     *  length as [monthlyKwh]. */
     val monthlyCost: List<Pair<String, Double>> = emptyMonthly(),
-    /** 12 entries Jan→Dec; (label, kWh). */
+    /** Jan onward; (label, kWh). Same trimming and length as
+     *  [monthlyCost]. */
     val monthlyKwh: List<Pair<String, Double>> = emptyMonthly(),
     /** Trip with the highest distance among trips with at least one
      *  session in [selectedYear]. Whole-trip distance, not in-year only. */
@@ -205,6 +209,17 @@ class YearRecapViewModel @Inject constructor(
                 .bufferedReader().use { it.readText() }
         }.getOrNull()
         return (text?.let { parseNaBasemap(it) } ?: NaBasemap(emptyList())).also { cachedBasemap = it }
+    }
+
+    /** Basemap for the on-screen map preview, loaded once off the main
+     *  thread. Until it lands (or if the asset is missing) the preview
+     *  draws pins and routes with no coastline — same graceful fallback
+     *  as the HTML export. */
+    private val _basemap = MutableStateFlow<NaBasemap?>(null)
+    val basemap: StateFlow<NaBasemap?> = _basemap
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) { _basemap.value = loadBasemap() }
     }
 
     /** The bundled EVSCT lockup (logo + wordmark), inlined into the HTML
@@ -387,8 +402,11 @@ class YearRecapViewModel @Inject constructor(
 
         val topBrands = BrandSpend.top(costSessions)
 
-        val monthlyCost = monthlySeries(costSessions, effectiveYear) { it.totalCost ?: 0.0 }
-        val monthlyKwh = monthlySeries(inYear, effectiveYear) { it.energyKwh ?: 0.0 }
+        // One shared month count so cost and energy always line up
+        // row-for-row (the HTML table zips the two by index).
+        val monthCount = recapMonthCount(effectiveYear, inYear)
+        val monthlyCost = monthlySeries(costSessions, effectiveYear, monthCount) { it.totalCost ?: 0.0 }
+        val monthlyKwh = monthlySeries(inYear, effectiveYear, monthCount) { it.energyKwh ?: 0.0 }
         val longest = longestTripIn(trips, effectiveYear, sessions)
         val map = recapMapData(inYear, trips)
 
@@ -488,9 +506,26 @@ class YearRecapViewModel @Inject constructor(
         return RecapMap(stops, paths, legend)
     }
 
+    /** How many months of [year] the recap should render: past years get
+     *  all 12, but the current year stops at the current month instead of
+     *  padding charts and tables with months that haven't happened yet.
+     *  A future-dated session (deliberate or typo'd) extends the window so
+     *  its data is never silently hidden. */
+    private fun recapMonthCount(year: Int, inYear: List<ChargingSession>): Int {
+        val cal = Calendar.getInstance()
+        if (year != cal.get(Calendar.YEAR)) return 12
+        val currentMonth = cal.get(Calendar.MONTH)
+        val lastMonthWithData = inYear.maxOfOrNull { s ->
+            cal.timeInMillis = s.sessionStart
+            cal.get(Calendar.MONTH)
+        } ?: 0
+        return maxOf(currentMonth, lastMonthWithData) + 1
+    }
+
     private fun monthlySeries(
         sessions: List<ChargingSession>,
         year: Int,
+        monthCount: Int,
         valueOf: (ChargingSession) -> Double,
     ): List<Pair<String, Double>> {
         val labels = DateFormatSymbols.getInstance().shortMonths.take(12)
@@ -501,7 +536,7 @@ class YearRecapViewModel @Inject constructor(
             if (cal.get(Calendar.YEAR) != year) return@forEach
             totals[cal.get(Calendar.MONTH)] += valueOf(s)
         }
-        return labels.mapIndexed { i, label -> label to totals[i] }
+        return labels.mapIndexed { i, label -> label to totals[i] }.take(monthCount)
     }
 
     private fun longestTripIn(

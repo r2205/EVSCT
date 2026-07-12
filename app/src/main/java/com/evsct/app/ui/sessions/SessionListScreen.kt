@@ -95,7 +95,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -109,7 +108,8 @@ import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.prefs.CardTimeRate
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
-import com.evsct.app.ui.theme.EvAccents
+import com.evsct.app.ui.forType
+import com.evsct.app.ui.theme.LocalEvAccents
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
 import com.evsct.app.util.Tags
@@ -121,9 +121,26 @@ fun SessionListScreen(
     onStartTrackedSession: (sessionId: Long) -> Unit,
     onEditSession: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    /** Brand-drill-down payload from Stats, read off this entry's
+     *  SavedStateHandle by the nav graph (same relay the map picker
+     *  uses). Vehicle id uses a -1 sentinel for "all vehicles". */
+    requestedBrandFilter: String? = null,
+    requestedBrandVehicleId: Long? = null,
+    onBrandFilterRequestConsumed: () -> Unit = {},
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // Apply the Stats drill-down once, then clear the handle keys so a
+    // later visit to the Log doesn't re-apply a stale request.
+    LaunchedEffect(requestedBrandFilter, requestedBrandVehicleId) {
+        val brand = requestedBrandFilter ?: return@LaunchedEffect
+        viewModel.applyBrandDrilldown(
+            brand = brand,
+            vehicleId = requestedBrandVehicleId?.takeIf { it >= 0 },
+        )
+        onBrandFilterRequestConsumed()
+    }
     var showTripPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -766,8 +783,8 @@ private fun SessionRow(
     onLongClick: () -> Unit,
 ) {
     val units = LocalUserUnits.current
-    val typeAccent = chargingTypeAccent(session.chargingType)
-    val barColor = typeAccent.bar
+    val typeAccent = LocalEvAccents.current.forType(session.chargingType)
+    val barColor = typeAccent.accent
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -966,7 +983,7 @@ private fun TagPill(label: String) {
 
 @Composable
 private fun TypeBadge(type: ChargingType) {
-    val accent = chargingTypeAccent(type)
+    val accent = LocalEvAccents.current.forType(type)
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
@@ -1020,21 +1037,6 @@ private fun VehiclePill(name: String) {
             color = MaterialTheme.colorScheme.onSecondaryContainer,
         )
     }
-}
-
-private data class TypeAccent(val bar: Color, val container: Color, val onContainer: Color)
-
-// Shared per-type instances. chargingTypeAccent() runs for every visible row
-// (and again inside each row's TypeBadge), so returning constants avoids
-// allocating a fresh TypeAccent on every call while scrolling.
-private val DcFastAccent = TypeAccent(EvAccents.DcFast, EvAccents.DcFastContainer, Color(0xFF3B2400))
-private val AcL2Accent = TypeAccent(EvAccents.AcL2, EvAccents.AcL2Container, Color(0xFF002B57))
-private val AcL1Accent = TypeAccent(EvAccents.AcL1, EvAccents.AcL1Container, Color(0xFF200052))
-
-private fun chargingTypeAccent(type: ChargingType): TypeAccent = when (type) {
-    ChargingType.DC_FAST -> DcFastAccent
-    ChargingType.AC_L2 -> AcL2Accent
-    ChargingType.AC_L1 -> AcL1Accent
 }
 
 private fun ChargingType.shortLabel(): String = when (this) {

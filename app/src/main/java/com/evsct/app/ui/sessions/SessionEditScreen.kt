@@ -79,7 +79,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
@@ -1753,11 +1752,12 @@ private fun ReceiptPreviewDialog(
 
 @Composable
 private fun ValidationHintsCard(hints: List<ValidationHint>) {
+    val accent = com.evsct.app.ui.theme.LocalEvAccents.current.dcFast
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = com.evsct.app.ui.theme.EvAccents.DcFastContainer,
-            contentColor = Color(0xFF3B2400),
+            containerColor = accent.container,
+            contentColor = accent.onContainer,
         ),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {

@@ -9,6 +9,7 @@ import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.util.BrandSpend
+import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.OdometerDistance
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.SimpleDateFormat
@@ -22,26 +23,40 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
+/** Time window for the cost/energy trend charts. */
+enum class StatsChartWindow(val label: String) {
+    LAST_12_MONTHS("Last 12 months"),
+    ALL_YEARS("All years"),
+}
+
 data class StatsUi(
     val isLoading: Boolean = true,
     val vehicles: List<Vehicle> = emptyList(),
     val vehicleFilterId: Long? = null,
     val sessionCount: Int = 0,
-    /** Cost-based aggregates are filtered to the user's default currency,
+    /** Chart cost aggregates are filtered to the user's default currency,
      *  since adding CAD + USD into one chart bar produces a meaningless
-     *  number. The currency tag tells the UI what to label totals with. */
+     *  number. The currency tag tells the UI what to label chart totals
+     *  with. */
     val costCurrency: String = "CAD",
-    val totalCost: Double = 0.0,
-    /** How many sessions were excluded from cost aggregates because their
-     *  currency didn't match [costCurrency]. UI flags this when > 0. */
+    /** Headline total across every currency the user has paid in — the
+     *  shared MoneyStat stacks one line per currency, so the headline
+     *  doesn't have to exclude anything. */
+    val totalCostByCurrency: CurrencyTotals = CurrencyTotals(emptyMap()),
+    /** How many sessions the single-currency cost charts (trend, top
+     *  brands, averages) leave out because their currency didn't match
+     *  [costCurrency]. UI flags this when > 0. */
     val excludedByCurrency: Int = 0,
     val totalEnergyKwh: Double = 0.0,
     val avgEffPricePerKwh: Double? = null,
     val avgPowerKw: Double? = null,
-    /** Last 12 months, oldest first; (label, $ spent in [costCurrency]). */
-    val monthlyCost: List<Pair<String, Double>> = emptyList(),
-    /** Last 12 months, oldest first; (label, kWh) — across all currencies. */
-    val monthlyEnergy: List<Pair<String, Double>> = emptyList(),
+    /** Which window [costSeries]/[energySeries] cover. */
+    val chartWindow: StatsChartWindow = StatsChartWindow.LAST_12_MONTHS,
+    /** Cost trend, oldest bucket first; (label, $ in [costCurrency]). One
+     *  bucket per month or per year, per [chartWindow]. */
+    val costSeries: List<Pair<String, Double>> = emptyList(),
+    /** Energy trend, same bucketing; (label, kWh) — across all currencies. */
+    val energySeries: List<Pair<String, Double>> = emptyList(),
     /** Top brands by $ spent in [costCurrency], descending. */
     val byBrandCost: List<Pair<String, Double>> = emptyList(),
     /** Sessions per charging type, in enum order. */
@@ -82,6 +97,9 @@ private const val GAS_PRICE_PER_L = 2.15
 private const val GAS_CONSUMPTION_L_PER_100KM = 12.0
 private const val EV_EFFICIENCY_KM_PER_KWH = 4.0
 
+/** Most year buckets the "All years" chart window will render. */
+private const val MAX_YEAR_BUCKETS = 20
+
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     sessionRepository: SessionRepository,
@@ -90,13 +108,15 @@ class StatsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val vehicleFilter = MutableStateFlow<Long?>(null)
+    private val chartWindow = MutableStateFlow(StatsChartWindow.LAST_12_MONTHS)
 
     val state: StateFlow<StatsUi> = combine(
         sessionRepository.observeAll(),
         vehicleRepository.observeAll(),
         vehicleFilter,
+        chartWindow,
         appPreferences.userUnits,
-    ) { allSessions, vehicles, filter, units ->
+    ) { allSessions, vehicles, filter, window, units ->
         val effectiveFilter = filter?.takeIf { id -> vehicles.any { it.id == id } }
         val sessions = if (effectiveFilter == null) allSessions
         else allSessions.filter { it.vehicleId == effectiveFilter }
@@ -113,13 +133,20 @@ class StatsViewModel @Inject constructor(
             vehicleFilterId = effectiveFilter,
             sessionCount = sessions.size,
             costCurrency = costCurrency,
-            totalCost = costSessions.sumOf { it.totalCost ?: 0.0 },
+            totalCostByCurrency = CurrencyTotals.from(sessions),
             excludedByCurrency = excluded,
             totalEnergyKwh = sessions.sumOf { it.energyKwh ?: 0.0 },
             avgEffPricePerKwh = computeAvgEffPrice(costSessions),
             avgPowerKw = computeAvgPower(sessions),
-            monthlyCost = monthlySeries(costSessions) { it.totalCost ?: 0.0 },
-            monthlyEnergy = monthlySeries(sessions) { it.energyKwh ?: 0.0 },
+            chartWindow = window,
+            costSeries = when (window) {
+                StatsChartWindow.LAST_12_MONTHS -> monthlySeries(costSessions) { it.totalCost ?: 0.0 }
+                StatsChartWindow.ALL_YEARS -> yearlySeries(costSessions) { it.totalCost ?: 0.0 }
+            },
+            energySeries = when (window) {
+                StatsChartWindow.LAST_12_MONTHS -> monthlySeries(sessions) { it.energyKwh ?: 0.0 }
+                StatsChartWindow.ALL_YEARS -> yearlySeries(sessions) { it.energyKwh ?: 0.0 }
+            },
             byBrandCost = BrandSpend.top(costSessions),
             byType = sessions.groupingBy { it.chargingType }.eachCount(),
             dcFastByDayHour = dayHourGrid(sessions.filter { it.chargingType == ChargingType.DC_FAST }),
@@ -130,6 +157,8 @@ class StatsViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())
 
     fun setVehicleFilter(id: Long?) { vehicleFilter.value = id }
+
+    fun setChartWindow(window: StatsChartWindow) { chartWindow.value = window }
 
     private fun computeAvgEffPrice(sessions: List<ChargingSession>): Double? {
         val totalCost = sessions.sumOf { it.totalCost ?: 0.0 }
@@ -172,6 +201,26 @@ class StatsViewModel @Inject constructor(
             val key = keyFmt.format(date)
             labelFmt.format(date) to (totalsByKey[key] ?: 0.0)
         }
+    }
+
+    /** One bucket per calendar year, first data year through the current
+     *  year, zero-filled and oldest first. Capped at [MAX_YEAR_BUCKETS]
+     *  most recent years so a single typo'd 1970 session can't explode the
+     *  chart into decades of empty rows. */
+    private fun yearlySeries(
+        sessions: List<ChargingSession>,
+        valueOf: (ChargingSession) -> Double,
+    ): List<Pair<String, Double>> {
+        if (sessions.isEmpty()) return emptyList()
+        val cal = Calendar.getInstance()
+        val currentYear = cal.get(Calendar.YEAR)
+        val totalsByYear = sessions.groupBy { s ->
+            cal.timeInMillis = s.sessionStart
+            cal.get(Calendar.YEAR)
+        }.mapValues { (_, ss) -> ss.sumOf(valueOf) }
+        val lastYear = maxOf(totalsByYear.keys.max(), currentYear)
+        val firstYear = maxOf(totalsByYear.keys.min(), lastYear - (MAX_YEAR_BUCKETS - 1))
+        return (firstYear..lastYear).map { y -> y.toString() to (totalsByYear[y] ?: 0.0) }
     }
 
     /**

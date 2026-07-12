@@ -3,13 +3,16 @@ package com.evsct.app.ui.stats
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -36,6 +40,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,16 +51,26 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.ui.BarList
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.Format
 
@@ -64,6 +81,7 @@ fun YearRecapScreen(
     viewModel: YearRecapViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val basemap by viewModel.basemap.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val savePdfLauncher = rememberLauncherForActivityResult(
@@ -164,6 +182,7 @@ fun YearRecapScreen(
             }
 
             RecapHeadlineCard(state)
+            RecapMapCard(state, basemap)
             RecapMonthlyCard(state)
             if (state.topBrands.isNotEmpty()) RecapBrandsCard(state)
             state.longestTrip?.let { RecapLongestTripCard(it) }
@@ -298,7 +317,7 @@ private fun RecapCard(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun RecapMonthlyCard(state: YearRecapUi) {
     RecapCard("Monthly cost") {
-        SimpleBarList(
+        BarList(
             items = state.monthlyCost,
             labelWidth = 40.dp,
             valueWidth = 92.dp,
@@ -310,7 +329,7 @@ private fun RecapMonthlyCard(state: YearRecapUi) {
 @Composable
 private fun RecapBrandsCard(state: YearRecapUi) {
     RecapCard("Top brands") {
-        SimpleBarList(
+        BarList(
             items = state.topBrands,
             labelWidth = 130.dp,
             valueWidth = 92.dp,
@@ -318,6 +337,116 @@ private fun RecapBrandsCard(state: YearRecapUi) {
         )
     }
 }
+
+/**
+ * On-screen twin of the HTML export's SVG map — same [RecapMapProjection],
+ * same trip colors — so the user sees the map before choosing to export.
+ * Renders nothing when no in-year session has coordinates. Coast rings
+ * come from the lazily loaded basemap; until it lands (or if the asset is
+ * missing) pins and routes still draw, mirroring the export's fallback.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RecapMapCard(state: YearRecapUi, basemap: NaBasemap?) {
+    val proj = remember(state.mapStops, state.mapTripPaths) {
+        RecapMapProjection.fit(state.mapStops, state.mapTripPaths)
+    } ?: return
+
+    RecapCard("Charging map") {
+        // NOT outlineVariant: in this palette's dark scheme it's the very
+        // same tone as the map's surfaceVariant fill (0xFF414940 for both,
+        // mirroring baseline M3), which made the coastlines invisible in
+        // dark mode. outline is the slot defined to contrast with surfaces
+        // in both themes; softened so the basemap stays behind the pins.
+        val coastColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+        val pinHalo = MaterialTheme.colorScheme.surface
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio((proj.width / proj.height).toFloat())
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            // The projection speaks viewport units; scale them to pixels.
+            val s = size.width / proj.width.toFloat()
+            fun px(lat: Double, lng: Double) = Offset(
+                (proj.x(lng) * s).toFloat(),
+                (proj.y(lat) * s).toFloat(),
+            )
+
+            basemap?.rings?.forEach { ring ->
+                if (!proj.overlaps(ring)) return@forEach
+                val path = Path()
+                ring.forEachIndexed { i, (lat, lng) ->
+                    val p = px(lat, lng)
+                    if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+                }
+                path.close()
+                drawPath(path, color = coastColor, style = Stroke(width = 1.dp.toPx()))
+            }
+
+            state.mapTripPaths.forEach { trip ->
+                val path = Path()
+                trip.points.forEachIndexed { i, (lat, lng) ->
+                    val p = px(lat, lng)
+                    if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+                }
+                drawPath(
+                    path,
+                    color = hexColor(trip.colorHex).copy(alpha = 0.9f),
+                    style = Stroke(
+                        width = 2.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round,
+                    ),
+                )
+            }
+
+            val pinRadius = 4.dp.toPx()
+            val haloWidth = 1.dp.toPx()
+            state.mapStops.forEach { stop ->
+                val center = px(stop.lat, stop.lng)
+                drawCircle(hexColor(stop.colorHex), radius = pinRadius, center = center)
+                drawCircle(
+                    pinHalo,
+                    radius = pinRadius,
+                    center = center,
+                    style = Stroke(width = haloWidth),
+                )
+            }
+        }
+        if (state.mapLegend.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                state.mapLegend.forEach { (label, hex) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(hexColor(hex)),
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Parse the recap map's "#RRGGBB" colors into a Compose color; malformed
+ *  input falls back to the shared-stop gray instead of throwing. */
+private fun hexColor(hex: String): Color =
+    runCatching { Color(0xFF000000L or hex.removePrefix("#").toLong(16)) }
+        .getOrDefault(Color(0xFF757575))
 
 @Composable
 private fun RecapLongestTripCard(trip: LongestTripSummary) {
@@ -340,57 +469,14 @@ private fun RecapLongestTripCard(trip: LongestTripSummary) {
     }
 }
 
-/**
- * Local copy of StatsScreen's BarList — kept private to this file rather
- * than coupling YearRecap's layout to StatsScreen's evolving private API.
- * Each row is `[label] [bar———] [value]` with bars normalized to the
- * largest value in [items].
- */
-@Composable
-private fun SimpleBarList(
-    items: List<Pair<String, Double>>,
-    labelWidth: androidx.compose.ui.unit.Dp,
-    valueWidth: androidx.compose.ui.unit.Dp,
-    formatValue: (Double) -> String,
-) {
-    val maxValue = items.maxOfOrNull { it.second } ?: 0.0
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items.forEach { (label, value) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(labelWidth),
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(14.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    val frac = if (maxValue > 0) (value / maxValue).toFloat() else 0f
-                    if (frac > 0f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(frac)
-                                .background(MaterialTheme.colorScheme.primary),
-                        )
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    formatValue(value),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.width(valueWidth),
-                )
-            }
-        }
-    }
-}
+/** Which document format the export buttons below target. */
+private enum class RecapFormat(val label: String) { PDF("PDF"), HTML("HTML") }
 
+/**
+ * Format picker + Save/Share pair — two buttons instead of the four-button
+ * stack this replaced. The picker is disabled while an export runs so the
+ * running operation always matches the selected format.
+ */
 @Composable
 private fun ExportButtons(
     busyOp: RecapOp?,
@@ -400,30 +486,53 @@ private fun ExportButtons(
     onShareHtml: () -> Unit,
 ) {
     val busy = busyOp != null
+    var format by rememberSaveable { mutableStateOf(RecapFormat.PDF) }
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            RecapFormat.entries.forEachIndexed { index, f ->
+                SegmentedButton(
+                    selected = format == f,
+                    onClick = { format = f },
+                    enabled = !busy,
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = RecapFormat.entries.size,
+                    ),
+                ) { Text(f.label) }
+            }
+        }
+        Text(
+            when (format) {
+                RecapFormat.PDF -> "One-page summary — easy to print or archive."
+                RecapFormat.HTML ->
+                    "Interactive page with the charging map — opens in any browser."
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Button(
-            onClick = onSavePdf,
+            onClick = { if (format == RecapFormat.PDF) onSavePdf() else onSaveHtml() },
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy,
-        ) { ExportButtonContent("Save as PDF…", busyOp == RecapOp.SAVE_PDF) }
+        ) {
+            ExportButtonContent(
+                "Save as ${format.label}…",
+                busyOp == RecapOp.SAVE_PDF || busyOp == RecapOp.SAVE_HTML,
+            )
+        }
         OutlinedButton(
-            onClick = onSharePdf,
+            onClick = { if (format == RecapFormat.PDF) onSharePdf() else onShareHtml() },
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy,
-        ) { ExportButtonContent("Share PDF…", busyOp == RecapOp.SHARE_PDF) }
-        Button(
-            onClick = onSaveHtml,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !busy,
-        ) { ExportButtonContent("Save as HTML…", busyOp == RecapOp.SAVE_HTML) }
-        OutlinedButton(
-            onClick = onShareHtml,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !busy,
-        ) { ExportButtonContent("Share HTML…", busyOp == RecapOp.SHARE_HTML) }
+        ) {
+            ExportButtonContent(
+                "Share ${format.label}…",
+                busyOp == RecapOp.SHARE_PDF || busyOp == RecapOp.SHARE_HTML,
+            )
+        }
     }
 }
 
