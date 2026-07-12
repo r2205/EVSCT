@@ -66,7 +66,12 @@ fun BarList(
                         .weight(1f)
                         .height(14.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        // outlineVariant, not surfaceVariant: in light mode
+                        // surfaceVariant sits at nearly the card's own tone
+                        // and the empty track vanished (same fix as the
+                        // heatmap's zero cells); in dark the two slots are
+                        // the same color, so nothing changes there.
+                        .background(MaterialTheme.colorScheme.outlineVariant),
                 ) {
                     val frac = if (maxValue > 0) (value / maxValue).toFloat() else 0f
                     if (frac > 0f) {
