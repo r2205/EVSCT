@@ -32,7 +32,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
@@ -43,9 +42,7 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Receipt
-import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Settings
@@ -113,9 +110,6 @@ fun SessionListScreen(
     onAddSession: (preselectVehicleId: Long?) -> Unit,
     onStartTrackedSession: (sessionId: Long) -> Unit,
     onEditSession: (Long) -> Unit,
-    onOpenTrips: () -> Unit,
-    onOpenStats: () -> Unit,
-    onOpenMap: () -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
@@ -213,15 +207,6 @@ fun SessionListScreen(
                                 },
                                 onDismiss = { showSortMenu = false },
                             )
-                        }
-                        IconButton(onClick = onOpenStats) {
-                            Icon(Icons.Default.BarChart, contentDescription = "Stats")
-                        }
-                        IconButton(onClick = onOpenMap) {
-                            Icon(Icons.Default.Map, contentDescription = "Map")
-                        }
-                        IconButton(onClick = onOpenTrips) {
-                            Icon(Icons.Default.Route, contentDescription = "Trips")
                         }
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")

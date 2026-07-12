@@ -277,7 +277,12 @@ in review.
 - **Empty state**: shared `EmptyState` composable on first launch with
   a "Add session" call to action. Same composable used on Vehicles,
   Trips, Stats, and Map for consistent zero-data guidance.
-- Top bar: Search · Sort · Stats · Map · Trips · Settings.
+- Top bar: Search · Sort · Settings. Log / Map / Stats / Trips are
+  bottom-navigation tabs (July 2026): the bar shows only on those four
+  top-level screens, tab switches use save/restore-state navigation so
+  each tab keeps its scroll/camera/filter state, and system back from
+  any tab lands on the Log. Predictive back is opted in via
+  `enableOnBackInvokedCallback`.
 
 ### Map view (`MapScreen`)
 
