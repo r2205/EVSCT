@@ -14,6 +14,10 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 
 ## Screenshots
 
+> **⚠️ Note:** These screenshots are out of date — they predate the Phase 5–7
+> UI changes (the reworked Stats screen, map view, trips, and charging log,
+> among others) and will be refreshed with new captures soon.
+
 _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming](#theming))._
 
 <!--
@@ -120,6 +124,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   purple AC L1), brand, city, cost in primary green, eff. $/kWh, vehicle and
   trip pills, a receipt icon when a photo or PDF is attached, and a row of
   `#tag` chips when the session is tagged.
+- **Add a charge** — an extended **Add session** button floats over the
+  list and collapses to a bare `+` once you scroll. It opens a chooser to
+  either track a charge live (a running timer plus a persistent
+  notification) or backfill a charge you've already finished.
 - **Vehicle tabs** — filter to a specific car, or All. New sessions started
   from a vehicle tab pre-select that vehicle.
 - **Search** — free-text matching brand, city, prov, address, station,
@@ -131,28 +139,56 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   Cost (highest), Efficiency (cheapest $/kWh first), or Brand (A–Z).
   Date breaks ties on every option, and sessions missing the chosen
   field fall to the end.
-- **Multi-select** — long-press to enter selection mode, then bulk-assign
-  selected sessions to a trip.
-- Top bar entries: Search · **Sort** · Settings. Log / Map / Stats /
+- **Month headers** — sorted by date, the list buckets into months (e.g.
+  "July 2026") under sticky headers that pin to the top edge as rows scroll
+  beneath them. Only in date order — the cost, efficiency, and brand sorts
+  interleave months, so the headers drop away.
+- **Multi-select** — long-press a row, or tap the **Select** icon in the
+  top bar, to enter selection mode; **Select all** grabs every row on
+  screen. From the selection bar you can assign the chosen sessions to a
+  trip, or delete them in bulk — a confirmation dialog first, then an Undo
+  snackbar so a mistaken batch is reversible.
+- Top bar entries: Search · **Sort** · **Select** · Settings. Log / Map / Stats /
   Trips switch via the **bottom navigation bar**, which preserves each
   tab's state (scroll position, camera, filters) across switches.
+- **Undo delete** — removing sessions (one from its edit screen, or a whole
+  multi-select batch) raises a "Session deleted" snackbar on the log with an
+  **Undo** action that restores the rows and their receipt files. The offer
+  lives on the log: leave the tab and the delete is committed.
+- **Back to top** — once you've scrolled well down the log, a small
+  up-arrow button appears and flings you back to the newest session in one
+  tap.
+- **Animated rows** — rows glide into place when a delete, undo, or re-sort
+  moves them, instead of snapping to the new position.
 
 ### Map view
 - Google Maps full-screen view with **one pin per distinct charging stop**
   (deduped by brand + address + city; stops with only GPS coordinates
   group by location instead of vanishing). Tap a pin for brand, address,
   and visit count.
+- **My location** — a floating button (bottom-right) recenters the map on
+  where you are, showing a spinner while it fetches a fix and requesting
+  the location permission the first time you tap it (a snackbar explains
+  if the permission or fix fails). While the permission is held the
+  standard blue location dot renders on the map.
 - **Trip-colored pins** — each trip gets a color from a 10-swatch palette,
   auto-assigned but customizable in the trip edit dialog. Stops visited
   across multiple trips render as a neutral gray "shared" pin so the
   visual stays honest.
-- **Filter sheet** — toggle "Color pins by trip" off to render every pin
-  in red, scope the map to a single vehicle (chip row appears when you
-  have ≥2 vehicles), hide individual trips with a checkbox list, or use
-  **Show all** / **Hide all** to flip the trip selection in one tap when
-  the trip list grows long.
+- **On-map trip legend** — while trip colors are on, a compact card
+  (bottom-left) lists each visible trip's color and name (plus
+  "Untripped", and the gray "Multiple trips" swatch when a shared stop is
+  showing), capped at six rows with a "+N more" line. Tap it to open the
+  filter sheet and toggle those same trips. It hides when trip colors are
+  off, the heatmap owns the canvas, or no colored trip is visible.
+- **Filter sheet** — decides *which* stops show, not how the map looks
+  (that moved to the Layers menu): scope the map to a single vehicle
+  (chip row appears when you have ≥2 vehicles), hide individual trips and
+  the untripped bucket with a checkbox list, or use **Show all** / **Hide
+  all** to flip the trip selection in one tap when the trip list grows
+  long. **Reset** clears every active filter at once.
 - **Layers menu** — basemap switcher (Default / Satellite / Hybrid /
-  Terrain) plus two display-mode toggles:
+  Terrain) plus four display-mode toggles:
   - **Heatmap** — pins are replaced by a density overlay weighted by
     visit count (log-scaled), so your everyday home charger glows
     brightest without washing one-off road-trip stops off the map.
@@ -161,6 +197,12 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
     Lines are geodesic so cross-country routes curve naturally instead
     of looking like flat-Earth shortcuts. Suppressed (and grayed in the
     menu) while heatmap mode owns the canvas.
+  - **Color pins by trip** — on by default; turn it off to drop the trip
+    palette and render every pin in the default red. The choice persists
+    across app restarts.
+  - **Cluster nearby pins** — on by default; turn it off to render every
+    pin individually regardless of zoom instead of folding nearby stops
+    into a numbered count badge.
 - **Tap a pin to drill in** — single-session pins still show the Maps
   tooltip (brand · address · "1 visit"); tap the tooltip to jump to
   that session's edit screen. Multi-session pins skip the tooltip and
@@ -168,10 +210,15 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   (or "Untripped"), and vehicle name; tap a row to open it. Useful
   for figuring out which session at a frequently-visited stop is the
   one you need to fix.
-- **First-open backfill** — the first time you open the screen, every
-  stop with only a textual address is reverse-geocoded and the resolved
-  coordinates saved back to those sessions. After that, the map opens
-  instantly.
+- **Address backfill** — every time you open the map, any stop with a
+  textual address but no coordinates is reverse-geocoded and the resolved
+  point saved back to those sessions so it appears as a pin. Once an
+  address has been tried the pass is throttled to at most once a day, but
+  a stop whose address was **added or edited since the last attempt** is
+  always re-geocoded on the next open. Addresses that still can't be
+  located raise a snackbar ("N addresses couldn't be located — those
+  stops stay off the map"), pointing you to fix the address or open the
+  session and use *Pick on map*.
 
 ### Vehicles
 - Year, make, model, trim, battery capacity (kWh), nominal range
@@ -185,6 +232,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 
 ### Trips
 - Manual trip tagging (one trip per session, optional).
+- Optional **start/end dates** per trip, chosen with date pickers in the
+  trip editor. When set, they label the trip on its list row and detail
+  header and sort the Trips list by start date (newest first).
 - Optional start/end odometer per trip — when both are filled, distance =
   end − start. Otherwise distance is inferred from session odometer
   readings.
@@ -192,49 +242,65 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   readings these anchor the efficiency legs no session pair can measure:
   the drive from home (charged to 100%) to your first stop, and the
   drive home from your last one.
-- **Map pin color** picker per trip (10 swatches, auto-assigned by default).
+- **Map pin color** picker per trip — ten color swatches plus an explicit
+  **Auto** choice (the default), which lets the app assign the least-used
+  color when the trip is saved.
 - Trip detail shows total cost, energy, distance, $/km or $/mi, $/kWh,
   plus every session in the trip and a **driving efficiency** card with
   measured km/kWh per leg (and the reason whenever a leg can't be
-  measured).
+  measured). A trip with no sessions yet shows a how-to empty state
+  explaining how to tag sessions to it.
 
 ### Stats
-- Headline card: sessions, total cost, total energy, average effective
-  $/kWh, average power.
+- Headline card: sessions, total cost (one line per currency you've paid
+  in), total energy, average effective $/kWh, average power.
 - **vs gas this month** card — compares this month's charging cost to
   what an equivalent distance of driving would have cost in gas. Shows a
   big "Saved $X" headline with the underlying numbers below.
-- 12-month rolling charts of cost and energy.
-- Top brands by total spend.
+- Cost and energy trend charts with a **Last 12 months / All years**
+  segmented selector above them; the charts and their titles ("Cost by
+  month" vs "Cost by year") follow the window you choose.
+- Top brands by total spend — **tap a brand row to jump to the Charging
+  log, pre-filtered to that brand.**
 - Charging-type split (DC Fast / AC L2 / AC L1) with percentages.
 - **When you charge** — two 7×24 day-of-week × hour-of-day heatmaps,
   one for DC Fast and one for AC, so you can see road-trip patterns
   separately from home/commute charging. Each shows its peak day/hour
-  ("Peak: Sat 2 pm").
+  ("Peak: Sat 2 pm"), a **Less → More** shading legend, and **tappable
+  cells** — tap any square to read its exact session count.
 - Vehicle filter mirrors the Charging log tabs.
-- **Year recap** — tap the PDF icon in the top bar to open a year-end
-  recap (any year you pick): headline totals, monthly trend, top
-  brands, longest trip. Save or Share the recap as a single-page PDF,
-  or as a self-contained **HTML** report — a richer, responsive page
-  (full monthly cost+energy table, a Cost/Energy chart toggle, and a
-  **map** of that year's charging stops drawn over a bundled North
-  America outline, colored by trip). The HTML opens offline in any
+- **Year recap** — tap the **Recap** button in the top bar to open a
+  year-end recap (any year you pick): headline totals, an on-screen
+  **charging map** (that year's stops and trip routes over a bundled
+  North America outline, colored by trip), monthly trend, top brands,
+  longest trip. (A current-year recap trims the monthly trend to the
+  months elapsed so far.) A **PDF / HTML** segmented picker chooses the
+  format, then one **Save** and one **Share** button export it — either
+  a single-page PDF, or a self-contained **HTML** report: a richer,
+  responsive page (full monthly cost+energy table, a Cost/Energy chart
+  toggle, and the same charging map). The HTML opens offline in any
   browser with no external resources, so nothing leaves the phone.
   When you open it from a specific vehicle's tab, the recap and its
   exports are scoped to that vehicle (and the filename includes its name).
 
 ### Settings
 - **Vehicles** — manage your EVs and pick a default for new sessions.
-- **Units & currency** — Kilometres / Miles segmented switch and CAD / USD
-  default-currency switch. Distances are stored canonically in km; the
-  switch only affects display + form labels. Each session keeps the
-  currency it was saved with — the default just seeds new sessions and
-  tags totals on the dashboards.
+- **Units & currency** — Kilometres / Miles segmented switch, a CAD / USD
+  default-currency switch, and a **Time rate on cards** switch (Off /
+  $/min / $/hr) that shows each charge's cost per minute or hour on its
+  card. Distances are stored canonically in km; the switch only affects
+  display + form labels. Each session keeps the currency it was saved
+  with — the default just seeds new sessions and tags totals on the
+  dashboards.
+- **Theme** — System / Light / Dark segmented switch. System follows your
+  phone's dark-mode setting; Light and Dark force the corresponding
+  palette.
 - **Full backup** — **Save** a `.zip` to a folder you pick, **Share** it
   out via Drive / email / Messages / etc., or **Restore** from a backup
-  zip. The card shows **when you last backed up**, and every restore
+  zip. The card shows **when you last backed up**, and every restore or replace-import
   automatically snapshots your current data first — an **Undo last
-  restore** button brings it back if you restored the wrong file (and
+  restore or import** button brings it back if you restored or imported the
+  wrong file (and
   the undo is itself undoable). Note that Android's own automatic
   backup doesn't include photos or receipts — the in-app zip is the
   only complete copy.
@@ -275,8 +341,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 
 ### Theming
 - Hand-tuned Material 3 EV-green palette (light + dark), with charging-
-  type accents (amber / blue / purple). Material You dynamic color is off
-  by default so the look stays consistent regardless of wallpaper.
+  type accents (amber / blue / purple) that are themselves theme-aware,
+  re-toned for dark mode so they keep their pop instead of washing out on
+  dark surfaces. Material You dynamic color is off by default so the look
+  stays consistent regardless of wallpaper.
 
 ## Open in Android Studio
 

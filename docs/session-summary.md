@@ -250,13 +250,34 @@ in review.
   end via `nullsLast` / `nullsFirst` (descending needs the latter
   to keep nulls at the bottom). Not persisted across launches —
   matches the in-memory `vehicleFilter` pattern.
-- **Multi-select**: long-press to enter selection mode, tap to toggle.
-  Selection-mode top bar shows count + clear / select-all / assign
-  trip. Bulk-assign trip uses a single SQL UPDATE.
+- **Sticky month headers** — when the log is in Date order the rows are
+  bucketed into "MMMM yyyy" groups (`monthGroups`) and each month's
+  label rides the top edge as a `stickyHeader` while its rows scroll
+  beneath it. Only the Date sort gets headers; cost / efficiency / brand
+  orders interleave months, so they render a flat, header-less list.
+- **Multi-select**: long-press a row to enter selection mode, or tap the
+  Checklist icon in the top bar (shown once there's at least one
+  session); tap rows to toggle. Selection-mode top bar shows count +
+  clear / select-all / assign trip / **delete**. Bulk-assign trip uses a
+  single SQL UPDATE. Bulk delete pops a red "Delete N sessions?"
+  confirmation, then reads each session's receipt rows before the delete
+  cascades them, removes the rows in one transaction, and parks the whole
+  batch on the undo holder (see "Undo after delete").
 - **System back** in selection mode → clears selection; with active
   filters → clears them.
-- **Start-charge quick-track** — the + FAB opens a chooser ("Track a
-  charge now" / "Add a past session"). Track-now persists a fresh
+- **Undo after delete** — a delete (single, from the edit screen's
+  Delete button, or a multi-select batch) parks the removed rows on a
+  shared `DeletedSessionUndoHolder` and raises a snackbar on the log —
+  "Session deleted" / "N sessions deleted" with an **Undo** action. Undo
+  re-inserts the rows and re-links their receipt files (which stay on
+  disk until the offer resolves); dismissing it — or leaving the log —
+  finalizes the delete and reclaims the files. The offer lives on the
+  log screen, and its teardown only forfeits the offer it was showing so
+  a replacement offer isn't killed.
+- **Start-charge quick-track** — the extended "Add session" FAB (an
+  `ExtendedFloatingActionButton` that shows its label at the top of the
+  list and collapses to a bare + once the user scrolls) opens a chooser
+  ("Track a charge now" / "Log a past charge"). Track-now persists a fresh
   session immediately (vehicle from the active tab or the default,
   currency from prefs, every other field null) and posts a persistent
   "Charging in progress" notification (`InProgressChargeNotifier`,
@@ -270,6 +291,11 @@ in review.
   tracking (the notifier records the tracked id before the permission
   check). The tracked id is mirrored to DataStore so process death
   doesn't orphan the ongoing notification.
+- **Back-to-top FAB** — a `SmallFloatingActionButton` (up-chevron) fades
+  in above the Add button once the list is scrolled past ~12 rows
+  (`firstVisibleItemIndex > 12`) and animates the list back to the top.
+  Available in selection mode too, since long lists are exactly where
+  multi-select happens.
 - **Backup nudge banner** (tertiary-tone): respects the user's
   configurable threshold (default 30 days) and the master enable
   toggle. State stored in `AppPreferences` DataStore (`last_backup_at`
@@ -277,7 +303,10 @@ in review.
 - **Empty state**: shared `EmptyState` composable on first launch with
   a "Add session" call to action. Same composable used on Vehicles,
   Trips, Stats, and Map for consistent zero-data guidance.
-- Top bar: Search · Sort · Settings. Log / Map / Stats / Trips are
+- **Row animations** — list rows carry `Modifier.animateItem()`, so a
+  delete, an undo re-insert, or a re-sort glides the affected rows into
+  place instead of teleporting.
+- Top bar: Search · Sort · Select · Settings. Log / Map / Stats / Trips are
   bottom-navigation tabs (July 2026): the bar shows only on those four
   top-level screens, tab switches use save/restore-state navigation so
   each tab keeps its scroll/camera/filter state, and system back from
@@ -304,14 +333,15 @@ in review.
   - all un-tripped → default red marker
   - mixed across multiple trips → neutral gray "shared" pin (custom
     bitmap) so the visual doesn't lie about which trip owns the stop
+- **On-map legend** — a compact translucent card in the bottom-left
+  lists the color→trip mapping whenever trip coloring is on and pins are
+  visible: one row per visible trip, plus an "Untripped" (red) row and a
+  "Multiple trips" (gray) row when those pins are present, capped at six
+  rows with a "+N more…" line. Tapping it opens the filter sheet.
 - **Filter sheet** (filter icon in top bar):
-  - "Color pins by trip" switch (off → all-red mode). Toggle forces a
-    `clearItems() + addItems()` on the cluster manager so the
-    `DefaultClusterRenderer` actually re-runs `onBeforeClusterItemRendered`
-    instead of returning cached markers.
-  - "Cluster nearby pins" switch — disables clustering entirely so
-    every pin renders individually regardless of zoom (useful for
-    full-detail browsing of a road trip).
+  - (The "Color pins by trip" and "Cluster nearby pins" toggles no
+    longer live here — they moved to the Layers menu. This sheet now
+    decides only *which* stops show, not how the map looks.)
   - "Show pins for vehicle" — single-select FilterChip row ("All
     vehicles" + one chip per garage entry) hidden when fewer than two
     vehicles exist. The selection is applied *before* stops and trip
@@ -353,6 +383,17 @@ in review.
   (preserving its checkmark state, so flipping heatmap back off
   restores the previous polyline preference). Persisted as
   `mapPolylinesEnabled` (defaults off).
+- **"Color pins by trip"** and **"Cluster nearby pins"** toggles also
+  live in the Layers menu (moved here from the filter sheet — Layers is
+  "how the map looks", the filter sheet is "which stops show"). "Color
+  pins by trip" (off → all-red mode) forces a `clearItems() +
+  addItems()` on the cluster manager so the `DefaultClusterRenderer`
+  re-runs `onBeforeClusterItemRendered` instead of returning cached
+  markers, and it now **persists across restarts** via
+  `AppPreferences.mapColorByTrip` (default on). "Cluster nearby pins"
+  disables clustering entirely so every pin renders individually
+  regardless of zoom, and likewise persists via
+  `AppPreferences.mapClusteringEnabled`.
 - **Manual `ClusterManager`** (rather than the `Clustering(items, …)`
   convenience composable) so we can tune the algorithm and keep
   trip-colored markers. Set up inside `MapEffect(Unit)` once the
@@ -386,15 +427,28 @@ in review.
     stops list, so the sheet auto-closes when a filter change hides
     its pin.
 - **First-open backfill**: when the screen opens, every distinct stop
-  that has only a textual address is reverse-geocoded and the
-  coordinates written back to all sessions sharing that address.
-  Progress shows in a banner. Stops that fail to geocode are reported
-  as "N unlocated" in the subtitle. Throttled to once per 24h via
-  `lastMapBackfillAt` in `AppPreferences` so cold starts don't
-  re-attempt the same unresolvable addresses every launch.
+  that has only a textual address is geocoded and the coordinates
+  written back to all sessions sharing that address. Progress shows in a
+  banner. Stops that fail to geocode are reported as "N unlocated" in
+  the subtitle **and raise a one-time snackbar** once the pass completes
+  ("N addresses couldn't be located — those stops stay off the map…"),
+  so a silently-missing pin gets explained instead of just vanishing.
+  Throttled via `lastMapBackfillAt` in `AppPreferences` so cold starts
+  don't re-attempt the same unresolvable addresses every launch — but
+  the throttle only suppresses **already-attempted** retries: a stop
+  whose address was created or edited since the last attempt
+  (`updatedAt > lastMapBackfillAt`) is always geocoded on the next open,
+  so fresh input is never held back for up to a day.
 - Camera auto-frames around the visible pins on first arrival (gated
   by a `rememberSaveable` flag so subsequent state ticks don't yank
   the camera back).
+- **My-location button** — a bottom-right FAB centers the camera on the
+  device's current fix (zoom 14). The Maps SDK's own button is disabled
+  so there's a single control: it requests the location permission when
+  it isn't held yet, shows an in-button spinner while the fix is
+  fetched, and snackbars on a failed fix or a denied permission. The
+  blue-dot "my location" layer (`isMyLocationEnabled`) renders whenever
+  the permission is held.
 - **Geocoder disambiguation** (`LocationAutofill.geocode`):
   forward-geocode tries the plain query first, retries with the
   country code (Canada/USA) appended if no result, then falls back to
@@ -421,6 +475,17 @@ camera target lat/lng via `SavedStateHandle` on the previous back
 stack entry. Includes the same `MapTypeMenu` for layer selection.
 Camera initial position is seeded via nav String args (Float would
 lose precision; `NavType.Double` doesn't exist out of the box).
+
+A bottom-right my-location FAB mirrors the charging map's: it centers
+the camera on the device's fix — requesting the location permission
+first when needed, with an in-button spinner and a snackbar on a failed
+fix — and the blue-dot layer (`isMyLocationEnabled`) shows whenever the
+permission is held. When the picker opens with **no prior coordinates**
+it seeds at a continent view and then, if the permission is already
+held, jumps to the device's current location (only while the camera is
+still at that zoomed-out default, so a user who has begun panning isn't
+yanked away) — most manual picks are for the charger right in front of
+you.
 
 ### Driving efficiency
 
@@ -480,19 +545,34 @@ vehicle on the same trip.
 
 ### Trips
 
-- **List**: rows show name, sessions, total $, energy, distance
-  ($/km or $/mi based on pref). + FAB opens shared edit dialog.
-- **Detail screen**: stats card (sessions, total $, energy, distance,
-  total charge time with missing-duration flag, average km/kWh from
-  the efficiency analysis when available) + sessions list + driving
-  efficiency card + pencil in top bar for edit dialog.
+- **List**: rows show name, an optional date-range label (the trip's
+  start/end dates), sessions, total $, energy, distance ($/km or $/mi
+  based on pref). Rows carry `Modifier.animateItem()` so they glide to
+  their new slot when a date edit re-sorts the list (newest first) or a
+  trip is deleted. + FAB opens shared edit dialog.
+- **Detail screen**: stats card (an optional date-range label in its
+  header, sessions, total $, energy, distance, total charge time with
+  missing-duration flag, average km/kWh from the efficiency analysis
+  when available) + sessions list — or, when the trip has no sessions
+  yet, a how-to empty state ("No sessions in this trip yet" with
+  tag-from-the-Log instructions) — + driving efficiency card + pencil in
+  top bar for edit dialog.
 - **Edit dialog** (`TripEditDialog`, used for both create and edit):
-  Name, Start/End odometer (unit-aware label, converts to km on save),
-  Notes. "Map pin color" button opens a 5×2 swatch picker.
-  When both start/end odo are filled, distance = `end − start`;
+  Name, optional Start/End **date** pickers (M3 `DatePicker` dialogs
+  stored at local midnight — they label the trip and sort the list, with
+  a "Clear dates" action and a start-after-end guard), Start/End
+  odometer (unit-aware label, converts to km on save), optional
+  Start/End battery % (feeds the trip-anchor drive legs), and Notes. The
+  "Map pin color" button shows the current choice ("Map pin color:
+  <name>", or "Auto") and opens a 5×2 swatch picker that also carries an
+  **"Auto"** row — pick it to let the app assign the least-used color on
+  save. When both start/end odo are filled, distance = `end − start`;
   otherwise distance falls back to spread of session odometer readings.
-- **Auto-color**: new trips get the least-used palette color via
-  round-robin when saved without an explicit pick.
+- **Auto-color**: a trip with no explicit color — a new trip, or an
+  existing one reset to "Auto" in the picker — gets the least-used
+  palette color on save; the trip's own row is excluded from the usage
+  count so a re-pick spreads across the palette instead of counting
+  itself.
 - **Bug fixed** (`fcaaf51`): repository upserts were using
   `OnConflictStrategy.REPLACE` for both insert and update, which on
   edit deleted the old row and fired the FK `ON DELETE SET NULL`
@@ -512,9 +592,20 @@ vehicle on the same trip.
   Constants are hardcoded for now (BC pump-price defaults), earmarked
   for a Settings page later. Card hides entirely when there's no
   driving data this month.
-- Cost-by-month and Energy-by-month — 12-month rolling horizontal
-  bars, normalized to the largest bucket.
-- Top brands by spend (top 8).
+- Cost and Energy trend — a segmented **"Last 12 months / All years"**
+  window selector (`ChartWindowSelector`, backed by `StatsChartWindow`)
+  sits above the two horizontal bar charts and drives both what they
+  cover and their titles: "Cost by month" / "Energy by month" for the
+  rolling 12-month window, "Cost by year" / "Energy by year" for the
+  all-years window (year buckets zero-filled from the first data year,
+  capped at 20). Bars are normalized to the largest bucket and animate
+  into place, re-flowing when you flip months ↔ years. Cost uses the
+  default-currency series; energy spans every currency.
+- Top brands by spend (top 8) — each row is **tappable**: it grows a
+  trailing chevron and, when tapped, jumps to the Log pre-filtered to
+  that brand (`onOpenLogForBrand` → the log's `applyBrandDrilldown`,
+  which swaps in a brand-only filter for the current vehicle scope). A
+  "Tap a brand to see its sessions in the Log" subtitle advertises it.
 - Charging type split (DC/AC L2/AC L1) — stacked bar with %.
 - **"When you charge" card** — two 7×24 day-of-week × hour-of-day
   heatmaps (Sunday on top, midnight on the left) showing where in
@@ -526,11 +617,21 @@ vehicle on the same trip.
   visibly tint. Hour ticks (12 am / 6 am / noon / 6 pm / 11 pm) sit
   underneath via `Arrangement.SpaceBetween` — heuristic alignment with
   the corresponding columns above, deliberately not pixel-perfect.
-  Empty buckets hide their grid entirely.
-- **Year recap entry** — a PDF-icon action in the Stats top bar
-  carries the currently-selected `vehicleFilterId` into a new
-  `YearRecapScreen` (see below). The icon is always present once
-  there's at least one session.
+  Below each grid a **Less → More** legend maps the alpha ramp to
+  intensity, and cells are **tappable**: tapping a day strip selects the
+  hour column under the finger (drawn with an outline) and prints its
+  exact count below the legend ("Sat 5 pm–6 pm · 3 sessions"); tapping
+  the same cell clears it. The card carries a "Rows are days, columns are
+  hours — tap a square for its count" subtitle, and each grid also
+  exposes a one-line TalkBack summary (total + busiest cell) in place of
+  its 168 individually unreadable squares. Empty buckets hide their grid
+  entirely.
+- **Year recap entry** — a labeled **"Recap"** button in the Stats top
+  bar (a `TextButton` with a `Summarize` icon + text, not a bare PDF
+  glyph — the icon alone read as "some PDF button" in testing) carries
+  the currently-selected `vehicleFilterId` into the `YearRecapScreen`
+  (see below). The button is always present (an unconditional top-bar
+  action, even before the first session is logged).
 - Vehicle filter mirrors the log tabs.
 - No charting library; pure Compose primitives (Box width-fraction).
 - **Multi-currency totals**: the Stats headline + per-vehicle lifetime
@@ -545,7 +646,7 @@ vehicle on the same trip.
 
 ### Year recap (`YearRecapScreen`)
 
-End-of-year-style recap reachable from the Stats top-bar PDF icon.
+End-of-year-style recap reachable from the Stats top-bar "Recap" button (a labeled icon+text action, not a bare PDF glyph).
 Pre-selects the year of the user's most recent session (`ScrollableTabRow`
 of years where they have data) and recomputes the recap on each pick.
 
@@ -559,22 +660,35 @@ of years where they have data) and recomputes the recap on each pick.
 - **Content** (scrollable, top to bottom):
   - Headline grid: sessions / total cost / total energy / total
     distance.
-  - Monthly cost (Jan–Dec horizontal bars, same `BarList`-style
-    primitives as the rest of Stats — local copy in
-    `YearRecapScreen` to keep the recap decoupled from `StatsScreen`'s
-    private composables).
+  - Charging map — an on-screen card plotting the year's distinct
+    located stops (trip-colored like the live map, with a shared-stop
+    gray and untripped green) and a route line per trip with 2+ located
+    visits, over a bundled North America coastline, plus a color legend.
+    Uses the same `RecapMapProjection` as the HTML export so both frame
+    the map identically; hidden when no in-year session has coordinates.
+  - Monthly cost — horizontal bars built with the shared
+    `com.evsct.app.ui.BarList` composable. Past years show all 12
+    months; the **current year trims to the elapsed months**
+    (`recapMonthCount`) so, e.g., July's recap isn't padded with five
+    empty rows (a future-dated session extends the window).
   - Top 8 brands by spend.
   - Longest trip (whole-trip distance from
     `TripRepository.observeAllWithStats()`, picked among trips with
     at least one session in the selected year — slight overclaim
     when a trip spans years, accepted for v1).
-- **Save / Share PDF buttons** at the bottom mirror the Full backup
-  pattern: Save uses SAF `CreateDocument("application/pdf")`; Share
-  writes to `cacheDir/recap-share/` and fires `ACTION_SEND` through
-  the existing FileProvider (cache path declared in `file_paths.xml`).
-  Both filenames go through `defaultRecapFilename(year, vehicleName)`
-  — `evsct-recap-2024.pdf` when scope is All,
-  `evsct-recap-2024-Tesla-Model-3.pdf` when scoped, slugified.
+- **Export controls** at the bottom are a **PDF / HTML segmented
+  picker** feeding a single **Save** and a single **Share** button (this
+  replaced the earlier four-button stack); each shows an in-button
+  spinner while its export runs, and the picker disables while busy so
+  the running op always matches the selected format. Success reports via
+  a snackbar, failure via a titled dialog. Save uses SAF `CreateDocument`
+  (`application/pdf` or `text/html`); Share writes to `cacheDir/recap-
+  share/` and fires `ACTION_SEND` through the existing FileProvider
+  (cache path declared in `file_paths.xml`). Filenames go through
+  `defaultRecapFilename(year, vehicleName, ext)` — `evsct-recap-2024.pdf`
+  when scope is All, `evsct-recap-2024-Tesla-Model-3.pdf` when scoped,
+  slugified; the HTML export uses the same names with a `.html`
+  extension.
 - **PDF rendering** (`YearRecapPdf.writeYearRecapPdf`) — single A4
   portrait page with `android.graphics.pdf.PdfDocument`. Layout is
   hand-coded against a fixed point grid: title block, 4-cell
@@ -730,11 +844,17 @@ of years where they have data) and recomputes the recap on each pick.
   so the look stays consistent regardless of wallpaper.
 - Charging-type accents: amber (DC fast), blue (AC L2), purple
   (AC L1) used for row stripes, type badges, and the stats stacked bar.
+  Theme-scoped now, not a single fixed set — `LightEvAccents` /
+  `DarkEvAccents` in `Color.kt` re-tone each hue for its surface (the
+  light trios washed out / seared on dark), and `EvsctTheme` provides
+  the matching `EvAccentPalette` through the `LocalEvAccents`
+  CompositionLocal; a screen picks a type's trio with
+  `EvAccentPalette.forType(type)` (`ChargingTypeAccents.kt`).
 - **Theme override** (`Settings → Theme`): segmented switch with
   System / Light / Dark. SYSTEM follows the OS dark-mode setting;
   LIGHT and DARK force the corresponding palette regardless of OS.
   Stored as `themeMode` in `AppPreferences`; read at the top of
-  `MainActivity` and threaded into `EVSCTTheme` so the override
+  `MainActivity` and threaded into `EvsctTheme` so the override
   applies everywhere including dialogs.
 
 ## Settings screen
@@ -742,15 +862,23 @@ of years where they have data) and recomputes the recap on each pick.
 Cards (top to bottom):
 1. **Vehicles** — entry to the vehicle list.
 2. **Units & currency** — Distance segmented switch (Kilometres /
-   Miles), Default currency segmented switch (CAD / USD).
+   Miles), Default currency segmented switch (CAD / USD), and a Time
+   rate on cards segmented switch (Off / $/min / $/hr).
 3. **Theme** — segmented switch (System / Light / Dark).
 4. **Full backup** — Save backup file… / Share backup file… /
-   Restore from backup….
+   Restore from backup…, plus a conditional Undo last restore or
+   import… button that appears once a pre-restore snapshot exists.
 5. **Backup reminder** — enable, threshold days field, Android
-   notification toggle.
+   notification toggle. Both switch rows are single whole-row toggle
+   targets (`Modifier.toggleable` with `Role.Switch`; the `Switch`
+   itself inert), so a tap anywhere on the row flips it and TalkBack
+   announces one labeled switch.
 6. **Backup (CSV)** — Export to CSV… / Share CSV file….
 7. **Import (CSV)** — Import CSV with replace-existing toggle.
 8. **One-time XLSX import** — for the legacy log.
+9. **About** — running build version + git commit (the commit line
+   links to the matching GitHub commit on clean builds), plus View on
+   GitHub and Privacy-policy links.
 
 Wrapped in `verticalScroll` so the bottom card never falls off (a
 bug we hit early when the list was too tall for some screens).
@@ -761,11 +889,12 @@ bug we hit early when the list was too tall for some screens).
 - `lastBackupAt: Long?`
 - `reminderSettings: Flow<BackupReminderSettings>` (enabled, threshold
   days, notify enabled)
-- `userUnits: Flow<UserUnits>` (useMiles, defaultCurrency)
+- `userUnits: Flow<UserUnits>` (useMiles, defaultCurrency, cardTimeRate)
 - `mapType: Flow<String>` (NORMAL / SATELLITE / HYBRID / TERRAIN)
 - `mapClusteringEnabled: Flow<Boolean>` (default true)
 - `mapHeatmapEnabled: Flow<Boolean>` (default false)
 - `mapPolylinesEnabled: Flow<Boolean>` (default false)
+- `mapColorByTrip: Flow<Boolean>` (default true)
 - `themeMode: Flow<String>` (SYSTEM / LIGHT / DARK)
 - `lastMapBackfillAt(): Long?` (one-shot read for the throttle)
 - `trackedChargeSessionId(): Long?` + setter — mirrors the
@@ -773,6 +902,9 @@ bug we hit early when the list was too tall for some screens).
   death so the ongoing notification can still be cancelled (and the
   edit screen's live tracking resumed) after Android kills the app
   mid-charge
+- `trackedChargeSessionIdFlow: Flow<Long?>` — reactive variant of the
+  above so UI can react when tracking starts or ends (the
+  stale-tracking nudge on the log)
 - `snapshot()` for one-shot reads (used by `BackupReminderNotifier`)
 
 Units/currency are surfaced via a CompositionLocal
@@ -792,11 +924,22 @@ the unit pref as a parameter; aggregates pass the default-currency to
 - **`MoneyStat`** — stacks multi-currency totals vertically when
   mixed; renders single-currency at `titleMedium`. Built on top of
   `CurrencyTotals` so callers don't have to format manually.
+- **`BarList`** — horizontal `[label] [bar] [value]` list shared by the
+  Stats screen and the Year Recap. Bars normalize against the largest
+  value, with a `MIN_BAR_FRACTION` floor so a small-but-real entry still
+  paints a visible sliver next to a big outlier, and each fill animates
+  into place (re-flowing when the data set changes, e.g. months ↔
+  years). An optional `onRowClick` makes rows tappable and grows a
+  trailing chevron (how Stats' brand drill-down advertises itself).
 - **`MapTypeMenu`** — top-bar layer switcher reused by `MapScreen`
-  and `MapPickerScreen`. Optional `heatmapEnabled` / `onToggleHeatmap`
-  and `polylinesEnabled` / `onTogglePolylines` callback pairs surface
-  display-mode rows beneath the basemap list; the picker passes nulls
-  for both pairs and the rows hide. A `polylinesAvailable: Boolean`
+  and `MapPickerScreen`. Optional `heatmapEnabled` / `onToggleHeatmap`,
+  `polylinesEnabled` / `onTogglePolylines`,
+  `colorByTripEnabled` / `onToggleColorByTrip`, and
+  `clusteringEnabled` / `onToggleClustering` callback pairs each surface
+  a display-mode row beneath the basemap list (Heatmap, Trip routes,
+  Color pins by trip, Cluster nearby pins) — how the map LOOKS lives
+  here, while the filter sheet decides what SHOWS; the picker passes
+  nulls for all four pairs and the rows hide. A `polylinesAvailable: Boolean`
   parameter (true by default) lets the screen gray the Trip-routes row
   out when heatmap mode owns the canvas.
 - **`util/Tags.kt`** — comma-joined-string parsing for the new tags
@@ -1065,7 +1208,69 @@ audit (M1 + M2 + Mn1–Mn5), and a later second-pass bug audit. In June
 2026 a third-pass sweep reviewed every layer in parallel (22 findings:
 5 high, 8 medium, 9 low) and closed out everything high and medium.
 In July 2026 a fourth-pass pre-release sweep (`BUG_HUNT_REPORT.md`, 29
-findings) closed out the entire report. Highlights of what got fixed:
+findings) closed out the entire report. A follow-on **UI/UX polish
+sweep** (Phases 1–7) then reworked the app's surface for correctness,
+feedback, navigation, motion, and accessibility. Highlights of what got
+fixed and built (newest first):
+
+- **UI/UX polish sweep** (July 2026; Phases 1-7, PRs #36-#41 on branch `claude/ui-ux-suggestions-otvkm1`):
+  - **Phase 1 — correctness quick wins** (#36): real loading states so
+    lists and detail screens no longer flash blank/empty on the way in
+    (and a blank-insert save race is gone); CSV replace-import gained a
+    confirm dialog + an automatic safety snapshot; filter and edit sheets
+    scroll instead of clipping their bottoms; the filtered-empty state
+    reads honestly ("no matches" vs "no data"); the map-picker pin tip
+    aligns with the true target; Map/Trips bottom icons swapped to match
+    their labels.
+  - **Phase 2 — form ergonomics** (#37): IME Next/Done focus chains walk
+    the fields in order; an unsaved-changes discard guard catches Back
+    mid-edit; a pending tag draft commits on save instead of vanishing;
+    FilterChip rows stopped clipping their selected checkmarks; the
+    odometer dialog grabs focus on open.
+  - **Phase 3 — bottom navigation** (#38): a Log/Map/Stats/Trips bottom
+    bar with save/restore-state tab switches (each tab keeps its scroll/
+    camera/filter state) and predictive back opted in via
+    `enableOnBackInvokedCallback`.
+  - **Phase 4 — feedback & undo** (#39): undo-after-delete for single and
+    bulk deletes via an app-scoped `DeletedSessionUndoHolder` + a
+    count-aware snackbar; bulk delete from multi-select; per-op on-button
+    progress; honest snackbar-success / dialog-failure feedback in
+    Settings and the Year recap; haptics on destructive confirms.
+  - **Phase 5 — stats & recap depth** (#40): tappable brand rows drill
+    into the Log pre-filtered to that brand; a Last-12-months / All-years
+    chart-window selector; a multi-currency `MoneyStat` headline; a
+    Less → More heatmap legend with tappable cells; an on-screen recap
+    map preview sharing `RecapMapProjection` with the HTML export; a
+    2-button (not 4) PDF/HTML export picker; current-year month trimming;
+    theme-aware (dark-mode) charging-type accents; a shared `BarList`
+    with a minimum bar width.
+  - **Phase 6 — map & trips** (#41, part 1): trip start/end date pickers
+    with date labels; a pin-color Auto option + swatch a11y; a
+    trip-detail empty state; a my-location button and dot on the map and
+    picker; picker location seeding; an on-map trip legend;
+    Layers/Filters regrouping (colorByTrip + clustering moved under a
+    Layers menu) with colorByTrip persistence; a geocode-failure snackbar.
+  - **Phase 7 — accessibility & motion** (#41, part 2): sticky month
+    headers; a back-to-top FAB; an extended Add FAB; `animateItem` on
+    lists; animated chart bars; a sliding bottom bar; single-target
+    toggleable switch rows; chart/heatmap/selection TalkBack semantics.
+  - **On-device testing by the owner** surfaced real fixes that review
+    alone missed: phantom checkmarks on selected chips (now rendered
+    explicitly); a bulk delete that lacked the single-delete Undo offer;
+    a brand drill-down that computed the filter but never applied it to
+    the Log; three color choices invisible in one theme (recap-map
+    coastlines in dark, zero-count heatmap cells and bar tracks in light);
+    a throttled geocoder that deferred fresh/edited addresses to the
+    next-day backfill (the 24h throttle now only suppresses
+    already-attempted retries); and a ghost "Session deleted" snackbar
+    left behind on leaving the log (the unresolved undo offer is now
+    forfeited on exit).
+  - **Verification pattern** (matched the fourth-pass sweep): Gradle
+    couldn't run in the cloud container (distribution download blocked),
+    so CI served as the first real compile and every change was
+    verified by review against the source; the owner's on-device testing
+    then caught the runtime-only regressions above that no static review
+    would have surfaced.
 
 - **Fourth-pass pre-release sweep** (July 2026; all 29 findings
   resolved across PRs #31–#34 on branch `claude/evsct-bug-hunt-faxgag`;
@@ -1375,7 +1580,7 @@ findings) closed out the entire report. Highlights of what got fixed:
 
 ## Outstanding ideas (not yet built)
 
-- Per-vehicle lifetime stats by month / year (rolling charts).
+- ~~Per-vehicle lifetime stats by month / year (rolling charts).~~ — **shipped** (Phase 5): the Stats tab scopes to a single vehicle via the All / per-vehicle tab row, and a **Last 12 months / All years** window selector above the cost/energy charts drives them as rolling per-month buckets or per-year buckets across every year with data.
 - Search through Stats / Trips, not just the log.
 - Merge-mode restore (current is replace-only).
 - "View on map" entry from the trip detail screen, filtered to that
