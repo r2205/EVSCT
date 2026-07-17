@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Amber accent layer of the EVSCT lockup: the V, and the bolt ring on the
+     road. Real brand colour, never tinted (EvsctBarTitle draws it with
+     tint = Color.Unspecified over ic_evsct_lockup). The banner's V carries a
+     #FFD27A->#FFA000 gradient; at 26dp that reads as flat, so this uses the
+     dominant #FFA000 the ring and bolt already share. Size/viewport/translate
+     must stay identical to ic_evsct_lockup so the layers register. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="77dp" android:height="26dp"
+    android:viewportWidth="843.3" android:viewportHeight="284">
+  <group android:translateX="-70" android:translateY="-120">
+    <path android:strokeColor="#FFA000" android:strokeWidth="44" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M268,142 L310,278 L352,142"/>
+    <path android:strokeColor="#FFA000" android:strokeWidth="8" android:pathData="M286,356 A24,24 0 1 0 334,356 A24,24 0 1 0 286,356 Z"/>
+    <path android:fillColor="#FFA000" android:pathData="M318,338 L298,366 L311,366 L306,383 L328,357 L315,357 Z"/>
+  </group>
+</vector>

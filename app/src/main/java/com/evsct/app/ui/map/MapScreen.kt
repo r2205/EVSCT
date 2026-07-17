@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
+import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.util.Format
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptor
@@ -213,17 +214,11 @@ fun MapScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("Charging map", fontWeight = FontWeight.SemiBold)
-                        val subtitle = subtitleFor(state)
-                        if (subtitle != null) {
-                            Text(
-                                subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        }
-                    }
+                    // "Map" (the tab's label), not "Charging map": the brand
+                    // lockup plus the long form overflows ahead of this bar's
+                    // two actions on 360dp-wide phones, and the subtitle
+                    // below already says what the map shows.
+                    EvsctBarTitle("Map", subtitle = subtitleFor(state))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,

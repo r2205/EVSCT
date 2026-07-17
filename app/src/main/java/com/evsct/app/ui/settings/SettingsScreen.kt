@@ -75,6 +75,7 @@ import com.evsct.app.BuildConfig
 import com.evsct.app.data.backup.BackupShareChosenReceiver
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.CardTimeRate
+import com.evsct.app.ui.EvsctBarTitle
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -186,7 +187,7 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
+                title = { EvsctBarTitle("Settings") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
