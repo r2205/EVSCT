@@ -16,17 +16,21 @@ import androidx.compose.ui.unit.dp
 import com.evsct.app.R
 
 /**
- * Top-app-bar title with the EVSCT badge mark leading the screen name.
+ * Top-app-bar title with the EVSCT banner lockup leading the screen name.
  *
  * Only the five standing headers use this (Log, Map, Stats, Trips, Settings).
  * Contextual bars (the Log's selection mode) and pushed detail screens keep
- * plain titles, so the mark doubles as a "top of the app" cue.
+ * plain titles, so the lockup doubles as a "top of the app" cue.
  *
- * The mark inherits the bar's titleContentColor through the Icon tint
- * default (LocalContentColor), so it tracks the title text in both themes:
- * white on deep emerald in light, dark green on mint in dark.
+ * The lockup is 77dp wide, so the screens that show it use their short tab
+ * labels ("Log", "Map") as titles — brand and long titles don't both fit
+ * ahead of a full action row on 360dp-wide phones.
  *
- * [subtitle] adds the second bodySmall line the Map header shows; the mark
+ * It inherits the bar's titleContentColor through the Icon tint default
+ * (LocalContentColor), so it tracks the title text in both themes: white on
+ * deep emerald in light, dark green on mint in dark.
+ *
+ * [subtitle] adds the second bodySmall line the Map header shows; the lockup
  * centers against the two-line block.
  */
 @Composable
@@ -40,11 +44,11 @@ fun EvsctBarTitle(
         modifier = modifier,
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_evsct_mark),
+            painter = painterResource(R.drawable.ic_evsct_lockup),
             // Decorative: the title text alongside carries the screen name.
             contentDescription = null,
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Column {
             Text(title, fontWeight = FontWeight.SemiBold)
             if (subtitle != null) {

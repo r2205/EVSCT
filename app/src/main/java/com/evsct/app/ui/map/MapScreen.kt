@@ -214,7 +214,11 @@ fun MapScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    EvsctBarTitle("Charging map", subtitle = subtitleFor(state))
+                    // "Map" (the tab's label), not "Charging map": the brand
+                    // lockup plus the long form overflows ahead of this bar's
+                    // two actions on 360dp-wide phones, and the subtitle
+                    // below already says what the map shows.
+                    EvsctBarTitle("Map", subtitle = subtitleFor(state))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
