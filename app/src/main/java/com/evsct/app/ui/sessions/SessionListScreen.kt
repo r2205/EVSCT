@@ -115,6 +115,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.prefs.CardTimeRate
+import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.forType
@@ -269,7 +270,10 @@ fun SessionListScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Charging log", fontWeight = FontWeight.SemiBold) },
+                    // "Log" (the tab's label), not "Charging log": with the
+                    // brand mark leading the title, the long form ellipsizes
+                    // next to this bar's four actions on 360dp-wide phones.
+                    title = { EvsctBarTitle("Log") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         titleContentColor = MaterialTheme.colorScheme.onPrimary,

@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.BarList
+import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.LocalEvAccents
@@ -75,7 +76,7 @@ fun StatsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Stats", fontWeight = FontWeight.SemiBold) },
+                title = { EvsctBarTitle("Stats") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,

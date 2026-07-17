@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.Format
 import com.evsct.app.util.Money
@@ -60,7 +61,7 @@ fun TripListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Trips", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) },
+                title = { EvsctBarTitle("Trips") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
