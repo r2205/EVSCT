@@ -4,6 +4,10 @@ package com.evsct.app.util
  * Curated list of major North American EV charging networks. Used as suggestions
  * in the brand picker; the user can also type any free-form value or it'll surface
  * brands seen in their own history.
+ *
+ * These names are trademarks of their respective owners, listed solely so users
+ * can label their own charging sessions (nominative use). EVSCT has no
+ * affiliation with any of these networks.
  */
 object Brands {
     val SUGGESTED = listOf(
