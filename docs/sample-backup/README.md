@@ -5,12 +5,13 @@ to testers so they land in a populated app instead of an empty one. It's the
 same `.zip` shape the app writes from **Settings → Full backup → Save / Share**
 (schema v5): a `backup.json` plus generated vehicle photos and receipt files.
 
-There are two packs:
+There are three packs:
 
 | Pack | Sessions | Trips | Use it for |
 | --- | --- | --- | --- |
 | `evsct-sample-backup.zip` | 87 | 5 | the standard tester pack |
 | `evsct-sample-backup-large.zip` | 163 | 10 | long lists, scroll checks, denser map/stats |
+| `evsct-sample-backup-roadtrip.zip` | 160 | 8 | continent-wide map, 3-year history, zero-home-charging stats |
 
 The large pack is a strict superset: the same three vehicles and all of the
 small pack's data, plus five more trips (Toronto Christmas run, Montréal long
@@ -19,6 +20,31 @@ weekend) and ~76 more sessions — a denser home/work charging cadence, winter
 DC stops, three more receipts, and enough trips that **all ten map pin
 colors** are in use. Same physical-consistency guarantees as the small pack
 (see below); data runs Apr 2025 → Jul 2026.
+
+The road-trip pack is a **standalone third dataset** (not a superset — restoring
+it replaces the other packs' data). It covers three full years, **Aug 2023 →
+Jul 2026**, with just two vehicles that both take big road trips across Canada
+and the USA:
+
+- **2023 Kia EV6 GT-Line AWD** (default) — a downtown-condo car that **never
+  charges at home**: 80 sessions of curbside posts, workplace garage, flat-fee
+  mall garages and DC fast, and not a single "Home" entry. Use it to check
+  screens and stats when home kWh is exactly zero.
+- **2022 Ford Mustang Mach-E Premium AWD ER** — suburban home L2 (sparsely
+  logged, the way real users treat a boring flat overnight rate) plus every
+  trip charge. 80 sessions.
+- **8 long-haul trips**: Adirondacks (Oct 2023), Chicago via Michigan
+  (Jun 2024), a 32-session **cross-Canada Ottawa→Banff** run on Petro-Canada's
+  Electric Highway (Jul–Aug 2024), New England fall colours (Oct 2024), a
+  Florida winter escape down I-81/I-95 with 20 USD sessions (Feb 2025), the
+  Gaspésie loop (Jul 2025), Halifax & the Maritimes on NB Power eCharge
+  (Aug 2025), and Nashville & the Smokies (Apr 2026). Map pins stretch from
+  Lake Louise to Orlando.
+- Flavour details: 43 sessions billed in **USD**, Tesla Supercharger stops via
+  the **NACS adapter** (Mach-E from Feb 2025, EV6 from Apr 2026), every pricing
+  model, 7 receipts (4 photos + 3 PDFs), and 2025 *and* 2026 year-recap data.
+  Same physical-consistency guarantees as the other packs, enforced by an
+  assertion pass inside the generator.
 
 ## What's inside
 
@@ -66,12 +92,16 @@ random seed). It needs Python 3 and Pillow:
 
 ```bash
 pip install Pillow
-python3 generate_sample_backup.py         # rewrites evsct-sample-backup.zip
-python3 generate_sample_backup_large.py   # rewrites evsct-sample-backup-large.zip
+python3 generate_sample_backup.py           # rewrites evsct-sample-backup.zip
+python3 generate_sample_backup_large.py     # rewrites evsct-sample-backup-large.zip
+python3 generate_sample_backup_roadtrip.py  # rewrites evsct-sample-backup-roadtrip.zip
 ```
 
 Tweak the vehicle list, station table, or per-vehicle session blocks in that
 script to reshape the sample. The large generator imports the base one,
 rebuilds its dataset verbatim as the starting point, and layers the extra
 trips/sessions on top before re-running the shared odometer/trip-window
-consistency passes — so edits to the base script flow into both packs.
+consistency passes — so edits to the base script flow into both packs. The
+road-trip generator also imports the base script, but only for the shared
+machinery (Builder, image/receipt rendering, consistency passes); its dataset
+is authored from scratch and is unaffected by edits to the base data.
