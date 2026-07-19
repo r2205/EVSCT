@@ -307,6 +307,27 @@ class MapViewModel @Inject constructor(
         filters.update { it.copy(vehicleFilter = vehicleId) }
     }
 
+    /**
+     * Show only [tripId]'s stops: hide every other trip bucket plus the
+     * untripped bucket, and drop any vehicle filter that could mask the
+     * trip's sessions. Backs the trip detail screen's "view on map" jump.
+     * Reads the trip list straight from the repository — not [state], which
+     * may not have emitted yet on a cold open. Returns the trip's located
+     * coordinates so the screen can frame the camera immediately instead of
+     * waiting for the filtered stops to land.
+     */
+    suspend fun focusTrip(tripId: Long): List<Pair<Double, Double>> {
+        val hidden = buildSet<Long?> {
+            tripRepository.observeAll().first()
+                .forEach { if (it.id != tripId) add(it.id) }
+            add(null)
+        }
+        filters.value = MapFilters(hiddenKeys = hidden)
+        return sessionRepository.observeAll().first()
+            .filter { it.tripId == tripId && it.hasCoordinates() }
+            .map { it.latitude!! to it.longitude!! }
+    }
+
     /** Open or close the per-pin session picker. Pass null to dismiss. */
     fun selectStop(stop: MapStop?) {
         selectedStop.value = stop

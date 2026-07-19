@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -54,6 +55,8 @@ import java.util.Locale
 fun TripDetailScreen(
     onBack: () -> Unit,
     onEditSession: (Long) -> Unit,
+    /** Jump to the Map tab filtered down to just this trip's stops. */
+    onViewOnMap: (tripId: Long) -> Unit,
     viewModel: TripDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -82,7 +85,16 @@ fun TripDetailScreen(
                     }
                 },
                 actions = {
-                    if (state.trip != null) {
+                    state.trip?.let { trip ->
+                        // An empty trip can never contribute a pin, so the
+                        // map jump only appears once sessions are tagged.
+                        // Sessions without coordinates still count: the map's
+                        // geocode backfill may locate them on arrival.
+                        if (state.sessions.isNotEmpty()) {
+                            IconButton(onClick = { onViewOnMap(trip.id) }) {
+                                Icon(Icons.Default.Map, contentDescription = "View on map")
+                            }
+                        }
                         IconButton(onClick = { showEdit = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit trip")
                         }

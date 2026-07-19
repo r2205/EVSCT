@@ -74,6 +74,13 @@ object Routes {
     const val LOG_BRAND_FILTER_KEY = "log_brand_filter"
     const val LOG_BRAND_VEHICLE_KEY = "log_brand_vehicle"
 
+    /** SavedStateHandle key the trip detail screen writes onto the Map
+     *  entry before switching tabs — the "show only this trip" payload.
+     *  Same relay as [LOG_BRAND_FILTER_KEY], with one twist: the Map entry
+     *  isn't guaranteed to exist yet (it's not the start destination), so
+     *  the sender navigates first and writes second. */
+    const val MAP_TRIP_FILTER_KEY = "map_trip_filter"
+
     fun mapPicker(lat: Double?, lng: Double?): String {
         // Floats lose precision; pass via String query params and parse back.
         val latArg = lat?.toString().orEmpty()
@@ -261,9 +268,18 @@ fun EvsctNavGraph(navController: NavHostController) {
             YearRecapScreen(onBack = { entry.ifResumed { navController.popBackStack() } })
         }
         composable(Routes.MAP) { entry ->
+            // Trip-focus payload from the trip detail screen (see
+            // MAP_TRIP_FILTER_KEY). Like the Log's brand drill-down, it must
+            // be read off THIS entry's handle — a different object from the
+            // SavedStateHandle Hilt injects into MapViewModel.
+            val handle = entry.savedStateHandle
             MapScreen(
                 onEditSession = { id ->
                     entry.ifResumed { navController.navigate(Routes.sessionEdit(id)) }
+                },
+                requestedTripFocusId = handle.get<Long>(Routes.MAP_TRIP_FILTER_KEY),
+                onTripFocusRequestConsumed = {
+                    handle.remove<Long>(Routes.MAP_TRIP_FILTER_KEY)
                 },
             )
         }
@@ -346,6 +362,30 @@ fun EvsctNavGraph(navController: NavHostController) {
                 onBack = { entry.ifResumed { navController.popBackStack() } },
                 onEditSession = { id ->
                     entry.ifResumed { navController.navigate(Routes.sessionEdit(id)) }
+                },
+                onViewOnMap = { tripId ->
+                    entry.ifResumed {
+                        // Switch to the Map tab with the same stack-preserving
+                        // pattern as the bottom bar, THEN park the payload on
+                        // the entry that navigate() just created or restored —
+                        // the reverse order of the Stats → Log relay, because
+                        // the Map entry may not be on the stack beforehand.
+                        // Composition only catches up after this handler runs,
+                        // so the screen sees the key on its first frame; if
+                        // the entry lookup surprises us, we degrade to a plain
+                        // tab switch instead of a crash.
+                        navController.navigate(Routes.MAP) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                        runCatching { navController.getBackStackEntry(Routes.MAP) }
+                            .getOrNull()
+                            ?.savedStateHandle
+                            ?.set(Routes.MAP_TRIP_FILTER_KEY, tripId)
+                    }
                 },
             )
         }
