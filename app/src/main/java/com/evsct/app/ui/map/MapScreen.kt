@@ -82,6 +82,7 @@ import com.google.maps.android.clustering.ClusterItem
 import com.google.maps.android.clustering.ClusterManager
 import com.google.maps.android.clustering.algo.NonHierarchicalDistanceBasedAlgorithm
 import com.google.maps.android.clustering.view.DefaultClusterRenderer
+import com.google.maps.android.compose.CameraPositionState
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapEffect
 import com.google.maps.android.compose.MapProperties
@@ -102,6 +103,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun MapScreen(
     onEditSession: (Long) -> Unit,
+    /** "Show only this trip" payload from the trip detail screen, read off
+     *  this entry's SavedStateHandle by the nav graph (same relay as the
+     *  Stats → Log brand drill-down). Null when no request is pending. */
+    requestedTripFocusId: Long? = null,
+    onTripFocusRequestConsumed: () -> Unit = {},
     viewModel: MapViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -179,18 +185,28 @@ fun MapScreen(
         if (hasFramedCamera) return@LaunchedEffect
         val pins = state.stops
         if (pins.isEmpty()) return@LaunchedEffect
-        if (pins.size == 1) {
-            val p = pins.first()
-            cameraPositionState.position = CameraPosition.fromLatLngZoom(
-                LatLng(p.latitude, p.longitude), 12f,
-            )
-        } else {
-            val bounds = LatLngBounds.Builder().apply {
-                pins.forEach { include(LatLng(it.latitude, it.longitude)) }
-            }.build()
-            cameraPositionState.position = CameraPosition.fromLatLngZoom(bounds.center, 6f)
-        }
+        frameCameraOn(cameraPositionState, pins.map { it.latitude to it.longitude })
         hasFramedCamera = true
+    }
+
+    // Apply a trip detail "view on map" request once, then clear the handle
+    // key so a later Map visit doesn't re-apply a stale focus. The camera is
+    // framed explicitly from the coordinates focusTrip returns — flipping
+    // hasFramedCamera back to false instead would race the auto-frame above,
+    // whose next stops emission can still be the unfiltered set. Setting it
+    // true afterwards keeps that effect from re-yanking a camera we just
+    // aimed. Consumption happens only after focusTrip completes, so a visit
+    // torn down mid-apply leaves the key in place for the next one. A trip
+    // with no located stops applies the filter but leaves the camera alone —
+    // the "hidden by filter" / backfill affordances take over from there.
+    LaunchedEffect(requestedTripFocusId) {
+        val tripId = requestedTripFocusId ?: return@LaunchedEffect
+        val points = viewModel.focusTrip(tripId)
+        onTripFocusRequestConsumed()
+        if (points.isNotEmpty()) {
+            frameCameraOn(cameraPositionState, points)
+            hasFramedCamera = true
+        }
     }
 
     // Geocode failures used to vanish silently — the backfill counted them
@@ -501,6 +517,25 @@ fun MapScreen(
             },
             onDismiss = { viewModel.selectStop(null) },
         )
+    }
+}
+
+/** Snap the camera to (lat, lng) [points]: a single point gets a street-ish
+ *  zoom, a spread gets its bounds' centre at a regional zoom. Shared by the
+ *  first-emission auto-frame and the trip-focus jump. */
+private fun frameCameraOn(
+    cameraPositionState: CameraPositionState,
+    points: List<Pair<Double, Double>>,
+) {
+    if (points.isEmpty()) return
+    if (points.size == 1) {
+        val (lat, lng) = points.first()
+        cameraPositionState.position = CameraPosition.fromLatLngZoom(LatLng(lat, lng), 12f)
+    } else {
+        val bounds = LatLngBounds.Builder().apply {
+            points.forEach { (lat, lng) -> include(LatLng(lat, lng)) }
+        }.build()
+        cameraPositionState.position = CameraPosition.fromLatLngZoom(bounds.center, 6f)
     }
 }
 
