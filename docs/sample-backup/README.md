@@ -104,4 +104,7 @@ trips/sessions on top before re-running the shared odometer/trip-window
 consistency passes — so edits to the base script flow into both packs. The
 road-trip generator also imports the base script, but only for the shared
 machinery (Builder, image/receipt rendering, consistency passes); its dataset
-is authored from scratch and is unaffected by edits to the base data.
+is authored from scratch and is unaffected by edits to the base data. Unlike
+the other packs it uses real vehicle photos — `vehicle-photo-ev6.jpg` and
+`vehicle-photo-mach-e.jpg` next to the script — and falls back to the
+generated gradient cards if those files are missing.

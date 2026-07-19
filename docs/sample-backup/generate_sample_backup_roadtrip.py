@@ -36,21 +36,37 @@ Out:  evsct-sample-backup-roadtrip.zip  (next to this script)
 from __future__ import annotations
 
 import collections
+import io
 import os
 import json
 import random
 import zipfile
 from datetime import datetime
 
+from PIL import Image
+
 import generate_sample_backup as base
 from generate_sample_backup import Station
 
-OUT_ZIP = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "evsct-sample-backup-roadtrip.zip"
-)
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT_ZIP = os.path.join(HERE, "evsct-sample-backup-roadtrip.zip")
 
 # Independent stream; base.rng stays untouched for lat/lon jitter etc.
 rrng = random.Random(20260719)
+
+
+def real_photo(filename: str, fallback: bytes) -> bytes:
+    """This pack ships real vehicle photos (vehicle-photo-*.jpg next to this
+    script) instead of the generated gradient cards; fall back to the card if
+    an asset is missing so the script still runs from a partial checkout."""
+    path = os.path.join(HERE, filename)
+    if not os.path.exists(path):
+        return fallback
+    img = Image.open(path).convert("RGB")
+    img.thumbnail((1600, 1600), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=87)
+    return buf.getvalue()
 
 
 # --------------------------------------------------------------------------- #
@@ -295,8 +311,9 @@ def build() -> base.Builder:
         "Downtown condo car — street parking only, so it never charges at "
         "home. Lives on curbside posts, the office garage and DC fast; the "
         "800V pack is what makes that livable.",
-        base.vehicle_photo_bytes((32, 33, 38), (208, 158, 42), "EV6",
-                                 "2023 Kia · GT-Line AWD"),
+        real_photo("vehicle-photo-ev6.jpg",
+                   base.vehicle_photo_bytes((32, 33, 38), (208, 158, 42), "EV6",
+                                            "2023 Kia · GT-Line AWD")),
         True, datetime(2023, 8, 5, 17, 30), base_odo=6480.0,
     )
     b.add_vehicle(
@@ -305,8 +322,9 @@ def build() -> base.Builder:
         "The long-haul road-tripper, garaged in Barrhaven. Home L2 only gets "
         "logged now and then — the flat overnight rate isn't worth tracking — "
         "but every trip charge is in here.",
-        base.vehicle_photo_bytes((44, 12, 18), (168, 34, 48), "Mach-E",
-                                 "2022 Ford · Premium AWD ER"),
+        real_photo("vehicle-photo-mach-e.jpg",
+                   base.vehicle_photo_bytes((44, 12, 18), (168, 34, 48), "Mach-E",
+                                            "2022 Ford · Premium AWD ER")),
         False, datetime(2023, 8, 5, 17, 40), base_odo=24310.0,
     )
 
