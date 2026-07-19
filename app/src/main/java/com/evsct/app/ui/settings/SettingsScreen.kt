@@ -921,6 +921,14 @@ private fun AboutCard(context: Context) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
+            Text(
+                "Charging network names and vehicle makes/models are trademarks " +
+                    "of their respective owners, shown only to label your own " +
+                    "sessions and vehicles. EVSCT is an independent app with no " +
+                    "affiliation to any of them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

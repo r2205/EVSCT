@@ -475,3 +475,13 @@ Released under the [Apache License 2.0](LICENSE). Copyright © 2026 David Robson
 
 This is a personal hobby project; bug reports and small fixes are welcome via
 GitHub issues, but I'm not actively soliciting feature contributions.
+
+### Trademarks
+
+EVSCT is an independent personal project. Charging network names that appear
+in the app (Tesla Supercharger, ChargePoint, Electrify America, EVgo, FLO,
+etc.) and any vehicle makes or models you enter are trademarks of their
+respective owners. They are used only so you can label your own charging
+sessions and vehicles. EVSCT is not affiliated with, endorsed by, or
+sponsored by any charging network, automaker, or other company named in the
+app or its documentation.
