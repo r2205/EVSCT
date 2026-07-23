@@ -24,7 +24,7 @@ SVGs (identical content, ~60% smaller).
 | Icon background | `#0F4C3A` | Adaptive launcher background |
 | Mint | `#A8F5BF` → `#5BC489` | Bars, `SCT`, route highlights |
 | Amber | `#FFD27A` → `#FFA000` | `V`, charge-stop node |
-| Route green | `#3FB372` | Route line + endpoint dots |
+| Route green | `#3FB372` | Route line + A→B markers (start ring, destination pin) |
 
 The Android adaptive launcher icon is generated from the same geometry:
 `app/src/main/res/drawable/ic_launcher_foreground.xml` (full-colour) and
