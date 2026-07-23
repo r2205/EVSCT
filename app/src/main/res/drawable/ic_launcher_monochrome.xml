@@ -7,7 +7,10 @@
     <path android:fillColor="#FFFFFF" android:pathData="M184,130 H224 A12,12 0 0 1 236,142 V142 A12,12 0 0 1 224,154 H184 A12,12 0 0 1 172,142 V142 A12,12 0 0 1 184,130 Z"/>
     <path android:fillColor="#FFFFFF" android:pathData="M184,164 H244 A12,12 0 0 1 256,176 V176 A12,12 0 0 1 244,188 H184 A12,12 0 0 1 172,176 V176 A12,12 0 0 1 184,164 Z"/>
     <path android:strokeColor="#FFFFFF" android:strokeWidth="24" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M278,108 L304,178 L330,108"/>
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="20" android:strokeLineCap="round" android:pathData="M96,300 C166,300 178,250 256,250 C334,250 346,300 416,300"/>
+    <!-- Route stroke stops at the bolt badge: the bolt is a punched-out
+         hole, so a line running underneath would show through it. -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="20" android:strokeLineCap="round" android:pathData="M96,300 C137.5,300.0 158.7,282.4 185.3,268.1"/>
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="20" android:strokeLineCap="round" android:pathData="M326.7,268.1 C353.3,282.4 374.5,300.0 416.0,300.0"/>
     <path android:strokeColor="#FFFFFF" android:strokeWidth="11" android:pathData="M79,300 A17,17 0 1 0 113,300 A17,17 0 1 0 79,300 Z"/>
     <path android:fillColor="#FFFFFF" android:fillType="evenOdd" android:pathData="M416,300 C399.4,285.7 393.0,270.6 393.0,256.3 A23,23 0 1 1 439.0,256.3 C439.0,270.6 432.6,285.7 416,300 Z M406.3,256.3 A9.7,9.7 0 1 0 425.7,256.3 A9.7,9.7 0 1 0 406.3,256.3 Z"/>
     <path android:fillColor="#FFFFFF" android:fillType="evenOdd" android:pathData="M201,250 A55,55 0 1 0 311,250 A55,55 0 1 0 201,250 Z M266,202 L222,262 L250,262 L240,298 L290,242 L262,242 Z"/>
