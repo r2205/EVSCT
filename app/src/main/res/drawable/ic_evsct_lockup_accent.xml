@@ -6,11 +6,11 @@
      dominant #FFA000 the ring and bolt already share. Size/viewport/translate
      must stay identical to ic_evsct_lockup so the layers register. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="77dp" android:height="26dp"
-    android:viewportWidth="843.3" android:viewportHeight="284">
-  <group android:translateX="-70" android:translateY="-120">
+    android:width="77dp" android:height="29.8dp"
+    android:viewportWidth="843.8" android:viewportHeight="327">
+  <group android:translateX="-69.5" android:translateY="-120">
     <path android:strokeColor="#FFA000" android:strokeWidth="44" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M268,142 L310,278 L352,142"/>
-    <path android:strokeColor="#FFA000" android:strokeWidth="8" android:pathData="M286,356 A24,24 0 1 0 334,356 A24,24 0 1 0 286,356 Z"/>
-    <path android:fillColor="#FFA000" android:pathData="M318,338 L298,366 L311,366 L306,383 L328,357 L315,357 Z"/>
+    <path android:strokeColor="#FFA000" android:strokeWidth="8" android:pathData="M523,392 A51,51 0 1 0 625,392 A51,51 0 1 0 523,392 Z"/>
+    <path android:fillColor="#FFA000" android:pathData="M584,347 L544,403 L570,403 L560,437 L604,385 L578,385 Z"/>
   </group>
 </vector>

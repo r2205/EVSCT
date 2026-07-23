@@ -6,10 +6,10 @@
 </defs>
 <rect width="1010" height="320" fill="#F7FBF3"/>
 <rect x="40" y="40" width="240" height="240" rx="56" fill="url(#bg)"/>
-<path d="M84,224 C124,224 132,166 170,154 C208,142 224,150 244,200" fill="none" stroke="#A8F5BF" stroke-width="16" stroke-linecap="round"/>
-<circle cx="84" cy="224" r="10" fill="#A8F5BF"/><circle cx="244" cy="200" r="10" fill="#A8F5BF"/>
-<circle cx="170" cy="154" r="27" fill="#FFFFFF" stroke="#FFB300" stroke-width="8"/>
-<path d="M178,134 L156,165 L170,165 L165,184 L188,156 L174,156 Z" fill="#FFB300"/>
+<path d="M84,232 C124,232 138,190 174,180 C206,171 226,181 246,192" fill="none" stroke="#A8F5BF" stroke-width="16" stroke-linecap="round"/>
+<circle cx="84" cy="232" r="14" fill="none" stroke="#A8F5BF" stroke-width="10"/><path d="M246,192 C232.3,180.2 227.0,167.7 227.0,155.9 A19,19 0 1 1 265.0,155.9 C265.0,167.7 259.7,180.2 246,192 Z" fill="#A8F5BF"/><circle cx="246" cy="155.9" r="8.0" fill="#12452F"/>
+<circle cx="150" cy="192.6" r="43" fill="#FFFFFF" stroke="#FFB300" stroke-width="8"/>
+<path d="M159.0,155.1 L126.0,201.6 L147.0,201.6 L139.5,230.1 L174.0,188.1 L153.0,188.1 Z" fill="#FFB300"/>
 <g transform="translate(286,-8) scale(0.8)">
  <g fill="url(#ink)"><rect x="70" y="120" width="150" height="44" rx="22"/><rect x="70" y="188" width="116" height="44" rx="22"/><rect x="70" y="256" width="150" height="44" rx="22"/></g>
  <path d="M268,142 L310,278 L352,142" fill="none" stroke="url(#a)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
