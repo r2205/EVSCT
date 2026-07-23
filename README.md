@@ -14,10 +14,6 @@ you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
 
 ## Screenshots
 
-> **⚠️ Note:** These screenshots are out of date — they predate the Phase 5–7
-> UI changes (the reworked Stats screen, map view, trips, and charging log,
-> among others) and will be refreshed with new captures soon.
-
 _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming](#theming))._
 
 <!--
