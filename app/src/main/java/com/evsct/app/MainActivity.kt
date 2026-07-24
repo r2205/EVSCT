@@ -91,10 +91,11 @@ class MainActivity : ComponentActivity() {
                 else -> systemDark
             }
             EvsctTheme(darkTheme = darkTheme) {
-                // Status/nav bar icon polarity, derived from the colors the
-                // app actually paints under them rather than from the system
-                // night flag enableEdgeToEdge() reads. Inside the theme so it
-                // tracks both the scheme and the in-app override above.
+                // Status/nav bar icon polarity, derived from the resolved
+                // scheme rather than the system night flag enableEdgeToEdge()
+                // reads — that flag can't see the themeMode override above,
+                // so forcing light on a dark system (or the reverse) left the
+                // icons inverted. Must sit inside EvsctTheme to read it.
                 SystemBarIconsFollowTheme()
                 ProvideUserPrefs {
                     Surface(modifier = Modifier.fillMaxSize()) {

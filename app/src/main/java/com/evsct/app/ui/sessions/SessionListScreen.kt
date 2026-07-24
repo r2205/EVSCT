@@ -121,7 +121,6 @@ import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.LocalEvAccents
-import com.evsct.app.ui.theme.StatusBarIconsFor
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
 import com.evsct.app.util.Tags
@@ -596,11 +595,6 @@ private fun SelectionTopBar(
     onAssignTrip: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    // This bar swaps the usual primary green for secondaryContainer, which
-    // runs the opposite icon polarity in both schemes — without this the
-    // clock and battery vanish for as long as selection mode is up. Restores
-    // itself when the bar leaves the composition.
-    StatusBarIconsFor(MaterialTheme.colorScheme.secondaryContainer)
     TopAppBar(
         title = { Text("$selectedCount selected", fontWeight = FontWeight.SemiBold) },
         colors = TopAppBarDefaults.topAppBarColors(

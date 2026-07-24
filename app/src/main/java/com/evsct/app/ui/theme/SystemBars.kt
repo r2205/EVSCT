@@ -16,21 +16,24 @@ import androidx.core.view.WindowInsetsControllerCompat
 /**
  * Icon polarity for the system status and navigation bars.
  *
- * The app draws edge-to-edge, so the system's clock, battery, and gesture
- * pill sit directly on whatever the app paints beneath them — and their
- * light/dark polarity is a window flag, not something the color scheme
- * reaches. `enableEdgeToEdge()`'s default derives that flag from the system
- * night setting, which is wrong here twice over:
+ * The app draws edge-to-edge, so the system's clock, battery, and gesture pill
+ * sit on top of whatever the app paints there — and whether they render light
+ * or dark is a window flag, not something the color scheme reaches.
  *
- *  - Every top app bar is painted `primary` (see any screen's
- *    `topAppBarColors`), which is a *dark* emerald in the light scheme and a
- *    *light* mint in the dark one — the inverse of what the night setting
- *    implies. Dark mode was putting white status icons on `#8DD8A4` at about
- *    1.7:1, right next to a near-black title on the same bar.
- *  - The in-app theme override (Settings → Appearance) can disagree with the
- *    system setting outright, and the flag never learned about it.
+ * What sits under them is the root Scaffold's own container, *not* the
+ * screen's top app bar. `EvsctNavGraph`'s Scaffold declares no `topBar`, so it
+ * offsets the NavHost below the status bar and consumes those insets, which
+ * leaves each screen's `TopAppBar` starting underneath the status bar rather
+ * than painting behind it. The green bar is a red herring: the strip behind
+ * the clock is `background`, and behind the gesture pill is the navigation
+ * bar's container.
  *
- * So polarity is derived from the color actually underneath each bar.
+ * `enableEdgeToEdge()`'s default polarity gets that right, but only while the
+ * app's theme agrees with the system's: it reads the system night setting and
+ * never hears about the in-app override in Settings → Appearance. Forcing
+ * light while the system is dark (or the reverse) left the icons inverted
+ * against the scheme the app actually drew. Deriving the flag from the
+ * resolved scheme fixes that case, and keeps holding if the palette moves.
  */
 
 /** True when this color is light enough to need dark icons on top of it. */
@@ -57,41 +60,20 @@ private fun rememberBarsController(): WindowInsetsControllerCompat? {
 }
 
 /**
- * App-wide default, applied once near the root: status-bar icons contrast
- * with the `primary` top app bar, navigation-bar icons with the `surface`
- * that content scrolls on. Re-applies whenever the scheme changes — a theme
- * toggle in Settings or a system dark-mode flip.
+ * Applied once near the root, against the two colors the system bars actually
+ * overlay. Re-applies whenever the scheme changes — a theme toggle in Settings
+ * or a system dark-mode flip.
  */
 @Composable
 fun SystemBarIconsFollowTheme() {
     val controller = rememberBarsController() ?: return
-    val statusBackdrop = MaterialTheme.colorScheme.primary
-    val navBackdrop = MaterialTheme.colorScheme.surface
-    // DisposableEffect keyed on the backdrops, not SideEffect: this must
-    // re-apply only when the colors actually change, so an incidental
-    // recomposition up here can't clobber a nested [StatusBarIconsFor]
-    // override that's currently in effect.
+    val statusBackdrop = MaterialTheme.colorScheme.background
+    val navBackdrop = MaterialTheme.colorScheme.surfaceContainer
+    // Keyed on the backdrops rather than SideEffect, so this runs when the
+    // colors actually change instead of on every incidental recomposition.
     DisposableEffect(controller, statusBackdrop, navBackdrop) {
         controller.isAppearanceLightStatusBars = statusBackdrop.needsDarkIcons()
         controller.isAppearanceLightNavigationBars = navBackdrop.needsDarkIcons()
         onDispose { }
-    }
-}
-
-/**
- * Screen-scoped override for a contextual top bar that isn't `primary` — the
- * Log's selection mode, whose `secondaryContainer` runs the opposite polarity
- * in both schemes. Restores the theme default on the way out, so leaving
- * selection mode needs no matching call.
- */
-@Composable
-fun StatusBarIconsFor(backdrop: Color) {
-    val controller = rememberBarsController() ?: return
-    val default = MaterialTheme.colorScheme.primary
-    DisposableEffect(controller, backdrop, default) {
-        controller.isAppearanceLightStatusBars = backdrop.needsDarkIcons()
-        onDispose {
-            controller.isAppearanceLightStatusBars = default.needsDarkIcons()
-        }
     }
 }
