@@ -104,6 +104,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -120,6 +121,7 @@ import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.LocalEvAccents
+import com.evsct.app.ui.theme.StatusBarIconsFor
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
 import com.evsct.app.util.Tags
@@ -594,6 +596,11 @@ private fun SelectionTopBar(
     onAssignTrip: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    // This bar swaps the usual primary green for secondaryContainer, which
+    // runs the opposite icon polarity in both schemes — without this the
+    // clock and battery vanish for as long as selection mode is up. Restores
+    // itself when the bar leaves the composition.
+    StatusBarIconsFor(MaterialTheme.colorScheme.secondaryContainer)
     TopAppBar(
         title = { Text("$selectedCount selected", fontWeight = FontWeight.SemiBold) },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -758,9 +765,9 @@ private fun TripPickerRow(label: String, emphasis: Boolean, onClick: () -> Unit)
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryCard(state: SessionListUi) {
-    val units = LocalUserUnits.current
     Card(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         colors = CardDefaults.cardColors(
@@ -768,10 +775,13 @@ private fun SummaryCard(state: SessionListUi) {
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
     ) {
-        Row(
+        // FlowRow, not Row: three unweighted stat columns can't give ground,
+        // so at large font scale — or with a long mixed-currency total — the
+        // last one clipped. Same fix as the Stats headline.
+        FlowRow(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Stat("Sessions", state.sessionCount.toString())
             MoneyStat("Total cost", state.totalCostByCurrency)
@@ -873,13 +883,33 @@ private fun SessionRow(
     val units = LocalUserUnits.current
     val typeAccent = LocalEvAccents.current.forType(session.chargingType)
     val barColor = typeAccent.accent
+    val tags = remember(session.tags) { Tags.parse(session.tags) }
+    val rowDescription = remember(session, tripName, vehicleName, hasReceipt, tags) {
+        sessionRowDescription(session, tripName, vehicleName, hasReceipt, tags)
+    }
     Card(
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            // TalkBack announces "selected"/"not selected" while
-            // multi-selecting — the check circle alone is visual-only.
-            .semantics {
+            // One node per row, phrased as a sentence. Left alone, the card
+            // read as a dozen loose fragments — including the two "·"
+            // separators below, announced as "middle dot" — and the visual
+            // grouping that makes a row scannable is exactly what a screen
+            // reader can't recover.
+            //
+            // clearAndSetSemantics rather than semantics(mergeDescendants):
+            // ContentDescription's merge policy APPENDS descendants' own
+            // descriptions to the parent's, so merging would read the
+            // sentence and then trail "Has receipt" from the icon below.
+            // Clearing drops the descendants outright; nothing inside the
+            // row is actionable, and the row's own click actions survive
+            // (they're on this layout node, not a descendant).
+            //
+            // selected rides along so TalkBack still announces
+            // "selected"/"not selected" while multi-selecting; the check
+            // circle alone is visual-only.
+            .clearAndSetSemantics {
+                contentDescription = rowDescription
                 if (isSelectionMode) selected = isSelected
             },
         shape = RoundedCornerShape(14.dp),
@@ -1036,7 +1066,6 @@ private fun SessionRow(
                         }
                     }
                 }
-                val tags = remember(session.tags) { Tags.parse(session.tags) }
                 if (tags.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     SessionTagsRow(tags)
@@ -1136,6 +1165,80 @@ private fun ChargingType.shortLabel(): String = when (this) {
     ChargingType.DC_FAST -> "DC FAST"
     ChargingType.AC_L2 -> "AC L2"
     ChargingType.AC_L1 -> "AC L1"
+}
+
+/** Spoken form of the badge label — the abbreviations read as loose letters
+ *  ("A C L 2") when a screen reader hits them cold. */
+private fun ChargingType.spokenLabel(): String = when (this) {
+    ChargingType.DC_FAST -> "DC fast"
+    ChargingType.AC_L2 -> "AC level 2"
+    ChargingType.AC_L1 -> "AC level 1"
+}
+
+/* The compact units [Format] renders are right for the eye and wrong for the
+ * ear: "kWh" and "kW" get spelled out letter by letter. These reuse Format's
+ * (locale-aware) number formatting and swap the unit for a word. */
+
+private fun spokenKwh(value: Double?): String? =
+    value?.let { Format.kwh(it).replace("kWh", "kilowatt hours") }
+
+private fun spokenKw(value: Double?): String? =
+    value?.let { Format.kw(it).replace("kW", "kilowatts") }
+
+/** "1 hour 25 minutes" — [Format.duration]'s "1h 25m" reads as bare letters,
+ *  and its "0m 42s" second branch matters little out loud. */
+internal fun spokenDuration(seconds: Long?): String? {
+    if (seconds == null || seconds <= 0) return null
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    val hourPart = when {
+        h == 1L -> "1 hour"
+        h > 1L -> "$h hours"
+        else -> null
+    }
+    val minutePart = when {
+        m == 1L -> "1 minute"
+        m > 1L -> "$m minutes"
+        // Don't drop a sub-minute charge to nothing when there's no hour
+        // either — "less than a minute" is the honest reading.
+        hourPart == null -> "less than a minute"
+        else -> null
+    }
+    return listOfNotNull(hourPart, minutePart).joinToString(" ")
+}
+
+/**
+ * One spoken sentence for a session row, following the same reading order the
+ * card lays out visually: who and where, what it cost and when, how the
+ * charge went, then the pills that qualify it.
+ */
+internal fun sessionRowDescription(
+    session: ChargingSession,
+    tripName: String?,
+    vehicleName: String?,
+    hasReceipt: Boolean,
+    tags: List<String>,
+): String {
+    val parts = mutableListOf<String>()
+    parts += session.brand ?: "Unknown brand"
+    session.locationCity?.let { parts += it }
+    parts += Format.money(session.totalCost, session.currency)
+    parts += Format.dateTime(session.sessionStart)
+    parts += session.chargingType.spokenLabel()
+    spokenKwh(session.energyKwh)?.let { parts += it }
+    spokenDuration(session.durationSeconds)?.let { parts += it }
+    session.waitTimeMinutes?.takeIf { it > 0 }?.let {
+        parts += if (it == 1) "1 minute wait" else "$it minutes wait"
+    }
+    spokenKw(Derived.effectiveAvgPowerKw(session))?.let { parts += "$it average" }
+    vehicleName?.let { parts += it }
+    tripName?.let { parts += "trip $it" }
+    if (hasReceipt) parts += "receipt attached"
+    if (tags.isNotEmpty()) {
+        parts += if (tags.size == 1) "tag ${tags.first()}"
+        else "tags ${tags.joinToString(", ")}"
+    }
+    return parts.joinToString(", ")
 }
 
 /** One month's worth of consecutive sessions in the date-sorted list. */

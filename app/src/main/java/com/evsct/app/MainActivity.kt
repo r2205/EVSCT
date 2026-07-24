@@ -19,6 +19,7 @@ import com.evsct.app.ui.ProvideUserPrefs
 import com.evsct.app.ui.navigation.EvsctNavGraph
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.ui.theme.EvsctTheme
+import com.evsct.app.ui.theme.SystemBarIconsFollowTheme
 import com.evsct.app.util.BackupReminderScheduler
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.MissingMediaSweeper
@@ -90,6 +91,11 @@ class MainActivity : ComponentActivity() {
                 else -> systemDark
             }
             EvsctTheme(darkTheme = darkTheme) {
+                // Status/nav bar icon polarity, derived from the colors the
+                // app actually paints under them rather than from the system
+                // night flag enableEdgeToEdge() reads. Inside the theme so it
+                // tracks both the scheme and the in-app override above.
+                SystemBarIconsFollowTheme()
                 ProvideUserPrefs {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val navController = rememberNavController()

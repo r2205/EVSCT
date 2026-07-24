@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#0F4C3A</color>
+    <!-- Launch-frame background. Mirrors md_background_light in
+         ui/theme/Color.kt — keep the two in step. -->
+    <color name="window_background">#F7FBF3</color>
 </resources>

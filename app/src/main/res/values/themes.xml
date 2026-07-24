@@ -1,4 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.EVSCT" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+      windowBackground is set explicitly, against a night-qualified color, so
+      the launch frame the framework draws before Compose's first frame
+      matches the scheme the app is about to paint. The framework default is
+      light unconditionally, which flashed white on every cold start in dark
+      mode.
+
+      Caveat: resource qualifiers resolve against the *system* night setting,
+      so a user who overrides the theme in Settings (rather than following the
+      system) still gets a launch frame in the system's polarity. Fixing that
+      last case needs the preference read before the window is drawn, which
+      DataStore can't do synchronously.
+    -->
+    <style name="Theme.EVSCT" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
 </resources>
