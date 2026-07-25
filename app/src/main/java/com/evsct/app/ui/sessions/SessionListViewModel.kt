@@ -58,6 +58,49 @@ data class BackupNudge(
     val daysSinceLastBackup: Long? = null,
 )
 
+/**
+ * Which bucket of the log the vehicle tab row is showing.
+ *
+ * [Unassigned] earns its place because a session's vehicle is nullable —
+ * sessions imported from CSV, or logged before any vehicle was set up, carry
+ * none at all. The filter used to be a plain `Long?`, which can only express
+ * "everything" or "this one vehicle", so those sessions were reachable only
+ * under [All], mixed into the whole log: no way to list them, and therefore no
+ * practical way to go assign them.
+ *
+ * Deliberately not a `-1L` sentinel on the old `Long?`. That would have been a
+ * smaller change, but the value flows out to the Add-session and Track-charge
+ * preselect, where it would land as a vehicle id and only behave by
+ * coincidence with the nav layer's own -1 convention.
+ */
+sealed interface VehicleScope {
+    data object All : VehicleScope
+    data object Unassigned : VehicleScope
+    data class One(val id: Long) : VehicleScope
+
+    /** Does [session] belong in this bucket? */
+    fun matches(session: ChargingSession): Boolean = when (this) {
+        All -> true
+        Unassigned -> session.vehicleId == null
+        is One -> session.vehicleId == id
+    }
+}
+
+/**
+ * Fall back to [VehicleScope.All] when this scope has nothing behind it any
+ * more — a vehicle that has since been deleted, or [VehicleScope.Unassigned]
+ * after the last such session was finally given one. Without this the log
+ * would sit empty under a tab that no longer exists in the row above it.
+ */
+internal fun VehicleScope.orAllIfEmpty(
+    vehicles: List<Vehicle>,
+    hasUnassigned: Boolean,
+): VehicleScope = when (this) {
+    VehicleScope.All -> VehicleScope.All
+    VehicleScope.Unassigned -> if (hasUnassigned) this else VehicleScope.All
+    is VehicleScope.One -> if (vehicles.any { it.id == id }) this else VehicleScope.All
+}
+
 data class SessionListUi(
     /** True until the first database emission lands. Distinguishes "still
      *  loading" from "loaded and genuinely empty" so the screen doesn't
@@ -83,7 +126,11 @@ data class SessionListUi(
      *  entered with nothing selected yet (mode is otherwise derived from a
      *  non-empty selection, which a button tap can't produce). */
     val selectionRequested: Boolean = false,
-    val vehicleFilterId: Long? = null,
+    val vehicleScope: VehicleScope = VehicleScope.All,
+    /** True when any session in the whole log lacks a vehicle. Computed off
+     *  the unfiltered set, like [brandsInUse] and [tagsInUse], so an active
+     *  search can't make the Unassigned tab disappear mid-use. */
+    val hasUnassignedSessions: Boolean = false,
     val filters: SessionFilters = SessionFilters(),
     val sortOption: SortOption = SortOption.DATE,
     val backupNudge: BackupNudge = BackupNudge(),
@@ -109,7 +156,7 @@ class SessionListViewModel @Inject constructor(
 
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
     private val selectionRequested = MutableStateFlow(false)
-    private val vehicleFilter = MutableStateFlow<Long?>(null)
+    private val vehicleFilter = MutableStateFlow<VehicleScope>(VehicleScope.All)
     private val filters = MutableStateFlow(SessionFilters())
     private val sortOption = MutableStateFlow(SortOption.DATE)
     private val backupNudgeDismissed = MutableStateFlow(false)
@@ -122,7 +169,7 @@ class SessionListViewModel @Inject constructor(
      * payload arrives (see the SESSION_LIST wiring in EvsctNavGraph).
      */
     fun applyBrandDrilldown(brand: String, vehicleId: Long?) {
-        vehicleFilter.value = vehicleId
+        vehicleFilter.value = vehicleId?.let { VehicleScope.One(it) } ?: VehicleScope.All
         filters.value = SessionFilters(brand = brand)
         clearSelection()
     }
@@ -150,8 +197,9 @@ class SessionListViewModel @Inject constructor(
             val (selectedIds, selectionRequestedNow) = sel
             val (f, sort) = fs
 
-            // Drop a vehicle filter that points to a deleted vehicle.
-            val effectiveVehicleFilter = filter?.takeIf { id -> vehicles.any { it.id == id } }
+            val hasUnassigned = allSessions.any { it.vehicleId == null }
+
+            val effectiveScope = filter.orAllIfEmpty(vehicles, hasUnassigned)
 
             // Distinct brands from the unfiltered set, useful for the brand filter
             // sheet so the picker stays the same regardless of the active filters.
@@ -172,7 +220,7 @@ class SessionListViewModel @Inject constructor(
                 .toList()
 
             val sessions = allSessions.asSequence()
-                .filter { effectiveVehicleFilter == null || it.vehicleId == effectiveVehicleFilter }
+                .filter { effectiveScope.matches(it) }
                 .filter { it.matches(f) }
                 .sortedWith(comparatorFor(sort))
                 .toList()
@@ -194,7 +242,8 @@ class SessionListViewModel @Inject constructor(
                 sessionCount = sessions.size,
                 selectedIds = cleanedSelection,
                 selectionRequested = selectionRequestedNow,
-                vehicleFilterId = effectiveVehicleFilter,
+                vehicleScope = effectiveScope,
+                hasUnassignedSessions = hasUnassigned,
                 filters = f,
                 sortOption = sort,
             ) to allSessions.size
@@ -250,8 +299,8 @@ class SessionListViewModel @Inject constructor(
         backupNudgeDismissed.value = true
     }
 
-    fun setVehicleFilter(vehicleId: Long?) {
-        vehicleFilter.value = vehicleId
+    fun setVehicleScope(scope: VehicleScope) {
+        vehicleFilter.value = scope
         clearSelection()
     }
 

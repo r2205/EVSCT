@@ -247,6 +247,11 @@ fun SessionListScreen(
         }
     }
 
+    // Which vehicle a newly added charge should start on. Unassigned behaves
+    // like All here: a new charge should pick up the default vehicle, not
+    // deliberately become another unassigned row for the user to clean up.
+    val preselectVehicleId = (state.vehicleScope as? VehicleScope.One)?.id
+
     // Keep the search/filter strip visible whenever there are active filters,
     // so the user can always see and remove them.
     val showSearchStrip = showSearch || state.filters.hasActive
@@ -370,11 +375,16 @@ fun SessionListScreen(
                     onClearTags = { viewModel.setTagsFilter(emptySet()) },
                 )
             }
-            if (state.vehicles.size >= 2) {
+            // One tab per bucket that actually holds sessions, plus All, and
+            // only once there's more than one bucket to choose between: a lone
+            // vehicle with nothing unassigned needs no chrome at all.
+            val bucketCount = state.vehicles.size + if (state.hasUnassignedSessions) 1 else 0
+            if (bucketCount >= 2) {
                 VehicleTabs(
                     vehicles = state.vehicles,
-                    selectedVehicleId = state.vehicleFilterId,
-                    onSelect = { id -> viewModel.setVehicleFilter(id) },
+                    includeUnassigned = state.hasUnassignedSessions,
+                    scope = state.vehicleScope,
+                    onSelect = { scope -> viewModel.setVehicleScope(scope) },
                 )
             }
             if (state.backupNudge.show && !state.isSelectionMode) {
@@ -417,7 +427,7 @@ fun SessionListScreen(
                             viewModel.clearFilters()
                         },
                     )
-                } else if (state.vehicleFilterId == null && state.vehicles.isEmpty()) {
+                } else if (state.vehicleScope == VehicleScope.All && state.vehicles.isEmpty()) {
                     // First-launch path: no vehicles, no sessions. Saving a
                     // session without a vehicle works but leaves it untagged
                     // and skews per-vehicle stats, so route the user to set
@@ -431,32 +441,41 @@ fun SessionListScreen(
                         onAction = onOpenSettings,
                     )
                 } else {
-                    // Two shapes of "nothing to show": a vehicle tab with an
-                    // empty log of its own, or a log with no sessions at all.
-                    // Both go through the shared EmptyState so they match the
-                    // app's other empty screens — a hand-written copy used to
-                    // live here and had drifted (uncentered text, no gap under
-                    // the title, no room for an action).
-                    val filteredToVehicle = state.vehicleFilterId != null
+                    // Nothing to show, per bucket. All of these go through the
+                    // shared EmptyState so they match the app's other empty
+                    // screens — a hand-written copy used to live here and had
+                    // drifted (uncentered text, no gap under the title, no room
+                    // for an action).
+                    val scope = state.vehicleScope
                     EmptyState(
                         icon = Icons.Default.Bolt,
-                        title = if (filteredToVehicle) "No sessions for this vehicle"
-                        else "No sessions yet",
-                        body = if (filteredToVehicle) {
-                            "Nothing logged against this vehicle yet. Tap Add " +
-                                "session to log one."
-                        } else {
-                            "Tap Add session to log your first charge."
+                        title = when (scope) {
+                            VehicleScope.All -> "No sessions yet"
+                            VehicleScope.Unassigned -> "Nothing unassigned"
+                            is VehicleScope.One -> "No sessions for this vehicle"
+                        },
+                        body = when (scope) {
+                            VehicleScope.All ->
+                                "Tap Add session to log your first charge."
+                            // Defensive: the Unassigned tab only exists while
+                            // such sessions do, and the scope falls back to All
+                            // the moment the last one is assigned. The sealed
+                            // type still wants a branch.
+                            VehicleScope.Unassigned ->
+                                "Every session has a vehicle now."
+                            is VehicleScope.One ->
+                                "Nothing logged against this vehicle yet. Tap " +
+                                    "Add session to log one."
                         },
                         // A button beats the old "or pick All" instruction,
-                        // which asked the user to go find a tab. The other case
+                        // which asked the user to go find a tab. The All case
                         // needs none: the Add session FAB is already on screen
                         // and labelled, so a second button would duplicate it.
-                        actionLabel = if (filteredToVehicle) "Show all vehicles" else null,
-                        onAction = if (filteredToVehicle) {
-                            { viewModel.setVehicleFilter(null) }
-                        } else {
+                        actionLabel = if (scope == VehicleScope.All) null else "Show all sessions",
+                        onAction = if (scope == VehicleScope.All) {
                             null
+                        } else {
+                            { viewModel.setVehicleScope(VehicleScope.All) }
                         },
                     )
                 }
@@ -481,7 +500,7 @@ fun SessionListScreen(
                             // Only surface the vehicle name when the user is on the
                             // "All" tab — otherwise every row would carry the same
                             // tag.
-                            val vehicleName = if (state.vehicleFilterId == null) {
+                            val vehicleName = if (state.vehicleScope == VehicleScope.All) {
                                 s.vehicleId?.let { state.vehicleNamesById[it] }
                             } else null
                             SessionRow(
@@ -552,11 +571,11 @@ fun SessionListScreen(
         AddSessionChooserSheet(
             onTrackNow = {
                 showAddSheet = false
-                startTrackedSession(state.vehicleFilterId)
+                startTrackedSession(preselectVehicleId)
             },
             onAddPast = {
                 showAddSheet = false
-                onAddSession(state.vehicleFilterId)
+                onAddSession(preselectVehicleId)
             },
             onDismiss = { showAddSheet = false },
         )
@@ -828,24 +847,30 @@ private fun Stat(label: String, value: String) {
 @Composable
 private fun VehicleTabs(
     vehicles: List<com.evsct.app.data.entity.Vehicle>,
-    selectedVehicleId: Long?,
-    onSelect: (Long?) -> Unit,
+    includeUnassigned: Boolean,
+    scope: VehicleScope,
+    onSelect: (VehicleScope) -> Unit,
 ) {
-    val tabs = buildList {
-        add(null to "All")
-        vehicles.forEach { add(it.id to it.name) }
+    // Explicit element type: left to builder inference, the first add() would
+    // pin this to Pair<VehicleScope.All, String> and reject the others.
+    val tabs = buildList<Pair<VehicleScope, String>> {
+        add(VehicleScope.All to "All")
+        vehicles.forEach { add(VehicleScope.One(it.id) to it.name) }
+        // Last, after the real vehicles: it's the exception bucket, not a
+        // peer of them.
+        if (includeUnassigned) add(VehicleScope.Unassigned to "Unassigned")
     }
-    val selectedIndex = tabs.indexOfFirst { it.first == selectedVehicleId }.coerceAtLeast(0)
+    val selectedIndex = tabs.indexOfFirst { it.first == scope }.coerceAtLeast(0)
     ScrollableTabRow(
         selectedTabIndex = selectedIndex,
         edgePadding = 12.dp,
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.primary,
     ) {
-        tabs.forEachIndexed { index, (id, label) ->
+        tabs.forEachIndexed { index, (tabScope, label) ->
             Tab(
                 selected = index == selectedIndex,
-                onClick = { onSelect(id) },
+                onClick = { onSelect(tabScope) },
                 text = { Text(label, fontWeight = if (index == selectedIndex) FontWeight.SemiBold else FontWeight.Normal) },
             )
         }
