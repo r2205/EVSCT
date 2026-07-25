@@ -380,11 +380,18 @@ fun SessionEditScreen(
                 )
             }
 
-            // Everything below folds away. A typical charge fills the fields
-            // above and none of these, so they open on demand — or on their
-            // own, when they already hold something (see [CollapsibleSection]).
+            // Everything below folds. While a charge is being entered the
+            // groups all start open — this is where the user decides what the
+            // charge needs, and hunting through folds to find out is worse
+            // than scrolling. A live-tracked charge counts as entry too: its
+            // row exists in the DB (so isNew is false) but the user is still
+            // filling it in. Reviewing a saved charge is the opposite job, and
+            // there the empty groups fold out of the way.
+            val enteringCharge = state.isNew || state.isTracking
+
             CollapsibleSection(
                 title = "Battery & wait",
+                startExpanded = enteringCharge,
                 filledCount = listOf(
                     state.waitTimeText,
                     state.batteryStartText,
@@ -421,6 +428,7 @@ fun SessionEditScreen(
 
             CollapsibleSection(
                 title = "Posted rates",
+                startExpanded = enteringCharge,
                 filledCount = listOf(
                     state.postedEnergyPriceText,
                     state.postedTimeRateText,
@@ -472,6 +480,7 @@ fun SessionEditScreen(
 
             CollapsibleSection(
                 title = "More station detail",
+                startExpanded = enteringCharge,
                 // Coordinates count as a filled field even though no text
                 // input shows them: a location picked on the map is exactly
                 // the kind of thing that must not vanish behind a fold.
@@ -512,6 +521,7 @@ fun SessionEditScreen(
 
             CollapsibleSection(
                 title = "Trip",
+                startExpanded = enteringCharge,
                 filledCount = listOf(
                     state.tripId != null,
                     state.continuesPrevious,
@@ -526,6 +536,7 @@ fun SessionEditScreen(
 
             CollapsibleSection(
                 title = "Receipts",
+                startExpanded = enteringCharge,
                 filledCount = state.receipts.size,
             ) {
                 ReceiptsCard(
@@ -545,6 +556,7 @@ fun SessionEditScreen(
 
             CollapsibleSection(
                 title = "Tags",
+                startExpanded = enteringCharge,
                 // The uncommitted draft counts: save() folds it into the tag
                 // list, so a tag typed but not entered is real data.
                 filledCount = state.tags.size + if (state.tagDraft.isBlank()) 0 else 1,
@@ -566,6 +578,7 @@ fun SessionEditScreen(
 
             CollapsibleSection(
                 title = "Notes",
+                startExpanded = enteringCharge,
                 filledCount = if (state.notes.isBlank()) 0 else 1,
             ) {
                 OutlinedTextField(
@@ -728,17 +741,26 @@ private fun SectionLabel(text: String) {
 /**
  * A foldable group of optional fields, headed by a tappable row.
  *
- * The form runs to two dozen inputs and a typical charge fills fewer than
- * half, so the groups that usually stay empty fold away. Folding is only safe
- * if it can never hide something the user entered, which is what the three
- * rules here are for:
+ * Folding is tuned to the two different jobs this screen does.
  *
- *  - **A group holding a value opens itself.** [filledCount] seeds the initial
- *    state, so opening an existing session never becomes a hunt. It's also
- *    re-checked afterwards, because values arrive while the form is on screen:
- *    the map picker fills in coordinates, GPS autofill fills a city. A group
- *    that gains its first value opens so the new data doesn't land out of
- *    sight.
+ * **Entering a charge** ([startExpanded]) opens everything. The user is about
+ * to decide what this charge needs recording, and making them unfold seven
+ * groups to find out is worse than a long scroll — entry behaves like the flat
+ * form it replaced, except now anything irrelevant can be folded out of the
+ * way.
+ *
+ * **Reviewing a saved charge** folds the groups that came back empty, which is
+ * where the length actually hurts: scrolling past six blank groups to reach the
+ * notes on a charge from four months ago.
+ *
+ * Either way, folding must never hide something the user entered:
+ *
+ *  - **A group holding a value is open**, whichever job we're doing —
+ *    [filledCount] seeds the initial state, and is re-checked afterwards
+ *    because values arrive while the form is on screen. The Recent-stops
+ *    shortcut sits among the always-visible fields but fills the address and
+ *    station name inside a folded group; a group that gains its first value
+ *    opens so that data doesn't land out of sight.
  *  - **A collapsed group still says what's inside**, via the "n set" badge —
  *    a fold should never be mistaken for an empty section.
  *  - **Once the user takes a group in hand, their choice sticks**
@@ -758,10 +780,11 @@ private fun SectionLabel(text: String) {
 private fun CollapsibleSection(
     title: String,
     filledCount: Int,
+    startExpanded: Boolean = false,
     demandsAttention: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(filledCount > 0) }
+    var expanded by rememberSaveable { mutableStateOf(startExpanded || filledCount > 0) }
     var userToggled by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(filledCount, demandsAttention) {
         if (demandsAttention) expanded = true
