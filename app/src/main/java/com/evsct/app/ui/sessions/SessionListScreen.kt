@@ -116,6 +116,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.prefs.CardTimeRate
+import com.evsct.app.ui.EmptyState
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
@@ -405,7 +406,7 @@ fun SessionListScreen(
                     // The log has sessions — the active search/filters just
                     // match none of them. The first-launch copy ("No sessions
                     // yet") would wrongly imply the whole log is empty.
-                    com.evsct.app.ui.EmptyState(
+                    EmptyState(
                         icon = Icons.Default.SearchOff,
                         title = "No matching sessions",
                         body = "Your search and filters don't match any " +
@@ -421,7 +422,7 @@ fun SessionListScreen(
                     // session without a vehicle works but leaves it untagged
                     // and skews per-vehicle stats, so route the user to set
                     // up a vehicle first.
-                    com.evsct.app.ui.EmptyState(
+                    EmptyState(
                         icon = Icons.Default.DirectionsCar,
                         title = "Welcome to EVSCT",
                         body = "Add a vehicle first so charging sessions can " +
@@ -430,7 +431,34 @@ fun SessionListScreen(
                         onAction = onOpenSettings,
                     )
                 } else {
-                    EmptyState(state.vehicleFilterId != null)
+                    // Two shapes of "nothing to show": a vehicle tab with an
+                    // empty log of its own, or a log with no sessions at all.
+                    // Both go through the shared EmptyState so they match the
+                    // app's other empty screens — a hand-written copy used to
+                    // live here and had drifted (uncentered text, no gap under
+                    // the title, no room for an action).
+                    val filteredToVehicle = state.vehicleFilterId != null
+                    EmptyState(
+                        icon = Icons.Default.Bolt,
+                        title = if (filteredToVehicle) "No sessions for this vehicle"
+                        else "No sessions yet",
+                        body = if (filteredToVehicle) {
+                            "Nothing logged against this vehicle yet. Tap Add " +
+                                "session to log one."
+                        } else {
+                            "Tap Add session to log your first charge."
+                        },
+                        // A button beats the old "or pick All" instruction,
+                        // which asked the user to go find a tab. The other case
+                        // needs none: the Add session FAB is already on screen
+                        // and labelled, so a second button would duplicate it.
+                        actionLabel = if (filteredToVehicle) "Show all vehicles" else null,
+                        onAction = if (filteredToVehicle) {
+                            { viewModel.setVehicleFilter(null) }
+                        } else {
+                            null
+                        },
+                    )
                 }
             } else {
                 SummaryCard(state)
@@ -793,43 +821,6 @@ private fun Stat(label: String, value: String) {
             fontWeight = FontWeight.SemiBold,
         )
         Text(label, style = MaterialTheme.typography.labelMedium)
-    }
-}
-
-@Composable
-private fun EmptyState(filtered: Boolean) {
-    Box(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                modifier = Modifier
-                    .height(72.dp)
-                    .width(72.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Default.Bolt,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                if (filtered) "No sessions for this vehicle" else "No sessions yet",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                if (filtered) "Tap + to add one, or pick All to see other vehicles."
-                else "Tap + to log your first charge.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 

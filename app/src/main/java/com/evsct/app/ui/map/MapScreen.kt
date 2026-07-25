@@ -652,6 +652,12 @@ private fun BackfillBanner(text: String) {
     }
 }
 
+/**
+ * Deliberately not the shared [com.evsct.app.ui.EmptyState]: this one renders
+ * *over* a live basemap, so it's the quiet variant — a smaller grey disc and a
+ * bare message, no headline. The shared component's 72dp primary-container
+ * circle and title would compete with the map underneath rather than sit on it.
+ */
 @Composable
 private fun EmptyState(message: String) {
     Box(
