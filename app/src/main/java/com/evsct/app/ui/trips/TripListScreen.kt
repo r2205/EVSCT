@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.ui.EmptyState
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.Format
@@ -79,11 +80,16 @@ fun TripListScreen(
         },
     ) { padding ->
         if (trips.isEmpty()) {
-            com.evsct.app.ui.EmptyState(
+            EmptyState(
                 icon = Icons.Default.Map,
                 title = "No trips yet",
+                // The button below replaces the old "Tap + to create one" —
+                // that sentence pointed at an unlabelled circle and asked the
+                // reader to work out which one.
                 body = "Trips group sessions for road-trip totals and " +
-                    "color-coded map pins. Tap + to create one.",
+                    "color-coded map pins.",
+                actionLabel = "New trip",
+                onAction = { dialogOpen = true },
                 modifier = Modifier.padding(padding).fillMaxSize(),
             )
         } else {

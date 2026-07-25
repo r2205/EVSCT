@@ -42,6 +42,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.EmptyState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,11 +90,16 @@ fun VehicleListScreen(
                 CircularProgressIndicator()
             }
         } else if (loaded.isEmpty()) {
-            com.evsct.app.ui.EmptyState(
+            EmptyState(
                 icon = Icons.Default.DirectionsCar,
                 title = "No vehicles yet",
                 body = "Add the EV(s) you charge so sessions can be tagged " +
                     "and per-vehicle stats become meaningful.",
+                // This screen sits behind the Settings gear, so it's the one
+                // a new user has seen least — an unlabelled + in the corner
+                // was the only way forward from here.
+                actionLabel = "Add vehicle",
+                onAction = onAddVehicle,
                 modifier = Modifier.padding(padding).fillMaxSize(),
             )
         } else {
