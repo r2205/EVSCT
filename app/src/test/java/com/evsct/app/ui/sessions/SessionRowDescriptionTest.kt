@@ -2,6 +2,7 @@ package com.evsct.app.ui.sessions
 
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
+import com.evsct.app.data.prefs.CardTimeRate
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -34,13 +35,19 @@ class SessionRowDescriptionTest {
         locationCity = locationCity,
     )
 
+    /** Defaults to the rates off, so the tests that predate them read as they
+     *  did; the rate cases pass them explicitly. */
     private fun describe(
         s: ChargingSession,
         tripName: String? = null,
         vehicleName: String? = null,
         hasReceipt: Boolean = false,
         tags: List<String> = emptyList(),
-    ) = sessionRowDescription(s, tripName, vehicleName, hasReceipt, tags)
+        effectiveEnergyRate: Double? = null,
+        effectiveTimeRate: CardTimeRateValue? = null,
+    ) = sessionRowDescription(
+        s, tripName, vehicleName, hasReceipt, tags, effectiveEnergyRate, effectiveTimeRate,
+    )
 
     @Test
     fun `units are spoken as words, not letters`() {
@@ -96,6 +103,97 @@ class SessionRowDescriptionTest {
     fun `a missing brand still names the row`() {
         val text = describe(session(brand = null, locationCity = null))
         assertTrue(text.startsWith("Unknown brand"), text)
+    }
+
+    /* ---------------------------- Effective rates --------------------------- */
+
+    // These were on screen and missing from the sentence — the one place a
+    // screen-reader user got less than a sighted one. The slash was why: it
+    // splits a rate into two unrelated numbers out loud.
+    @Test
+    fun `the effective energy rate is spoken as a rate`() {
+        val text = describe(session(), effectiveEnergyRate = 0.55)
+        assertTrue("effective" in text, text)
+        assertTrue("per kilowatt hour" in text, text)
+        assertFalse("/kWh" in text, text)
+        assertFalse("Eff." in text, text)
+    }
+
+    @Test
+    fun `both time rate units are spoken as words`() {
+        val perMin = describe(
+            session(),
+            effectiveTimeRate = CardTimeRateValue(0.81, shortUnit = "min", spokenUnit = "minute"),
+        )
+        assertTrue("per minute" in perMin, perMin)
+        assertFalse("/min" in perMin, perMin)
+
+        val perHour = describe(
+            session(),
+            effectiveTimeRate = CardTimeRateValue(48.60, shortUnit = "hr", spokenUnit = "hour"),
+        )
+        assertTrue("per hour" in perHour, perHour)
+        assertFalse("/hr" in perHour, perHour)
+    }
+
+    // Parity with the card is the whole point: the time rate is a preference,
+    // and a sentence that recites a rate the row isn't showing is its own bug.
+    @Test
+    fun `a rate the row is not showing is not spoken`() {
+        val text = describe(session(), effectiveEnergyRate = 0.55, effectiveTimeRate = null)
+        assertTrue("per kilowatt hour" in text, text)
+        assertFalse("per minute" in text, text)
+        assertFalse("per hour" in text, text)
+
+        val neither = describe(session())
+        assertFalse("effective" in neither, neither)
+    }
+
+    // The sentence claims to follow the card's reading order, where the rates
+    // sit below the stat line and above the vehicle and trip pills.
+    @Test
+    fun `rates are spoken between the stats and the pills`() {
+        val text = describe(
+            session(),
+            vehicleName = "Ioniq 5",
+            tripName = "Gaspé loop",
+            effectiveEnergyRate = 0.55,
+            effectiveTimeRate = CardTimeRateValue(0.81, shortUnit = "min", spokenUnit = "minute"),
+        )
+        val order = listOf("average", "per kilowatt hour", "per minute", "Ioniq 5")
+            .map { it to text.indexOf(it) }
+        order.forEach { (part, at) -> assertTrue(at >= 0, "\"$part\" missing from: $text") }
+        order.zipWithNext { (a, atA), (b, atB) ->
+            assertTrue(atA < atB, "\"$a\" should be spoken before \"$b\": $text")
+        }
+    }
+
+    /* -------------------------- cardTimeRate mapping ------------------------ */
+
+    // The preference is interpreted here and nowhere else, so that the chip and
+    // the sentence can't disagree about which rate a row shows.
+    @Test
+    fun `the card preference picks the matching rate`() {
+        // 24.50 over 1800s: $0.8167/min, $49.00/hr.
+        val s = session()
+        val perMin = cardTimeRate(s, CardTimeRate.PER_MINUTE)!!
+        assertEquals("min", perMin.shortUnit)
+        assertEquals("minute", perMin.spokenUnit)
+        assertEquals(0.8167, perMin.value, 0.001)
+
+        val perHour = cardTimeRate(s, CardTimeRate.PER_HOUR)!!
+        assertEquals("hr", perHour.shortUnit)
+        assertEquals("hour", perHour.spokenUnit)
+        assertEquals(49.0, perHour.value, 0.001)
+
+        assertNull(cardTimeRate(s, CardTimeRate.OFF))
+    }
+
+    @Test
+    fun `no duration means no time rate in any unit`() {
+        val s = session(durationSeconds = null)
+        assertNull(cardTimeRate(s, CardTimeRate.PER_MINUTE))
+        assertNull(cardTimeRate(s, CardTimeRate.PER_HOUR))
     }
 
     @Test

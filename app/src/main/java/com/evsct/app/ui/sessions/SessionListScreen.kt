@@ -863,8 +863,22 @@ private fun SessionRow(
     val typeAccent = LocalEvAccents.current.forType(session.chargingType)
     val barColor = typeAccent.accent
     val tags = remember(session.tags) { Tags.parse(session.tags) }
-    val rowDescription = remember(session, tripName, vehicleName, hasReceipt, tags) {
-        sessionRowDescription(session, tripName, vehicleName, hasReceipt, tags)
+    // Hoisted above the description because both it and the chips further down
+    // render these two, and the spoken form has to agree with what's on screen
+    // — including staying silent when the user has the time rate switched off.
+    val effPrice = Derived.effectiveEnergyPricePerKwh(session)
+    val timeRate = cardTimeRate(session, units.cardTimeRate)
+    // timeRate has to be a key: it depends on the user's card preference, which
+    // `session` says nothing about, so keying on the session alone would leave
+    // the old rate spoken after a toggle in Settings. effPrice is implied by
+    // the session and keyed anyway, so the list doesn't have to be read as a
+    // claim about which inputs matter.
+    val rowDescription = remember(
+        session, tripName, vehicleName, hasReceipt, tags, effPrice, timeRate,
+    ) {
+        sessionRowDescription(
+            session, tripName, vehicleName, hasReceipt, tags, effPrice, timeRate,
+        )
     }
     Card(
         modifier = modifier
@@ -1004,14 +1018,6 @@ private fun SessionRow(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                val effPrice = Derived.effectiveEnergyPricePerKwh(session)
-                val timeRate = when (units.cardTimeRate) {
-                    CardTimeRate.PER_MINUTE ->
-                        Derived.effectiveTimeRatePerMin(session)?.let { Format.moneyPerTime(it, "min") }
-                    CardTimeRate.PER_HOUR ->
-                        Derived.effectiveTimeRatePerHour(session)?.let { Format.moneyPerTime(it, "hr") }
-                    CardTimeRate.OFF -> null
-                }
                 if (effPrice != null || timeRate != null || tripName != null || vehicleName != null) {
                     Spacer(Modifier.height(6.dp))
                     // FlowRow (not Row) so the rate chips and pills wrap to a
@@ -1032,7 +1038,7 @@ private fun SessionRow(
                         }
                         if (timeRate != null) {
                             Text(
-                                "Eff. $timeRate",
+                                "Eff. ${Format.moneyPerTime(timeRate.value, timeRate.shortUnit)}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1154,6 +1160,34 @@ private fun ChargingType.spokenLabel(): String = when (this) {
     ChargingType.AC_L1 -> "AC level 1"
 }
 
+/**
+ * The cost-per-time rate a row shows, already resolved against the user's
+ * [CardTimeRate] preference — null when they've switched it off, or when the
+ * session has no cost or no duration to divide.
+ *
+ * One function decides this because two callers need the same answer in
+ * different words: the visible chip wants "min" and the spoken sentence wants
+ * "minute". Interpreting the preference twice is how the two drift apart.
+ */
+internal data class CardTimeRateValue(
+    val value: Double,
+    /** Compact unit for the chip: "min", "hr". */
+    val shortUnit: String,
+    /** Spoken unit, which [Format]'s abbreviations don't survive out loud. */
+    val spokenUnit: String,
+)
+
+internal fun cardTimeRate(
+    session: ChargingSession,
+    preference: CardTimeRate,
+): CardTimeRateValue? = when (preference) {
+    CardTimeRate.PER_MINUTE -> Derived.effectiveTimeRatePerMin(session)
+        ?.let { CardTimeRateValue(it, shortUnit = "min", spokenUnit = "minute") }
+    CardTimeRate.PER_HOUR -> Derived.effectiveTimeRatePerHour(session)
+        ?.let { CardTimeRateValue(it, shortUnit = "hr", spokenUnit = "hour") }
+    CardTimeRate.OFF -> null
+}
+
 /* The compact units [Format] renders are right for the eye and wrong for the
  * ear: "kWh" and "kW" get spelled out letter by letter. These reuse Format's
  * (locale-aware) number formatting and swap the unit for a word. */
@@ -1163,6 +1197,18 @@ private fun spokenKwh(value: Double?): String? =
 
 private fun spokenKw(value: Double?): String? =
     value?.let { Format.kw(it).replace("kW", "kilowatts") }
+
+/* The rate chips are the worst of the lot: "Eff. $0.550/kWh" reads as "eff
+ * dollar zero point five five zero slash k-W-h". The slash is the real damage
+ * — it turns a rate into two unrelated numbers — so it becomes "per", and
+ * "Eff." becomes the word it abbreviates. */
+
+private fun spokenEnergyRate(perKwh: Double): String =
+    "effective " + Format.moneyRate(perKwh, "kWh").replace("/kWh", " per kilowatt hour")
+
+private fun spokenTimeRate(rate: CardTimeRateValue): String =
+    "effective " + Format.moneyPerTime(rate.value, rate.shortUnit)
+        .replace("/${rate.shortUnit}", " per ${rate.spokenUnit}")
 
 /** "1 hour 25 minutes" — [Format.duration]'s "1h 25m" reads as bare letters,
  *  and its "0m 42s" second branch matters little out loud. */
@@ -1188,8 +1234,12 @@ internal fun spokenDuration(seconds: Long?): String? {
 
 /**
  * One spoken sentence for a session row, following the same reading order the
- * card lays out visually: who and where, what it cost and when, how the
- * charge went, then the pills that qualify it.
+ * card lays out visually: who and where, what it cost and when, how the charge
+ * went, what it worked out to per unit, then the pills that qualify it.
+ *
+ * [effectiveEnergyRate] and [effectiveTimeRate] are supplied rather than
+ * derived, because whether the time rate appears at all is a user preference
+ * and this sentence must say exactly what the row shows — no more, and no less.
  */
 internal fun sessionRowDescription(
     session: ChargingSession,
@@ -1197,6 +1247,8 @@ internal fun sessionRowDescription(
     vehicleName: String?,
     hasReceipt: Boolean,
     tags: List<String>,
+    effectiveEnergyRate: Double?,
+    effectiveTimeRate: CardTimeRateValue?,
 ): String {
     val parts = mutableListOf<String>()
     parts += session.brand ?: "Unknown brand"
@@ -1210,6 +1262,12 @@ internal fun sessionRowDescription(
         parts += if (it == 1) "1 minute wait" else "$it minutes wait"
     }
     spokenKw(Derived.effectiveAvgPowerKw(session))?.let { parts += "$it average" }
+    // Both rates are passed in rather than derived here, so the sentence can't
+    // announce a rate the card isn't showing. "effective" repeats on each, as
+    // "Eff." does on screen, rather than being folded into one clause — the
+    // two rates are separate facts and a listener gets one pass at them.
+    effectiveEnergyRate?.let { parts += spokenEnergyRate(it) }
+    effectiveTimeRate?.let { parts += spokenTimeRate(it) }
     vehicleName?.let { parts += it }
     tripName?.let { parts += "trip $it" }
     if (hasReceipt) parts += "receipt attached"
