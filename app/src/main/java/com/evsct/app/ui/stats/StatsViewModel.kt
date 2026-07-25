@@ -8,6 +8,8 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.VehicleRepository
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.orAllIfEmpty
 import com.evsct.app.util.BrandSpend
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.OdometerDistance
@@ -32,7 +34,11 @@ enum class StatsChartWindow(val label: String) {
 data class StatsUi(
     val isLoading: Boolean = true,
     val vehicles: List<Vehicle> = emptyList(),
-    val vehicleFilterId: Long? = null,
+    val vehicleScope: VehicleScope = VehicleScope.All,
+    /** True when any session at all lacks a vehicle. Computed off the
+     *  unfiltered set so selecting a vehicle can't make the Unassigned
+     *  tab disappear from under the user. */
+    val hasUnassignedSessions: Boolean = false,
     val sessionCount: Int = 0,
     /** Chart cost aggregates are filtered to the user's default currency,
      *  since adding CAD + USD into one chart bar produces a meaningless
@@ -107,19 +113,19 @@ class StatsViewModel @Inject constructor(
     appPreferences: AppPreferences,
 ) : ViewModel() {
 
-    private val vehicleFilter = MutableStateFlow<Long?>(null)
+    private val vehicleScopeFlow = MutableStateFlow<VehicleScope>(VehicleScope.All)
     private val chartWindow = MutableStateFlow(StatsChartWindow.LAST_12_MONTHS)
 
     val state: StateFlow<StatsUi> = combine(
         sessionRepository.observeAll(),
         vehicleRepository.observeAll(),
-        vehicleFilter,
+        vehicleScopeFlow,
         chartWindow,
         appPreferences.userUnits,
     ) { allSessions, vehicles, filter, window, units ->
-        val effectiveFilter = filter?.takeIf { id -> vehicles.any { it.id == id } }
-        val sessions = if (effectiveFilter == null) allSessions
-        else allSessions.filter { it.vehicleId == effectiveFilter }
+        val hasUnassigned = allSessions.any { it.vehicleId == null }
+        val effectiveScope = filter.orAllIfEmpty(vehicles, hasUnassigned)
+        val sessions = allSessions.filter { effectiveScope.matches(it) }
 
         // Cost aggregates only see sessions in the user's default currency.
         // Energy/duration/count aggregates stay across all sessions.
@@ -130,7 +136,8 @@ class StatsViewModel @Inject constructor(
         StatsUi(
             isLoading = false,
             vehicles = vehicles,
-            vehicleFilterId = effectiveFilter,
+            vehicleScope = effectiveScope,
+            hasUnassignedSessions = hasUnassigned,
             sessionCount = sessions.size,
             costCurrency = costCurrency,
             totalCostByCurrency = CurrencyTotals.from(sessions),
@@ -156,7 +163,7 @@ class StatsViewModel @Inject constructor(
         ).withGasComparison(sessions, costSessions)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())
 
-    fun setVehicleFilter(id: Long?) { vehicleFilter.value = id }
+    fun setVehicleScope(scope: VehicleScope) { vehicleScopeFlow.value = scope }
 
     fun setChartWindow(window: StatsChartWindow) { chartWindow.value = window }
 

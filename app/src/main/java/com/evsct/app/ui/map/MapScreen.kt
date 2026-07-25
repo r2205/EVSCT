@@ -71,6 +71,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.EvsctBarTitle
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.util.Format
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptor
@@ -498,7 +500,7 @@ fun MapScreen(
             onToggleTrip = viewModel::toggleTripVisibility,
             onShowAllTrips = viewModel::showAllTrips,
             onHideAllTrips = viewModel::hideAllTrips,
-            onSetVehicleFilter = viewModel::setVehicleFilter,
+            onSetVehicleScope = viewModel::setVehicleScope,
             onResetAll = viewModel::resetFilters,
             onDismiss = { showFilters = false },
         )
@@ -652,6 +654,12 @@ private fun BackfillBanner(text: String) {
     }
 }
 
+/**
+ * Deliberately not the shared [com.evsct.app.ui.EmptyState]: this one renders
+ * *over* a live basemap, so it's the quiet variant — a smaller grey disc and a
+ * bare message, no headline. The shared component's 72dp primary-container
+ * circle and title would compete with the map underneath rather than sit on it.
+ */
 @Composable
 private fun EmptyState(message: String) {
     Box(
@@ -777,7 +785,7 @@ private fun FilterSheet(
     onToggleTrip: (Long?) -> Unit,
     onShowAllTrips: () -> Unit,
     onHideAllTrips: () -> Unit,
-    onSetVehicleFilter: (Long?) -> Unit,
+    onSetVehicleScope: (VehicleScope) -> Unit,
     onResetAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -811,7 +819,7 @@ private fun FilterSheet(
 
             // --- Vehicle filter (hidden when there's only one vehicle to choose
             //     from, since the chips would be a no-op). ---
-            if (ui.vehicles.size >= 2) {
+            if (needsVehiclePicker(ui.vehicles.size, ui.hasUnassignedSessions)) {
                 Text(
                     "Show pins for vehicle",
                     style = MaterialTheme.typography.titleSmall,
@@ -826,15 +834,24 @@ private fun FilterSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     FilterChip(
-                        selected = ui.vehicleFilterId == null,
-                        onClick = { onSetVehicleFilter(null) },
+                        selected = ui.vehicleScope == VehicleScope.All,
+                        onClick = { onSetVehicleScope(VehicleScope.All) },
                         label = { Text("All vehicles") },
                     )
                     ui.vehicles.forEach { vehicle ->
                         FilterChip(
-                            selected = ui.vehicleFilterId == vehicle.id,
-                            onClick = { onSetVehicleFilter(vehicle.id) },
+                            selected = ui.vehicleScope == VehicleScope.One(vehicle.id),
+                            onClick = { onSetVehicleScope(VehicleScope.One(vehicle.id)) },
                             label = { Text(vehicle.name) },
+                        )
+                    }
+                    // Last, after the real vehicles: the exception bucket, and
+                    // the only way to see stops you haven't categorised yet.
+                    if (ui.hasUnassignedSessions) {
+                        FilterChip(
+                            selected = ui.vehicleScope == VehicleScope.Unassigned,
+                            onClick = { onSetVehicleScope(VehicleScope.Unassigned) },
+                            label = { Text("Unassigned") },
                         )
                     }
                 }

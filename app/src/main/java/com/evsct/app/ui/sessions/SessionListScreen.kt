@@ -116,9 +116,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.prefs.CardTimeRate
+import com.evsct.app.ui.EmptyState
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.vehicleScopeFromToken
+import com.evsct.app.ui.VehicleScopeTabs
+import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.LocalEvAccents
 import com.evsct.app.util.Derived
@@ -140,7 +145,7 @@ fun SessionListScreen(
      *  SavedStateHandle by the nav graph (same relay the map picker
      *  uses). Vehicle id uses a -1 sentinel for "all vehicles". */
     requestedBrandFilter: String? = null,
-    requestedBrandVehicleId: Long? = null,
+    requestedBrandScopeToken: String? = null,
     onBrandFilterRequestConsumed: () -> Unit = {},
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
@@ -148,11 +153,11 @@ fun SessionListScreen(
 
     // Apply the Stats drill-down once, then clear the handle keys so a
     // later visit to the Log doesn't re-apply a stale request.
-    LaunchedEffect(requestedBrandFilter, requestedBrandVehicleId) {
+    LaunchedEffect(requestedBrandFilter, requestedBrandScopeToken) {
         val brand = requestedBrandFilter ?: return@LaunchedEffect
         viewModel.applyBrandDrilldown(
             brand = brand,
-            vehicleId = requestedBrandVehicleId?.takeIf { it >= 0 },
+            scope = vehicleScopeFromToken(requestedBrandScopeToken),
         )
         onBrandFilterRequestConsumed()
     }
@@ -245,6 +250,11 @@ fun SessionListScreen(
             viewModel.startTrackedSession(vehicleId) { id -> onStartTrackedSession(id) }
         }
     }
+
+    // Which vehicle a newly added charge should start on. Unassigned behaves
+    // like All here: a new charge should pick up the default vehicle, not
+    // deliberately become another unassigned row for the user to clean up.
+    val preselectVehicleId = (state.vehicleScope as? VehicleScope.One)?.id
 
     // Keep the search/filter strip visible whenever there are active filters,
     // so the user can always see and remove them.
@@ -369,11 +379,15 @@ fun SessionListScreen(
                     onClearTags = { viewModel.setTagsFilter(emptySet()) },
                 )
             }
-            if (state.vehicles.size >= 2) {
-                VehicleTabs(
+            // One tab per bucket that actually holds sessions, plus All, and
+            // only once there's more than one bucket to choose between: a lone
+            // vehicle with nothing unassigned needs no chrome at all.
+            if (needsVehiclePicker(state.vehicles.size, state.hasUnassignedSessions)) {
+                VehicleScopeTabs(
                     vehicles = state.vehicles,
-                    selectedVehicleId = state.vehicleFilterId,
-                    onSelect = { id -> viewModel.setVehicleFilter(id) },
+                    includeUnassigned = state.hasUnassignedSessions,
+                    scope = state.vehicleScope,
+                    onSelect = { scope -> viewModel.setVehicleScope(scope) },
                 )
             }
             if (state.backupNudge.show && !state.isSelectionMode) {
@@ -405,7 +419,7 @@ fun SessionListScreen(
                     // The log has sessions — the active search/filters just
                     // match none of them. The first-launch copy ("No sessions
                     // yet") would wrongly imply the whole log is empty.
-                    com.evsct.app.ui.EmptyState(
+                    EmptyState(
                         icon = Icons.Default.SearchOff,
                         title = "No matching sessions",
                         body = "Your search and filters don't match any " +
@@ -416,12 +430,12 @@ fun SessionListScreen(
                             viewModel.clearFilters()
                         },
                     )
-                } else if (state.vehicleFilterId == null && state.vehicles.isEmpty()) {
+                } else if (state.vehicleScope == VehicleScope.All && state.vehicles.isEmpty()) {
                     // First-launch path: no vehicles, no sessions. Saving a
                     // session without a vehicle works but leaves it untagged
                     // and skews per-vehicle stats, so route the user to set
                     // up a vehicle first.
-                    com.evsct.app.ui.EmptyState(
+                    EmptyState(
                         icon = Icons.Default.DirectionsCar,
                         title = "Welcome to EVSCT",
                         body = "Add a vehicle first so charging sessions can " +
@@ -430,7 +444,43 @@ fun SessionListScreen(
                         onAction = onOpenSettings,
                     )
                 } else {
-                    EmptyState(state.vehicleFilterId != null)
+                    // Nothing to show, per bucket. All of these go through the
+                    // shared EmptyState so they match the app's other empty
+                    // screens — a hand-written copy used to live here and had
+                    // drifted (uncentered text, no gap under the title, no room
+                    // for an action).
+                    val scope = state.vehicleScope
+                    EmptyState(
+                        icon = Icons.Default.Bolt,
+                        title = when (scope) {
+                            VehicleScope.All -> "No sessions yet"
+                            VehicleScope.Unassigned -> "Nothing unassigned"
+                            is VehicleScope.One -> "No sessions for this vehicle"
+                        },
+                        body = when (scope) {
+                            VehicleScope.All ->
+                                "Tap Add session to log your first charge."
+                            // Defensive: the Unassigned tab only exists while
+                            // such sessions do, and the scope falls back to All
+                            // the moment the last one is assigned. The sealed
+                            // type still wants a branch.
+                            VehicleScope.Unassigned ->
+                                "Every session has a vehicle now."
+                            is VehicleScope.One ->
+                                "Nothing logged against this vehicle yet. Tap " +
+                                    "Add session to log one."
+                        },
+                        // A button beats the old "or pick All" instruction,
+                        // which asked the user to go find a tab. The All case
+                        // needs none: the Add session FAB is already on screen
+                        // and labelled, so a second button would duplicate it.
+                        actionLabel = if (scope == VehicleScope.All) null else "Show all sessions",
+                        onAction = if (scope == VehicleScope.All) {
+                            null
+                        } else {
+                            { viewModel.setVehicleScope(VehicleScope.All) }
+                        },
+                    )
                 }
             } else {
                 SummaryCard(state)
@@ -453,7 +503,7 @@ fun SessionListScreen(
                             // Only surface the vehicle name when the user is on the
                             // "All" tab — otherwise every row would carry the same
                             // tag.
-                            val vehicleName = if (state.vehicleFilterId == null) {
+                            val vehicleName = if (state.vehicleScope == VehicleScope.All) {
                                 s.vehicleId?.let { state.vehicleNamesById[it] }
                             } else null
                             SessionRow(
@@ -524,11 +574,11 @@ fun SessionListScreen(
         AddSessionChooserSheet(
             onTrackNow = {
                 showAddSheet = false
-                startTrackedSession(state.vehicleFilterId)
+                startTrackedSession(preselectVehicleId)
             },
             onAddPast = {
                 showAddSheet = false
-                onAddSession(state.vehicleFilterId)
+                onAddSession(preselectVehicleId)
             },
             onDismiss = { showAddSheet = false },
         )
@@ -793,71 +843,6 @@ private fun Stat(label: String, value: String) {
             fontWeight = FontWeight.SemiBold,
         )
         Text(label, style = MaterialTheme.typography.labelMedium)
-    }
-}
-
-@Composable
-private fun EmptyState(filtered: Boolean) {
-    Box(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                modifier = Modifier
-                    .height(72.dp)
-                    .width(72.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Default.Bolt,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                if (filtered) "No sessions for this vehicle" else "No sessions yet",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                if (filtered) "Tap + to add one, or pick All to see other vehicles."
-                else "Tap + to log your first charge.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun VehicleTabs(
-    vehicles: List<com.evsct.app.data.entity.Vehicle>,
-    selectedVehicleId: Long?,
-    onSelect: (Long?) -> Unit,
-) {
-    val tabs = buildList {
-        add(null to "All")
-        vehicles.forEach { add(it.id to it.name) }
-    }
-    val selectedIndex = tabs.indexOfFirst { it.first == selectedVehicleId }.coerceAtLeast(0)
-    ScrollableTabRow(
-        selectedTabIndex = selectedIndex,
-        edgePadding = 12.dp,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.primary,
-    ) {
-        tabs.forEachIndexed { index, (id, label) ->
-            Tab(
-                selected = index == selectedIndex,
-                onClick = { onSelect(id) },
-                text = { Text(label, fontWeight = if (index == selectedIndex) FontWeight.SemiBold else FontWeight.Normal) },
-            )
-        }
     }
 }
 

@@ -28,6 +28,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.toToken
 import com.evsct.app.ui.map.MapPickerScreen
 import com.evsct.app.ui.map.MapScreen
 import com.evsct.app.ui.sessions.SessionEditScreen
@@ -56,7 +58,7 @@ object Routes {
     const val VEHICLE_EDIT_ARG = "vehicleId"
     const val STATS = "stats"
     const val YEAR_RECAP = "stats/recap"
-    const val YEAR_RECAP_VEHICLE_ARG = "vehicleId"
+    const val YEAR_RECAP_SCOPE_ARG = "scope"
     const val MAP = "map"
     const val MAP_PICKER = "map/picker"
     const val MAP_PICKER_LAT_ARG = "lat"
@@ -68,11 +70,11 @@ object Routes {
     /** SavedStateHandle keys the Stats screen writes onto the Log entry
      *  before switching tabs — the brand drill-down payload. The Log's
      *  composable reads them off the entry handle, applies both as a
-     *  fresh filter set via the ViewModel, and clears them. Vehicle uses
-     *  a -1 sentinel for "all vehicles" (same convention as
-     *  [yearRecap]). */
+     *  fresh filter set via the ViewModel, and clears them. The scope
+     *  travels as a VehicleScope token (see [VehicleScope.toToken]), not a
+     *  vehicle id: an id has no way to say "unassigned". */
     const val LOG_BRAND_FILTER_KEY = "log_brand_filter"
-    const val LOG_BRAND_VEHICLE_KEY = "log_brand_vehicle"
+    const val LOG_BRAND_SCOPE_KEY = "log_brand_scope"
 
     /** SavedStateHandle key the trip detail screen writes onto the Map
      *  entry before switching tabs — the "show only this trip" payload.
@@ -96,11 +98,11 @@ object Routes {
 
     fun tripDetail(id: Long): String = "$TRIP_DETAIL/$id"
 
-    /** Year recap optionally scoped to a single vehicle. -1 sentinel means
-     *  "all vehicles" so we can keep the nav argument typed as a primitive
-     *  Long instead of a nullable String. */
-    fun yearRecap(vehicleId: Long?): String =
-        "$YEAR_RECAP?$YEAR_RECAP_VEHICLE_ARG=${vehicleId ?: -1L}"
+    /** Year recap scoped to one bucket of the log — a vehicle, the
+     *  unassigned sessions, or everything. Carries a [VehicleScope] token
+     *  rather than a vehicle id, which could only express two of the three. */
+    fun yearRecap(scope: VehicleScope): String =
+        "$YEAR_RECAP?$YEAR_RECAP_SCOPE_ARG=${scope.toToken()}"
 
     fun vehicleEdit(id: Long? = null): String =
         if (id == null) "$VEHICLE_EDIT?$VEHICLE_EDIT_ARG=-1" else "$VEHICLE_EDIT?$VEHICLE_EDIT_ARG=$id"
@@ -218,19 +220,19 @@ fun EvsctNavGraph(navController: NavHostController) {
                 },
                 onOpenSettings = { entry.ifResumed { navController.navigate(Routes.SETTINGS) } },
                 requestedBrandFilter = handle.get<String>(Routes.LOG_BRAND_FILTER_KEY),
-                requestedBrandVehicleId = handle.get<Long>(Routes.LOG_BRAND_VEHICLE_KEY),
+                requestedBrandScopeToken = handle.get<String>(Routes.LOG_BRAND_SCOPE_KEY),
                 onBrandFilterRequestConsumed = {
                     handle.remove<String>(Routes.LOG_BRAND_FILTER_KEY)
-                    handle.remove<Long>(Routes.LOG_BRAND_VEHICLE_KEY)
+                    handle.remove<String>(Routes.LOG_BRAND_SCOPE_KEY)
                 },
             )
         }
         composable(Routes.STATS) { entry ->
             StatsScreen(
-                onOpenYearRecap = { vehicleId ->
-                    entry.ifResumed { navController.navigate(Routes.yearRecap(vehicleId)) }
+                onOpenYearRecap = { scope ->
+                    entry.ifResumed { navController.navigate(Routes.yearRecap(scope)) }
                 },
-                onOpenLogForBrand = { brand, vehicleId ->
+                onOpenLogForBrand = { brand, scope ->
                     entry.ifResumed {
                         // Hand the Log its drill-down payload, then switch
                         // tabs with the same stack-preserving pattern as the
@@ -242,7 +244,7 @@ fun EvsctNavGraph(navController: NavHostController) {
                             .getOrNull()
                             ?.savedStateHandle
                             ?.let { handle ->
-                                handle[Routes.LOG_BRAND_VEHICLE_KEY] = vehicleId ?: -1L
+                                handle[Routes.LOG_BRAND_SCOPE_KEY] = scope.toToken()
                                 handle[Routes.LOG_BRAND_FILTER_KEY] = brand
                             }
                         navController.navigate(Routes.SESSION_LIST) {
@@ -257,11 +259,11 @@ fun EvsctNavGraph(navController: NavHostController) {
             )
         }
         composable(
-            route = "${Routes.YEAR_RECAP}?${Routes.YEAR_RECAP_VEHICLE_ARG}={${Routes.YEAR_RECAP_VEHICLE_ARG}}",
+            route = "${Routes.YEAR_RECAP}?${Routes.YEAR_RECAP_SCOPE_ARG}={${Routes.YEAR_RECAP_SCOPE_ARG}}",
             arguments = listOf(
-                navArgument(Routes.YEAR_RECAP_VEHICLE_ARG) {
-                    type = NavType.LongType
-                    defaultValue = -1L
+                navArgument(Routes.YEAR_RECAP_SCOPE_ARG) {
+                    type = NavType.StringType
+                    defaultValue = VehicleScope.All.toToken()
                 },
             ),
         ) { entry ->

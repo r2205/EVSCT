@@ -14,6 +14,8 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.OpFeedback
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.vehicleScopeFromToken
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.BrandSpend
 import com.evsct.app.util.OdometerDistance
@@ -161,11 +163,12 @@ class YearRecapViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    /** Vehicle scope captured at navigation time. Null = "All vehicles".
-     *  -1L is the sentinel the route builder uses for "no filter" so the
-     *  arg can stay typed as a primitive Long. */
-    private val vehicleFilterId: Long? =
-        savedStateHandle.get<Long>(Routes.YEAR_RECAP_VEHICLE_ARG)?.takeIf { it >= 0 }
+    /** Bucket of the log this recap covers, captured at navigation time.
+     *  Arrives as a [VehicleScope] token so "unassigned" is expressible —
+     *  a bare vehicle id could only say "one vehicle" or "everything", and
+     *  opening the recap from the Unassigned tab silently widened to all. */
+    private val vehicleScope: VehicleScope =
+        vehicleScopeFromToken(savedStateHandle.get<String>(Routes.YEAR_RECAP_SCOPE_ARG))
 
     private val selectedYear = MutableStateFlow(Calendar.getInstance().get(Calendar.YEAR))
     private val transient = MutableStateFlow(YearRecapUi(isLoading = true))
@@ -180,10 +183,19 @@ class YearRecapViewModel @Inject constructor(
         // Apply the vehicle scope before any year-bucketing — the recap is
         // a snapshot of one vehicle (or all) for the chosen year, including
         // its available-years list.
-        val scoped = if (vehicleFilterId == null) sessions
-        else sessions.filter { it.vehicleId == vehicleFilterId }
-        val vehicleName = vehicleFilterId?.let { id -> vehicles.firstOrNull { it.id == id }?.name }
-        recapFor(scoped, trips, year, units).copy(vehicleName = vehicleName)
+        val scoped = sessions.filter { vehicleScope.matches(it) }
+        // Doubles as the export title suffix and filename slug, so the
+        // unassigned recap is labelled rather than looking like an
+        // all-vehicles one.
+        // Bound to a local so the One branch's id is reachable from inside the
+        // firstOrNull lambda without leaning on a smart cast of a class
+        // property across a lambda boundary.
+        val scopeLabel = when (val scope = vehicleScope) {
+            VehicleScope.All -> null
+            VehicleScope.Unassigned -> "Unassigned"
+            is VehicleScope.One -> vehicles.firstOrNull { it.id == scope.id }?.name
+        }
+        recapFor(scoped, trips, year, units).copy(vehicleName = scopeLabel)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearRecapUi(isLoading = true))
 
     /** Final state merges the computed snapshot with transient flags

@@ -66,6 +66,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -127,7 +128,22 @@ fun YearRecapScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Year recap", fontWeight = FontWeight.SemiBold) },
+                title = {
+                    // The scope belongs on screen, not only in the exported
+                    // file's title. Without it a recap that had silently
+                    // widened to every session looked identical to a correctly
+                    // scoped one — which is how a scoped-to-Unassigned recap
+                    // quietly showing everything went unnoticed.
+                    Column {
+                        Text("Year recap", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            state.vehicleName ?: "All vehicles",
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,

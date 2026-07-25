@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.orAllIfEmpty
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.BackupReminderSettings
 import com.evsct.app.data.repository.SessionReceiptRepository
@@ -83,7 +85,11 @@ data class SessionListUi(
      *  entered with nothing selected yet (mode is otherwise derived from a
      *  non-empty selection, which a button tap can't produce). */
     val selectionRequested: Boolean = false,
-    val vehicleFilterId: Long? = null,
+    val vehicleScope: VehicleScope = VehicleScope.All,
+    /** True when any session in the whole log lacks a vehicle. Computed off
+     *  the unfiltered set, like [brandsInUse] and [tagsInUse], so an active
+     *  search can't make the Unassigned tab disappear mid-use. */
+    val hasUnassignedSessions: Boolean = false,
     val filters: SessionFilters = SessionFilters(),
     val sortOption: SortOption = SortOption.DATE,
     val backupNudge: BackupNudge = BackupNudge(),
@@ -109,20 +115,20 @@ class SessionListViewModel @Inject constructor(
 
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
     private val selectionRequested = MutableStateFlow(false)
-    private val vehicleFilter = MutableStateFlow<Long?>(null)
+    private val vehicleScopeFlow = MutableStateFlow<VehicleScope>(VehicleScope.All)
     private val filters = MutableStateFlow(SessionFilters())
     private val sortOption = MutableStateFlow(SortOption.DATE)
     private val backupNudgeDismissed = MutableStateFlow(false)
 
     /**
      * Brand drill-down from Stats: show exactly "sessions at this brand"
-     * for [vehicleId] (null = all vehicles). Replaces the whole filter
-     * set on purpose — a leftover date or tag filter would quietly shrink
-     * the promised result. The screen calls this when the navigation
-     * payload arrives (see the SESSION_LIST wiring in EvsctNavGraph).
+     * within [scope]. Replaces the whole filter set on purpose — a leftover
+     * date or tag filter would quietly shrink the promised result. The screen
+     * calls this when the navigation payload arrives (see the SESSION_LIST
+     * wiring in EvsctNavGraph).
      */
-    fun applyBrandDrilldown(brand: String, vehicleId: Long?) {
-        vehicleFilter.value = vehicleId
+    fun applyBrandDrilldown(brand: String, scope: VehicleScope) {
+        vehicleScopeFlow.value = scope
         filters.value = SessionFilters(brand = brand)
         clearSelection()
     }
@@ -145,13 +151,14 @@ class SessionListViewModel @Inject constructor(
     ) { sessions, trips, vehicles -> Triple(sessions, trips, vehicles) }
 
     private val baseUi: kotlinx.coroutines.flow.Flow<Pair<SessionListUi, Int>> =
-        combine(coreData, selectionState, vehicleFilter, filtersAndSort) { core, sel, filter, fs ->
+        combine(coreData, selectionState, vehicleScopeFlow, filtersAndSort) { core, sel, filter, fs ->
             val (allSessions, trips, vehicles) = core
             val (selectedIds, selectionRequestedNow) = sel
             val (f, sort) = fs
 
-            // Drop a vehicle filter that points to a deleted vehicle.
-            val effectiveVehicleFilter = filter?.takeIf { id -> vehicles.any { it.id == id } }
+            val hasUnassigned = allSessions.any { it.vehicleId == null }
+
+            val effectiveScope = filter.orAllIfEmpty(vehicles, hasUnassigned)
 
             // Distinct brands from the unfiltered set, useful for the brand filter
             // sheet so the picker stays the same regardless of the active filters.
@@ -172,7 +179,7 @@ class SessionListViewModel @Inject constructor(
                 .toList()
 
             val sessions = allSessions.asSequence()
-                .filter { effectiveVehicleFilter == null || it.vehicleId == effectiveVehicleFilter }
+                .filter { effectiveScope.matches(it) }
                 .filter { it.matches(f) }
                 .sortedWith(comparatorFor(sort))
                 .toList()
@@ -194,7 +201,8 @@ class SessionListViewModel @Inject constructor(
                 sessionCount = sessions.size,
                 selectedIds = cleanedSelection,
                 selectionRequested = selectionRequestedNow,
-                vehicleFilterId = effectiveVehicleFilter,
+                vehicleScope = effectiveScope,
+                hasUnassignedSessions = hasUnassigned,
                 filters = f,
                 sortOption = sort,
             ) to allSessions.size
@@ -250,8 +258,8 @@ class SessionListViewModel @Inject constructor(
         backupNudgeDismissed.value = true
     }
 
-    fun setVehicleFilter(vehicleId: Long?) {
-        vehicleFilter.value = vehicleId
+    fun setVehicleScope(scope: VehicleScope) {
+        vehicleScopeFlow.value = scope
         clearSelection()
     }
 
