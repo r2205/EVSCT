@@ -51,6 +51,13 @@ private val md_outlineVariant_light = Color(0xFFC1C9BD)
 // single palette: light 98 is light `surface`, dark 6 is dark `surface`, dark
 // 10 is light `onSurface`, and dark 90 is dark `onSurface`. Tone 20 spans both
 // schemes too — light `inverseSurface` and dark `inverseOnSurface`.
+//
+// One exception, documented at the value itself: dark `surfaceContainer`
+// carries extra chroma, because the bottom bar was the complaint that started
+// this and the tonally correct value still read as grey. The light scheme is
+// deliberately left at its Material tone — nobody reported the light bar, and
+// chroma reads more readily at tone 94 than at tone 12, so the two schemes
+// need different amounts of it to land in the same place perceptually.
 private val md_surfaceBright_light = Color(0xFFF7FBF3)      // tone 98, as surface
 private val md_surfaceDim_light = Color(0xFFD6DBD1)         // tone 87
 private val md_surfaceContainerLowest_light = Color(0xFFFFFFFF)
@@ -98,7 +105,24 @@ private val md_surfaceBright_dark = Color(0xFF363B35)        // tone 24
 private val md_surfaceDim_dark = Color(0xFF10140E)           // tone 6, as surface
 private val md_surfaceContainerLowest_dark = Color(0xFF0B0F09)
 private val md_surfaceContainerLow_dark = Color(0xFF181D17)
-private val md_surfaceContainer_dark = Color(0xFF1C211B)
+
+// The one role that leaves its Material tone behind. Tone 12 would be
+// #1C211B, which is the right lightness but carries so little chroma that at
+// near-black it still reads as grey — and this role paints the whole width of
+// the bottom bar, the largest flat area of it anywhere in the app. Same
+// lightness, three times the green: the hue registers, and equal *numeric*
+// chroma reads as less hue the darker it gets, so matching the light scheme's
+// perceived tint genuinely needs more of it down here.
+//
+// The ceiling is the selected-tab pill. `NavigationBarItem` draws it in
+// `secondaryContainer` (#384B36), which reads as a pill only by being slightly
+// lighter than the bar, so greening the bar further walks it toward that tone
+// and fades the indicator out. #17231A holds 1.72:1 against the pill against
+// the baseline's 1.73:1 — no ground given. A true emerald bar measures 1.02:1
+// and loses the selected tab entirely, which is why this stops here and why
+// `ColorSchemeTest` pins the ratio.
+private val md_surfaceContainer_dark = Color(0xFF17231A)
+
 private val md_surfaceContainerHigh_dark = Color(0xFF262B25)
 private val md_surfaceContainerHighest_dark = Color(0xFF313630)
 

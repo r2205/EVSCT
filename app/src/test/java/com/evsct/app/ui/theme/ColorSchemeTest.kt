@@ -153,6 +153,37 @@ class ColorSchemeTest {
         )
     }
 
+    // The dark nav bar carries extra chroma so the green actually registers at
+    // near-black, and the thing that caps how far it can go is the selected-tab
+    // pill: NavigationBarItem draws that in secondaryContainer, which reads as
+    // a pill only by sitting slightly lighter than the bar behind it. Greening
+    // the bar walks it toward the pill's own tone.
+    //
+    // The floor is 1.5:1, which is not a standards figure — WCAG would want 3:1
+    // for a UI boundary and Material's own pairing here only manages 1.73:1, so
+    // there is no spec to lean on. It is set just under the shipped 1.72:1 to
+    // catch a bar retoned far enough that the selected tab stops being visible:
+    // a deep emerald measures 1.02:1, and it takes the glyph colors with it,
+    // since `onSecondaryContainer` and `onSurfaceVariant` are both pale greens
+    // that only separate against a dark bar.
+    //
+    // Dark only. The light pill is a pale #D2E8CD on a near-white bar and
+    // manages 1.14:1 — it measured 1.13:1 against the baseline container too,
+    // so this is the palette's own pairing rather than anything the retone did,
+    // and pinning it would assert a number no one chose. Light mode leans on
+    // the glyph instead: #0D1F0E against #414940 separates by 1.85:1, which is
+    // not much on its own but is the selected item reading as markedly darker
+    // rather than as a different hue — and it is what the emerald case loses,
+    // where the two glyph colors close to 1.31:1.
+    @Test
+    fun `the selected tab stays visible against the dark bar`() {
+        val ratio = contrastRatio(
+            EvsctDarkScheme.secondaryContainer,
+            EvsctDarkScheme.surfaceContainer,
+        )
+        assertTrue(ratio >= 1.5f, "pill against bar was $ratio")
+    }
+
     // surfaceContainerHighest is the default container for filled text fields
     // and unstyled Cards, both of which draw onSurface text on top.
     @Test
