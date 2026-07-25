@@ -104,6 +104,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -823,24 +824,56 @@ private fun SummaryCard(state: SessionListUi) {
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
     ) {
-        // FlowRow, not Row: three unweighted stat columns can't give ground,
-        // so at large font scale — or with a long mixed-currency total — the
-        // last one clipped. Same fix as the Stats headline.
-        FlowRow(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Stat("Sessions", state.sessionCount.toString())
-            MoneyStat("Total cost", state.totalCostByCurrency)
-            Stat("Energy", Format.kwh(state.totalKwh))
+        // Three stats across is the right shape only while all three fit. The
+        // FlowRow from #50 stopped the last one clipping, but wrapping was
+        // never the same as looking right: at 2x the row breaks 2-then-1 and
+        // SpaceAround centres that orphan under the *gap* between the two
+        // above it, so nothing lines up with anything. Worse when the total is
+        // mixed-currency, since that column is two lines tall and FlowRow
+        // top-aligns (foundation 1.7 has no itemVerticalAlignment).
+        //
+        // Past the threshold the honest layout isn't a wrapped row, it's one
+        // stat per line. Same three composables either way — only the
+        // container changes, so there's no second copy of the currency logic.
+        if (LocalDensity.current.fontScale >= STACK_STATS_FONT_SCALE) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Stat("Sessions", state.sessionCount.toString(), Modifier.fillMaxWidth())
+                MoneyStat("Total cost", state.totalCostByCurrency, Modifier.fillMaxWidth())
+                Stat("Energy", Format.kwh(state.totalKwh), Modifier.fillMaxWidth())
+            }
+        } else {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Stat("Sessions", state.sessionCount.toString())
+                MoneyStat("Total cost", state.totalCostByCurrency)
+                Stat("Energy", Format.kwh(state.totalKwh))
+            }
         }
     }
 }
 
+/**
+ * Font scale at which the summary's three stats stop sitting side by side and
+ * stack instead.
+ *
+ * 1.5 rather than a width measurement: what breaks the row is the text growing,
+ * and Android's accessibility font sizes step 1.0 / 1.15 / 1.3 / 1.5 / 1.8 / 2.0,
+ * so this splits at a step boundary instead of mid-way through one. The two
+ * smaller steps still fit three across on a phone; the FlowRow stays underneath
+ * as the fallback for the case scale doesn't predict — a long mixed-currency
+ * total at normal size.
+ */
+private const val STACK_STATS_FONT_SCALE = 1.5f
+
 @Composable
-private fun Stat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             value,
             style = MaterialTheme.typography.titleLarge,
@@ -889,10 +922,11 @@ private fun SessionRow(
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             // One node per row, phrased as a sentence. Left alone, the card
-            // read as a dozen loose fragments — including the two "·"
-            // separators below, announced as "middle dot" — and the visual
-            // grouping that makes a row scannable is exactly what a screen
-            // reader can't recover.
+            // read as a dozen loose fragments, and the visual grouping that
+            // makes a row scannable is exactly what a screen reader can't
+            // recover. (It also used to announce two "·" separators as "middle
+            // dot"; those are gone now — the stat line below wraps, and a
+            // separator can't survive a line break.)
             //
             // clearAndSetSemantics rather than semantics(mergeDescendants):
             // ContentDescription's merge policy APPENDS descendants' own
@@ -996,16 +1030,25 @@ private fun SessionRow(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(
+                // FlowRow, and the "·" separators are gone with the plain Row
+                // that held them. #50 converted the summary card and the Stats
+                // headline for this reason and missed this line, which is the
+                // one that actually clips: a Row can't wrap, so at large font
+                // scale "85 kW avg" ran out of width and got cut.
+                //
+                // The dots couldn't survive the change. A wrapped line breaks
+                // wherever the width runs out, which strands a separator at the
+                // end of one line or the start of the next, reading as a typo
+                // rather than punctuation. Spacing carries the grouping instead,
+                // which is also what the row's spoken description already does —
+                // the dots were only ever announced as "middle dot".
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     TypeBadge(session.chargingType)
-                    Spacer(Modifier.width(8.dp))
                     Text(Format.kwh(session.energyKwh), style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.width(12.dp))
-                    Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.width(12.dp))
                     val waitNote = session.waitTimeMinutes
                         ?.takeIf { it > 0 }
                         ?.let { " +${it}m wait" }
@@ -1014,9 +1057,6 @@ private fun SessionRow(
                         Format.duration(session.durationSeconds) + waitNote,
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    Spacer(Modifier.width(12.dp))
-                    Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.width(12.dp))
                     Text(
                         Format.kw(Derived.effectiveAvgPowerKw(session)) + " avg",
                         style = MaterialTheme.typography.bodySmall,
@@ -1920,6 +1960,24 @@ private fun PreviewRowDark() = PreviewRow(
 @Preview(name = "Summary — mixed currency, 2x font", showBackground = true, widthDp = 400, fontScale = 2f)
 @Composable
 private fun PreviewSummaryLargeFont() {
+    EvsctTheme {
+        SummaryCard(
+            SessionListUi(
+                isLoading = false,
+                sessionCount = 128,
+                totalKwh = 3_412.75,
+                totalCostByCurrency = CurrencyTotals(mapOf("CAD" to 1_284.50, "USD" to 96.20)),
+            )
+        )
+    }
+}
+
+/** Just under [STACK_STATS_FONT_SCALE], so this is the wrapped-row branch — the
+ *  layout the stacking exists to replace. Keep it: it's the check that the
+ *  fallback still behaves for the widths font scale can't predict. */
+@Preview(name = "Summary — 1.3x (still a row)", showBackground = true, widthDp = 400, fontScale = 1.3f)
+@Composable
+private fun PreviewSummaryBelowThreshold() {
     EvsctTheme {
         SummaryCard(
             SessionListUi(
