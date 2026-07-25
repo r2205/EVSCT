@@ -122,13 +122,13 @@ class SessionListViewModel @Inject constructor(
 
     /**
      * Brand drill-down from Stats: show exactly "sessions at this brand"
-     * for [vehicleId] (null = all vehicles). Replaces the whole filter
-     * set on purpose — a leftover date or tag filter would quietly shrink
-     * the promised result. The screen calls this when the navigation
-     * payload arrives (see the SESSION_LIST wiring in EvsctNavGraph).
+     * within [scope]. Replaces the whole filter set on purpose — a leftover
+     * date or tag filter would quietly shrink the promised result. The screen
+     * calls this when the navigation payload arrives (see the SESSION_LIST
+     * wiring in EvsctNavGraph).
      */
-    fun applyBrandDrilldown(brand: String, vehicleId: Long?) {
-        vehicleScopeFlow.value = vehicleId?.let { VehicleScope.One(it) } ?: VehicleScope.All
+    fun applyBrandDrilldown(brand: String, scope: VehicleScope) {
+        vehicleScopeFlow.value = scope
         filters.value = SessionFilters(brand = brand)
         clearSelection()
     }

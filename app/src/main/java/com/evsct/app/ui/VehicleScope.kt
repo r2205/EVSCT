@@ -54,3 +54,31 @@ fun VehicleScope.orAllIfEmpty(
  */
 fun needsVehiclePicker(vehicleCount: Int, hasUnassigned: Boolean): Boolean =
     vehicleCount + (if (hasUnassigned) 1 else 0) >= 2
+
+/**
+ * Encoding for carrying a scope across a navigation boundary — the Year Recap
+ * route and the Stats → Log brand drill-down relay.
+ *
+ * Both used to carry a plain `Long?` with -1 for "all vehicles", which had no
+ * room for [VehicleScope.Unassigned]: opening the recap from the Unassigned tab
+ * silently widened it to every session, and the recap screen shows no scope
+ * label, so nothing on screen contradicted it. A three-state bucket needs three
+ * states in the argument, and a token says which one it is instead of leaving
+ * the reader to decode magic numbers.
+ */
+fun VehicleScope.toToken(): String = when (this) {
+    VehicleScope.All -> "all"
+    VehicleScope.Unassigned -> "unassigned"
+    is VehicleScope.One -> id.toString()
+}
+
+/** Inverse of [toToken]. Anything unrecognized reads as [VehicleScope.All] —
+ *  a scope arriving malformed should widen the view, never blank it. */
+fun vehicleScopeFromToken(token: String?): VehicleScope = when (token) {
+    null, "", "all" -> VehicleScope.All
+    "unassigned" -> VehicleScope.Unassigned
+    else -> token.toLongOrNull()
+        ?.takeIf { it >= 0 }
+        ?.let { VehicleScope.One(it) }
+        ?: VehicleScope.All
+}

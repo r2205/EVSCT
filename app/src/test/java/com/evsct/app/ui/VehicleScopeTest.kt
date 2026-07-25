@@ -118,6 +118,42 @@ class VehicleScopeTest {
         assertTrue(needsVehiclePicker(vehicleCount = 2, hasUnassigned = true))
     }
 
+    /* ------------------------- nav-arg tokens ---------------------------- */
+
+    @Test
+    fun `every scope survives a round trip through its token`() {
+        // The Year Recap route and the Stats to Log brand relay both carry a
+        // scope across a navigation boundary. All three buckets have to make
+        // the trip: the old Long? argument could only carry two, which is how
+        // a recap opened from Unassigned came back showing every session.
+        listOf(
+            VehicleScope.All,
+            VehicleScope.Unassigned,
+            VehicleScope.One(7L),
+            VehicleScope.One(0L),
+        ).forEach { scope ->
+            assertEquals(scope, vehicleScopeFromToken(scope.toToken()), "round trip: $scope")
+        }
+    }
+
+    @Test
+    fun `Unassigned does not collapse into All`() {
+        // The whole point. If these two ever encode alike, the bug is back.
+        assertEquals("unassigned", VehicleScope.Unassigned.toToken())
+        assertEquals("all", VehicleScope.All.toToken())
+    }
+
+    @Test
+    fun `a malformed token widens rather than blanking`() {
+        // A scope that arrives garbled should show too much, never nothing —
+        // an empty screen reads as data loss.
+        assertEquals(VehicleScope.All, vehicleScopeFromToken(null))
+        assertEquals(VehicleScope.All, vehicleScopeFromToken(""))
+        assertEquals(VehicleScope.All, vehicleScopeFromToken("banana"))
+        assertEquals(VehicleScope.All, vehicleScopeFromToken("-1"))
+        assertEquals(VehicleScope.All, vehicleScopeFromToken("1.5"))
+    }
+
     @Test
     fun `orphans alone need no picker`() {
         // No vehicles defined and nothing assigned: All and Unassigned would

@@ -121,6 +121,7 @@ import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.vehicleScopeFromToken
 import com.evsct.app.ui.VehicleScopeTabs
 import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.ui.forType
@@ -144,7 +145,7 @@ fun SessionListScreen(
      *  SavedStateHandle by the nav graph (same relay the map picker
      *  uses). Vehicle id uses a -1 sentinel for "all vehicles". */
     requestedBrandFilter: String? = null,
-    requestedBrandVehicleId: Long? = null,
+    requestedBrandScopeToken: String? = null,
     onBrandFilterRequestConsumed: () -> Unit = {},
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
@@ -152,11 +153,11 @@ fun SessionListScreen(
 
     // Apply the Stats drill-down once, then clear the handle keys so a
     // later visit to the Log doesn't re-apply a stale request.
-    LaunchedEffect(requestedBrandFilter, requestedBrandVehicleId) {
+    LaunchedEffect(requestedBrandFilter, requestedBrandScopeToken) {
         val brand = requestedBrandFilter ?: return@LaunchedEffect
         viewModel.applyBrandDrilldown(
             brand = brand,
-            vehicleId = requestedBrandVehicleId?.takeIf { it >= 0 },
+            scope = vehicleScopeFromToken(requestedBrandScopeToken),
         )
         onBrandFilterRequestConsumed()
     }

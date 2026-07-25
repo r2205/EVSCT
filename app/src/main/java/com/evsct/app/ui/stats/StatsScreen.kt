@@ -71,8 +71,8 @@ import com.evsct.app.util.Format
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(
-    onOpenYearRecap: (vehicleId: Long?) -> Unit,
-    onOpenLogForBrand: (brand: String, vehicleId: Long?) -> Unit,
+    onOpenYearRecap: (VehicleScope) -> Unit,
+    onOpenLogForBrand: (brand: String, scope: VehicleScope) -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -93,7 +93,7 @@ fun StatsScreen(
                     // button" in device testing. The text doubles as the
                     // TalkBack name.
                     TextButton(
-                        onClick = { onOpenYearRecap(scopedVehicleId(state.vehicleScope)) },
+                        onClick = { onOpenYearRecap(state.vehicleScope) },
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                         ),
@@ -190,7 +190,7 @@ fun StatsScreen(
                         labelWidth = 130.dp,
                         formatValue = { Format.money(it, state.costCurrency) },
                         onRowClick = { brand ->
-                            onOpenLogForBrand(brand, scopedVehicleId(state.vehicleScope))
+                            onOpenLogForBrand(brand, state.vehicleScope)
                         },
                     )
                 }
@@ -235,20 +235,6 @@ fun StatsScreen(
         }
     }
 }
-
-/**
- * The vehicle id to hand to a screen that can only be scoped to one vehicle —
- * the Year Recap and the Log's brand drill-down, both of which carry a plain
- * `Long?` through the nav layer.
- *
- * [VehicleScope.Unassigned] has no id to give, so it degrades to "all". Both
- * destinations name the scope they landed on (the recap in its header, the Log
- * in its tab row), so the widening is visible rather than silent. Carrying the
- * bucket through properly means a scope token in place of those nav args, which
- * is its own change.
- */
-private fun scopedVehicleId(scope: VehicleScope): Long? =
-    (scope as? VehicleScope.One)?.id
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
