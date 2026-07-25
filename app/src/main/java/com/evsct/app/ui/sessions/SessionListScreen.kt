@@ -120,6 +120,9 @@ import com.evsct.app.ui.EmptyState
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.VehicleScopeTabs
+import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.LocalEvAccents
 import com.evsct.app.util.Derived
@@ -378,9 +381,8 @@ fun SessionListScreen(
             // One tab per bucket that actually holds sessions, plus All, and
             // only once there's more than one bucket to choose between: a lone
             // vehicle with nothing unassigned needs no chrome at all.
-            val bucketCount = state.vehicles.size + if (state.hasUnassignedSessions) 1 else 0
-            if (bucketCount >= 2) {
-                VehicleTabs(
+            if (needsVehiclePicker(state.vehicles.size, state.hasUnassignedSessions)) {
+                VehicleScopeTabs(
                     vehicles = state.vehicles,
                     includeUnassigned = state.hasUnassignedSessions,
                     scope = state.vehicleScope,
@@ -840,40 +842,6 @@ private fun Stat(label: String, value: String) {
             fontWeight = FontWeight.SemiBold,
         )
         Text(label, style = MaterialTheme.typography.labelMedium)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun VehicleTabs(
-    vehicles: List<com.evsct.app.data.entity.Vehicle>,
-    includeUnassigned: Boolean,
-    scope: VehicleScope,
-    onSelect: (VehicleScope) -> Unit,
-) {
-    // Explicit element type: left to builder inference, the first add() would
-    // pin this to Pair<VehicleScope.All, String> and reject the others.
-    val tabs = buildList<Pair<VehicleScope, String>> {
-        add(VehicleScope.All to "All")
-        vehicles.forEach { add(VehicleScope.One(it.id) to it.name) }
-        // Last, after the real vehicles: it's the exception bucket, not a
-        // peer of them.
-        if (includeUnassigned) add(VehicleScope.Unassigned to "Unassigned")
-    }
-    val selectedIndex = tabs.indexOfFirst { it.first == scope }.coerceAtLeast(0)
-    ScrollableTabRow(
-        selectedTabIndex = selectedIndex,
-        edgePadding = 12.dp,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.primary,
-    ) {
-        tabs.forEachIndexed { index, (tabScope, label) ->
-            Tab(
-                selected = index == selectedIndex,
-                onClick = { onSelect(tabScope) },
-                text = { Text(label, fontWeight = if (index == selectedIndex) FontWeight.SemiBold else FontWeight.Normal) },
-            )
-        }
     }
 }
 

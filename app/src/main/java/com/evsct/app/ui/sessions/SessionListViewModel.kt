@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.orAllIfEmpty
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.BackupReminderSettings
 import com.evsct.app.data.repository.SessionReceiptRepository
@@ -57,49 +59,6 @@ data class BackupNudge(
     val show: Boolean = false,
     val daysSinceLastBackup: Long? = null,
 )
-
-/**
- * Which bucket of the log the vehicle tab row is showing.
- *
- * [Unassigned] earns its place because a session's vehicle is nullable —
- * sessions imported from CSV, or logged before any vehicle was set up, carry
- * none at all. The filter used to be a plain `Long?`, which can only express
- * "everything" or "this one vehicle", so those sessions were reachable only
- * under [All], mixed into the whole log: no way to list them, and therefore no
- * practical way to go assign them.
- *
- * Deliberately not a `-1L` sentinel on the old `Long?`. That would have been a
- * smaller change, but the value flows out to the Add-session and Track-charge
- * preselect, where it would land as a vehicle id and only behave by
- * coincidence with the nav layer's own -1 convention.
- */
-sealed interface VehicleScope {
-    data object All : VehicleScope
-    data object Unassigned : VehicleScope
-    data class One(val id: Long) : VehicleScope
-
-    /** Does [session] belong in this bucket? */
-    fun matches(session: ChargingSession): Boolean = when (this) {
-        All -> true
-        Unassigned -> session.vehicleId == null
-        is One -> session.vehicleId == id
-    }
-}
-
-/**
- * Fall back to [VehicleScope.All] when this scope has nothing behind it any
- * more — a vehicle that has since been deleted, or [VehicleScope.Unassigned]
- * after the last such session was finally given one. Without this the log
- * would sit empty under a tab that no longer exists in the row above it.
- */
-internal fun VehicleScope.orAllIfEmpty(
-    vehicles: List<Vehicle>,
-    hasUnassigned: Boolean,
-): VehicleScope = when (this) {
-    VehicleScope.All -> VehicleScope.All
-    VehicleScope.Unassigned -> if (hasUnassigned) this else VehicleScope.All
-    is VehicleScope.One -> if (vehicles.any { it.id == id }) this else VehicleScope.All
-}
 
 data class SessionListUi(
     /** True until the first database emission lands. Distinguishes "still
@@ -156,7 +115,7 @@ class SessionListViewModel @Inject constructor(
 
     private val selected = MutableStateFlow<Set<Long>>(emptySet())
     private val selectionRequested = MutableStateFlow(false)
-    private val vehicleFilter = MutableStateFlow<VehicleScope>(VehicleScope.All)
+    private val vehicleScopeFlow = MutableStateFlow<VehicleScope>(VehicleScope.All)
     private val filters = MutableStateFlow(SessionFilters())
     private val sortOption = MutableStateFlow(SortOption.DATE)
     private val backupNudgeDismissed = MutableStateFlow(false)
@@ -169,7 +128,7 @@ class SessionListViewModel @Inject constructor(
      * payload arrives (see the SESSION_LIST wiring in EvsctNavGraph).
      */
     fun applyBrandDrilldown(brand: String, vehicleId: Long?) {
-        vehicleFilter.value = vehicleId?.let { VehicleScope.One(it) } ?: VehicleScope.All
+        vehicleScopeFlow.value = vehicleId?.let { VehicleScope.One(it) } ?: VehicleScope.All
         filters.value = SessionFilters(brand = brand)
         clearSelection()
     }
@@ -192,7 +151,7 @@ class SessionListViewModel @Inject constructor(
     ) { sessions, trips, vehicles -> Triple(sessions, trips, vehicles) }
 
     private val baseUi: kotlinx.coroutines.flow.Flow<Pair<SessionListUi, Int>> =
-        combine(coreData, selectionState, vehicleFilter, filtersAndSort) { core, sel, filter, fs ->
+        combine(coreData, selectionState, vehicleScopeFlow, filtersAndSort) { core, sel, filter, fs ->
             val (allSessions, trips, vehicles) = core
             val (selectedIds, selectionRequestedNow) = sel
             val (f, sort) = fs
@@ -300,7 +259,7 @@ class SessionListViewModel @Inject constructor(
     }
 
     fun setVehicleScope(scope: VehicleScope) {
-        vehicleFilter.value = scope
+        vehicleScopeFlow.value = scope
         clearSelection()
     }
 

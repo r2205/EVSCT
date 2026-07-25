@@ -1,4 +1,4 @@
-package com.evsct.app.ui.sessions
+package com.evsct.app.ui
 
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Vehicle
@@ -91,5 +91,38 @@ class VehicleScopeTest {
             VehicleScope.All,
             VehicleScope.All.orAllIfEmpty(vehicles(7L), hasUnassigned = true),
         )
+    }
+
+    /* ------------------------- needsVehiclePicker ------------------------ */
+
+    @Test
+    fun `one bucket needs no picker`() {
+        // A lone vehicle with everything assigned: nothing to choose between,
+        // so the Log and Stats show no tab row and the Map hides its chips.
+        assertFalse(needsVehiclePicker(vehicleCount = 1, hasUnassigned = false))
+        // Degenerate but real on first run — no vehicles, nothing logged.
+        assertFalse(needsVehiclePicker(vehicleCount = 0, hasUnassigned = false))
+    }
+
+    @Test
+    fun `one vehicle plus orphans needs a picker`() {
+        // The case that started this: previously the row required 2+ vehicles,
+        // so a lone car plus unassigned sessions showed one merged list with
+        // no way to tell them apart.
+        assertTrue(needsVehiclePicker(vehicleCount = 1, hasUnassigned = true))
+    }
+
+    @Test
+    fun `two or more vehicles always need a picker`() {
+        assertTrue(needsVehiclePicker(vehicleCount = 2, hasUnassigned = false))
+        assertTrue(needsVehiclePicker(vehicleCount = 2, hasUnassigned = true))
+    }
+
+    @Test
+    fun `orphans alone need no picker`() {
+        // No vehicles defined and nothing assigned: All and Unassigned would
+        // hold exactly the same sessions, so offering both is a choice with no
+        // consequence. One bucket, no chrome.
+        assertFalse(needsVehiclePicker(vehicleCount = 0, hasUnassigned = true))
     }
 }

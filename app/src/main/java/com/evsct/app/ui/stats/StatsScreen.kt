@@ -58,10 +58,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.data.entity.ChargingType
-import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.BarList
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.MoneyStat
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.VehicleScopeTabs
+import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.LocalEvAccents
 import com.evsct.app.util.Format
@@ -91,7 +93,7 @@ fun StatsScreen(
                     // button" in device testing. The text doubles as the
                     // TalkBack name.
                     TextButton(
-                        onClick = { onOpenYearRecap(state.vehicleFilterId) },
+                        onClick = { onOpenYearRecap(scopedVehicleId(state.vehicleScope)) },
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                         ),
@@ -127,8 +129,13 @@ fun StatsScreen(
                 return@Column
             }
 
-            if (state.vehicles.size >= 2) {
-                VehicleTabs(state.vehicles, state.vehicleFilterId, viewModel::setVehicleFilter)
+            if (needsVehiclePicker(state.vehicles.size, state.hasUnassignedSessions)) {
+                VehicleScopeTabs(
+                    vehicles = state.vehicles,
+                    includeUnassigned = state.hasUnassignedSessions,
+                    scope = state.vehicleScope,
+                    onSelect = viewModel::setVehicleScope,
+                )
             }
 
             HeadlineCard(state)
@@ -183,7 +190,7 @@ fun StatsScreen(
                         labelWidth = 130.dp,
                         formatValue = { Format.money(it, state.costCurrency) },
                         onRowClick = { brand ->
-                            onOpenLogForBrand(brand, state.vehicleFilterId)
+                            onOpenLogForBrand(brand, scopedVehicleId(state.vehicleScope))
                         },
                     )
                 }
@@ -230,6 +237,20 @@ fun StatsScreen(
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+/**
+ * The vehicle id to hand to a screen that can only be scoped to one vehicle —
+ * the Year Recap and the Log's brand drill-down, both of which carry a plain
+ * `Long?` through the nav layer.
+ *
+ * [VehicleScope.Unassigned] has no id to give, so it degrades to "all". Both
+ * destinations name the scope they landed on (the recap in its header, the Log
+ * in its tab row), so the widening is visible rather than silent. Carrying the
+ * bucket through properly means a scope token in place of those nav args, which
+ * is its own change.
+ */
+private fun scopedVehicleId(scope: VehicleScope): Long? =
+    (scope as? VehicleScope.One)?.id
+
 @Composable
 private fun HeadlineCard(state: StatsUi) {
     Card(
@@ -637,35 +658,3 @@ private fun ChargingType.shortLabel(): String = when (this) {
     ChargingType.AC_L1 -> "AC L1"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun VehicleTabs(
-    vehicles: List<Vehicle>,
-    selectedVehicleId: Long?,
-    onSelect: (Long?) -> Unit,
-) {
-    val tabs = buildList {
-        add(null to "All")
-        vehicles.forEach { add(it.id to it.name) }
-    }
-    val selectedIndex = tabs.indexOfFirst { it.first == selectedVehicleId }.coerceAtLeast(0)
-    ScrollableTabRow(
-        selectedTabIndex = selectedIndex,
-        edgePadding = 12.dp,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.primary,
-    ) {
-        tabs.forEachIndexed { index, (id, label) ->
-            Tab(
-                selected = index == selectedIndex,
-                onClick = { onSelect(id) },
-                text = {
-                    Text(
-                        label,
-                        fontWeight = if (index == selectedIndex) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                },
-            )
-        }
-    }
-}

@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.orAllIfEmpty
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
@@ -74,7 +76,7 @@ data class MapFilters(
     /** Trip IDs (and null = "untripped") whose pins are hidden. Empty = show all. */
     val hiddenKeys: Set<Long?> = emptySet(),
     /** When non-null, only sessions tagged to this vehicle contribute to pins. */
-    val vehicleFilter: Long? = null,
+    val vehicleScope: VehicleScope = VehicleScope.All,
 )
 
 data class MapUi(
@@ -93,8 +95,12 @@ data class MapUi(
     /** Vehicles known to the app. Empty / one-element means the vehicle
      *  picker has nothing useful to show and the filter sheet hides it. */
     val vehicles: List<Vehicle> = emptyList(),
-    /** Currently selected vehicle, or null for "all vehicles". */
-    val vehicleFilterId: Long? = null,
+    /** Which vehicle bucket the pins are scoped to. */
+    val vehicleScope: VehicleScope = VehicleScope.All,
+    /** True when any session at all lacks a vehicle, so the sheet knows
+     *  whether an "Unassigned" chip belongs. Computed off the unfiltered set
+     *  so picking a vehicle can't make the chip vanish. */
+    val hasUnassignedSessions: Boolean = false,
     val colorByTrip: Boolean = true,
     val anyFilterActive: Boolean = false,
     /** User's preferred Google Maps base layer (NORMAL / SATELLITE / HYBRID
@@ -168,14 +174,15 @@ class MapViewModel @Inject constructor(
         val (f, currentSelectedStop) = fs
         val (mapType, clusteringEnabled, heatmapEnabled, polylinesEnabled, colorByTrip) = prefs
 
-        // Drop a vehicle filter that points to a deleted vehicle so the
-        // sheet doesn't keep advertising a phantom selection.
-        val effectiveVehicleFilter = f.vehicleFilter?.takeIf { id -> vehicles.any { it.id == id } }
+        // Drop a scope with nothing behind it (deleted vehicle, or Unassigned
+        // after the last orphan was assigned) so the sheet doesn't keep
+        // advertising a phantom selection.
+        val hasUnassigned = allSessions.any { it.vehicleId == null }
+        val effectiveScope = f.vehicleScope.orAllIfEmpty(vehicles, hasUnassigned)
 
-        // Apply the vehicle filter up front: every downstream calculation
+        // Apply the vehicle scope up front: every downstream calculation
         // (stops, trip options, untripped option) operates on the filtered set.
-        val sessions = if (effectiveVehicleFilter == null) allSessions
-            else allSessions.filter { it.vehicleId == effectiveVehicleFilter }
+        val sessions = allSessions.filter { effectiveScope.matches(it) }
 
         val tripColorById = trips.associate { it.id to it.pinColor }
         // StopKey gives coordinate-only sessions (no brand/address/city) a
@@ -245,10 +252,11 @@ class MapViewModel @Inject constructor(
             showUntrippedOption = hasUntripped,
             untrippedVisible = untrippedVisible,
             vehicles = vehicles,
-            vehicleFilterId = effectiveVehicleFilter,
+            vehicleScope = effectiveScope,
+            hasUnassignedSessions = hasUnassigned,
             colorByTrip = colorByTrip,
             anyFilterActive = f.hiddenKeys.isNotEmpty() ||
-                effectiveVehicleFilter != null,
+                effectiveScope != VehicleScope.All,
             mapType = mapType,
             clusteringEnabled = clusteringEnabled,
             heatmapEnabled = heatmapEnabled,
@@ -303,8 +311,8 @@ class MapViewModel @Inject constructor(
         filters.update { it.copy(hiddenKeys = keys) }
     }
 
-    fun setVehicleFilter(vehicleId: Long?) {
-        filters.update { it.copy(vehicleFilter = vehicleId) }
+    fun setVehicleScope(scope: VehicleScope) {
+        filters.update { it.copy(vehicleScope = scope) }
     }
 
     /**
