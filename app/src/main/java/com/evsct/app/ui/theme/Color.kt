@@ -38,6 +38,38 @@ private val md_onSurfaceVariant_light = Color(0xFF414940)
 private val md_outline_light = Color(0xFF727970)
 private val md_outlineVariant_light = Color(0xFFC1C9BD)
 
+// Surface containers. Left unset, these fall back to Material's baseline
+// neutrals — which are toned off the baseline purple, so `surfaceContainer`
+// arrives as #F3EDF7. That is the color under the gesture pill, since
+// NavigationBar takes its container from this role: a lavender bar under a
+// green app. Cards, dialogs, menus, sheets, and filled text fields read the
+// rest of the ramp, so the tint was never confined to the navigation bar.
+//
+// The replacements are the same green-tinted neutral this file already used,
+// at the tone Material assigns each role. Four of those tones were already
+// here and are reused verbatim rather than re-derived, which keeps the ramp a
+// single palette: light 98 is light `surface`, dark 6 is dark `surface`, dark
+// 10 is light `onSurface`, and dark 90 is dark `onSurface`. Tone 20 spans both
+// schemes too — light `inverseSurface` and dark `inverseOnSurface`.
+//
+// One exception, documented at the value itself: dark `surfaceContainer`
+// carries extra chroma, because the bottom bar was the complaint that started
+// this and the tonally correct value still read as grey. The light scheme is
+// deliberately left at its Material tone — nobody reported the light bar, and
+// chroma reads more readily at tone 94 than at tone 12, so the two schemes
+// need different amounts of it to land in the same place perceptually.
+private val md_surfaceBright_light = Color(0xFFF7FBF3)      // tone 98, as surface
+private val md_surfaceDim_light = Color(0xFFD6DBD1)         // tone 87
+private val md_surfaceContainerLowest_light = Color(0xFFFFFFFF)
+private val md_surfaceContainerLow_light = Color(0xFFF1F5EC)
+private val md_surfaceContainer_light = Color(0xFFEDF1E8)
+private val md_surfaceContainerHigh_light = Color(0xFFE5EAE0)
+private val md_surfaceContainerHighest_light = Color(0xFFDFE4DA)
+
+private val md_inverseSurface_light = Color(0xFF2D322C)
+private val md_inverseOnSurface_light = Color(0xFFEEF2E9)
+private val md_inversePrimary_light = Color(0xFF8DD8A4)
+
 /* ----------------------------- Dark tones ------------------------------ */
 
 private val md_primary_dark = Color(0xFF8DD8A4)             // bright mint, pops on dark
@@ -69,6 +101,40 @@ private val md_onSurfaceVariant_dark = Color(0xFFC1C9BD)
 private val md_outline_dark = Color(0xFF8B938A)
 private val md_outlineVariant_dark = Color(0xFF414940)
 
+private val md_surfaceBright_dark = Color(0xFF363B35)        // tone 24
+private val md_surfaceDim_dark = Color(0xFF10140E)           // tone 6, as surface
+private val md_surfaceContainerLowest_dark = Color(0xFF0B0F09)
+private val md_surfaceContainerLow_dark = Color(0xFF181D17)
+
+// The one role that leaves its Material tone behind. Tone 12 would be
+// #1C211B, which is the right lightness but carries so little chroma that at
+// near-black it still reads as grey — and this role paints the whole width of
+// the bottom bar, the largest flat area of it anywhere in the app. Same
+// lightness, three times the green: the hue registers, and equal *numeric*
+// chroma reads as less hue the darker it gets, so matching the light scheme's
+// perceived tint genuinely needs more of it down here.
+//
+// The ceiling is the selected-tab pill. `NavigationBarItem` draws it in
+// `secondaryContainer` (#384B36), which reads as a pill only by being slightly
+// lighter than the bar, so greening the bar further walks it toward that tone
+// and fades the indicator out. #17231A holds 1.72:1 against the pill against
+// the baseline's 1.73:1 — no ground given. A true emerald bar measures 1.02:1
+// and loses the selected tab entirely, which is why this stops here and why
+// `ColorSchemeTest` pins the ratio.
+private val md_surfaceContainer_dark = Color(0xFF17231A)
+
+private val md_surfaceContainerHigh_dark = Color(0xFF262B25)
+private val md_surfaceContainerHighest_dark = Color(0xFF313630)
+
+private val md_inverseSurface_dark = Color(0xFFDFE4DA)
+private val md_inverseOnSurface_dark = Color(0xFF2D322C)
+private val md_inversePrimary_dark = Color(0xFF1F6F43)
+
+/** Shared by both schemes: the scrim behind modal sheets and drawers is a
+ *  black wash at partial alpha in either polarity, and Material's own baseline
+ *  agrees — set here only so no role in either scheme is left to a default. */
+private val md_scrim = Color(0xFF000000)
+
 val EvsctLightScheme: ColorScheme = lightColorScheme(
     primary = md_primary_light,
     onPrimary = md_onPrimary_light,
@@ -94,6 +160,17 @@ val EvsctLightScheme: ColorScheme = lightColorScheme(
     onSurfaceVariant = md_onSurfaceVariant_light,
     outline = md_outline_light,
     outlineVariant = md_outlineVariant_light,
+    surfaceBright = md_surfaceBright_light,
+    surfaceDim = md_surfaceDim_light,
+    surfaceContainerLowest = md_surfaceContainerLowest_light,
+    surfaceContainerLow = md_surfaceContainerLow_light,
+    surfaceContainer = md_surfaceContainer_light,
+    surfaceContainerHigh = md_surfaceContainerHigh_light,
+    surfaceContainerHighest = md_surfaceContainerHighest_light,
+    inverseSurface = md_inverseSurface_light,
+    inverseOnSurface = md_inverseOnSurface_light,
+    inversePrimary = md_inversePrimary_light,
+    scrim = md_scrim,
 )
 
 val EvsctDarkScheme: ColorScheme = darkColorScheme(
@@ -121,6 +198,17 @@ val EvsctDarkScheme: ColorScheme = darkColorScheme(
     onSurfaceVariant = md_onSurfaceVariant_dark,
     outline = md_outline_dark,
     outlineVariant = md_outlineVariant_dark,
+    surfaceBright = md_surfaceBright_dark,
+    surfaceDim = md_surfaceDim_dark,
+    surfaceContainerLowest = md_surfaceContainerLowest_dark,
+    surfaceContainerLow = md_surfaceContainerLow_dark,
+    surfaceContainer = md_surfaceContainer_dark,
+    surfaceContainerHigh = md_surfaceContainerHigh_dark,
+    surfaceContainerHighest = md_surfaceContainerHighest_dark,
+    inverseSurface = md_inverseSurface_dark,
+    inverseOnSurface = md_inverseOnSurface_dark,
+    inversePrimary = md_inversePrimary_dark,
+    scrim = md_scrim,
 )
 
 /* ------------------- Domain accents (charging types) ------------------- */
