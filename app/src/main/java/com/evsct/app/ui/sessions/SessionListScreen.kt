@@ -104,7 +104,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -123,6 +122,7 @@ import com.evsct.app.ui.EmptyState
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
+import com.evsct.app.ui.StatColumns
 import com.evsct.app.ui.VehicleScope
 import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.ui.vehicleScopeFromToken
@@ -814,7 +814,6 @@ private fun TripPickerRow(label: String, emphasis: Boolean, onClick: () -> Unit)
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryCard(state: SessionListUi) {
     Card(
@@ -824,52 +823,18 @@ private fun SummaryCard(state: SessionListUi) {
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
     ) {
-        // Three stats across is the right shape only while all three fit. The
-        // FlowRow from #50 stopped the last one clipping, but wrapping was
-        // never the same as looking right: at 2x the row breaks 2-then-1 and
-        // SpaceAround centres that orphan under the *gap* between the two
-        // above it, so nothing lines up with anything. Worse when the total is
-        // mixed-currency, since that column is two lines tall and FlowRow
-        // top-aligns (foundation 1.7 has no itemVerticalAlignment).
-        //
-        // Past the threshold the honest layout isn't a wrapped row, it's one
-        // stat per line. Same three composables either way — only the
-        // container changes, so there's no second copy of the currency logic.
-        if (LocalDensity.current.fontScale >= STACK_STATS_FONT_SCALE) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Stat("Sessions", state.sessionCount.toString(), Modifier.fillMaxWidth())
-                MoneyStat("Total cost", state.totalCostByCurrency, Modifier.fillMaxWidth())
-                Stat("Energy", Format.kwh(state.totalKwh), Modifier.fillMaxWidth())
-            }
-        } else {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Stat("Sessions", state.sessionCount.toString())
-                MoneyStat("Total cost", state.totalCostByCurrency)
-                Stat("Energy", Format.kwh(state.totalKwh))
-            }
+        // Three stats across is the right shape only while all three fit, and
+        // the FlowRow from #50 stopped them clipping without making them line
+        // up. StatColumns owns that decision now, shared with the Stats
+        // headline; ui/StatStacking.kt has the reasoning.
+        StatColumns(modifier = Modifier.fillMaxWidth().padding(16.dp)) { statModifier ->
+            Stat("Sessions", state.sessionCount.toString(), statModifier)
+            MoneyStat("Total cost", state.totalCostByCurrency, statModifier)
+            Stat("Energy", Format.kwh(state.totalKwh), statModifier)
         }
     }
 }
 
-/**
- * Font scale at which the summary's three stats stop sitting side by side and
- * stack instead.
- *
- * 1.5 rather than a width measurement: what breaks the row is the text growing,
- * and Android's accessibility font sizes step 1.0 / 1.15 / 1.3 / 1.5 / 1.8 / 2.0,
- * so this splits at a step boundary instead of mid-way through one. The two
- * smaller steps still fit three across on a phone; the FlowRow stays underneath
- * as the fallback for the case scale doesn't predict — a long mixed-currency
- * total at normal size.
- */
-private const val STACK_STATS_FONT_SCALE = 1.5f
 
 @Composable
 private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
