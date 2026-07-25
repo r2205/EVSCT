@@ -2,22 +2,28 @@ package com.evsct.app.ui.sessions
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -33,6 +39,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MyLocation
@@ -41,6 +48,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -48,6 +56,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.IconButton
@@ -55,6 +64,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -68,10 +78,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -220,14 +234,42 @@ fun SessionEditScreen(
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     }
-                    // Saving before the load lands would insert a blank NEW
-                    // row (isNew still defaults true), not update the one
-                    // being opened.
-                    IconButton(onClick = { trySave() }, enabled = !state.isLoading) {
-                        Icon(Icons.Default.Check, contentDescription = "Save")
-                    }
                 },
             )
+        },
+        bottomBar = {
+            // Save sits at the foot of the form, which is where a two-dozen
+            // input scroll actually ends — the top-bar check was a full
+            // scroll away from the last field the user filled in. Deliberately
+            // the ONLY save: two of them is a real ambiguity on a form this
+            // long, so the check moved rather than being duplicated. Delete
+            // stays in the top bar, away from the button thumbs land on.
+            Surface(tonalElevation = 3.dp) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    HorizontalDivider()
+                    Box(
+                        // windowInsetsPadding, not navigationBarsPadding: it
+                        // honors what the nav graph's Scaffold already
+                        // consumed, so the button clears the gesture pill on
+                        // this sub-screen without double-padding if that ever
+                        // changes.
+                        modifier = Modifier
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    ) {
+                        // Saving before the load lands would insert a blank
+                        // NEW row (isNew still defaults true), not update the
+                        // one being opened.
+                        Button(
+                            onClick = { trySave() },
+                            enabled = !state.isLoading,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Save session")
+                        }
+                    }
+                }
+            }
         },
     ) { padding ->
         if (state.isLoading) {
@@ -313,70 +355,6 @@ fun SessionEditScreen(
                     },
                 )
             }
-            NumberField(
-                label = "Wait time (min, optional)",
-                value = state.waitTimeText,
-                onValue = { v -> viewModel.update { it.copy(waitTimeText = v) } },
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                NumberField(
-                    label = "Battery start %",
-                    value = state.batteryStartText,
-                    modifier = Modifier.weight(1f),
-                    isError = HintField.BATTERY_START in warnedFields,
-                    onValue = { v -> viewModel.update { it.copy(batteryStartText = v) } },
-                )
-                NumberField(
-                    label = "Battery end %",
-                    value = state.batteryEndText,
-                    modifier = Modifier.weight(1f),
-                    isError = HintField.BATTERY_END in warnedFields,
-                    onValue = { v -> viewModel.update { it.copy(batteryEndText = v) } },
-                )
-            }
-
-            SectionLabel("Posted rates (optional)")
-            NumberField(
-                label = "Posted energy price ($/kWh)",
-                value = state.postedEnergyPriceText,
-                isError = HintField.POSTED_ENERGY_PRICE in warnedFields,
-            ) { v -> viewModel.update { it.copy(postedEnergyPriceText = v) } }
-            // Stations advertise time-based pricing in $/min or $/hr; the
-            // toggle picks the entry unit and converts the typed value in
-            // place when flipped. Storage stays canonical $/min.
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                NumberField(
-                    label = "Posted time-based rate ($/${state.postedTimeRateUnit.suffix})",
-                    value = state.postedTimeRateText,
-                    modifier = Modifier.weight(1f),
-                    isError = HintField.POSTED_TIME_RATE in warnedFields,
-                ) { v -> viewModel.update { it.copy(postedTimeRateText = v) } }
-                SingleChoiceSegmentedButtonRow {
-                    TimeRateUnit.entries.forEachIndexed { index, unit ->
-                        SegmentedButton(
-                            selected = state.postedTimeRateUnit == unit,
-                            onClick = { viewModel.setPostedTimeRateUnit(unit) },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = TimeRateUnit.entries.size,
-                            ),
-                        ) { Text(unit.suffix) }
-                    }
-                }
-            }
-            NumberField(
-                label = "Posted max power (kW)",
-                value = state.postedMaxPowerText,
-                isError = HintField.POSTED_MAX_POWER in warnedFields,
-            ) { v ->
-                viewModel.update { it.copy(postedMaxPowerText = v) }
-            }
 
             SectionLabel("Station")
             if (state.recentStops.isNotEmpty()) {
@@ -387,27 +365,6 @@ fun SessionEditScreen(
             }
             BrandPicker(state.brand, state.brandSuggestions) { v ->
                 viewModel.update { it.copy(brand = v) }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                LocationAutofillCard(
-                    isLoading = state.isFetchingLocation,
-                    onRequestAutofill = {
-                        locationPermissionLauncher.launch(
-                            arrayOf(
-                                android.Manifest.permission.ACCESS_FINE_LOCATION,
-                                android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                            )
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                PickLocationCard(
-                    onPick = { onPickLocation(state.latitude, state.longitude) },
-                    modifier = Modifier.weight(1f),
-                )
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextFieldPlain(
@@ -422,57 +379,202 @@ fun SessionEditScreen(
                     onValue = { v -> viewModel.update { it.copy(province = v) } },
                 )
             }
-            TextFieldPlain("Address", state.address) { v ->
-                viewModel.update { it.copy(address = v) }
-            }
-            TextFieldPlain("Station / stall name / stall number", state.stationName) { v ->
-                viewModel.update { it.copy(stationName = v) }
+
+            // Everything below folds away. A typical charge fills the fields
+            // above and none of these, so they open on demand — or on their
+            // own, when they already hold something (see [CollapsibleSection]).
+            CollapsibleSection(
+                title = "Battery & wait",
+                filledCount = listOf(
+                    state.waitTimeText,
+                    state.batteryStartText,
+                    state.batteryEndText,
+                ).count { it.isNotBlank() },
+                demandsAttention = HintField.BATTERY_START in warnedFields ||
+                    HintField.BATTERY_END in warnedFields,
+            ) {
+                NumberField(
+                    label = "Wait time (min, optional)",
+                    value = state.waitTimeText,
+                    onValue = { v -> viewModel.update { it.copy(waitTimeText = v) } },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    NumberField(
+                        label = "Battery start %",
+                        value = state.batteryStartText,
+                        modifier = Modifier.weight(1f),
+                        isError = HintField.BATTERY_START in warnedFields,
+                        onValue = { v -> viewModel.update { it.copy(batteryStartText = v) } },
+                    )
+                    NumberField(
+                        label = "Battery end %",
+                        value = state.batteryEndText,
+                        modifier = Modifier.weight(1f),
+                        isError = HintField.BATTERY_END in warnedFields,
+                        onValue = { v -> viewModel.update { it.copy(batteryEndText = v) } },
+                    )
+                }
             }
 
-            SectionLabel("Trip")
-            TripPicker(state) { id -> viewModel.update { it.copy(tripId = id) } }
-            ContinuesPreviousToggle(
-                checked = state.continuesPrevious,
-                onCheckedChange = { v -> viewModel.update { it.copy(continuesPrevious = v) } },
-            )
-
-            SectionLabel("Receipts")
-            ReceiptsCard(
-                receipts = state.receipts,
-                onAdd = { showReceiptChooser = true },
-                onRemove = { path -> viewModel.removeReceipt(path) },
-                onRename = { receipt -> receiptToRename = receipt },
-                onPreview = { path ->
-                    if (ReceiptImageStore.isPdf(path)) {
-                        openReceiptExternally(context, path)
-                    } else {
-                        receiptToPreview = path
+            CollapsibleSection(
+                title = "Posted rates",
+                filledCount = listOf(
+                    state.postedEnergyPriceText,
+                    state.postedTimeRateText,
+                    state.postedMaxPowerText,
+                ).count { it.isNotBlank() },
+                demandsAttention = HintField.POSTED_ENERGY_PRICE in warnedFields ||
+                    HintField.POSTED_TIME_RATE in warnedFields ||
+                    HintField.POSTED_MAX_POWER in warnedFields,
+            ) {
+                NumberField(
+                    label = "Posted energy price ($/kWh)",
+                    value = state.postedEnergyPriceText,
+                    isError = HintField.POSTED_ENERGY_PRICE in warnedFields,
+                ) { v -> viewModel.update { it.copy(postedEnergyPriceText = v) } }
+                // Stations advertise time-based pricing in $/min or $/hr; the
+                // toggle picks the entry unit and converts the typed value in
+                // place when flipped. Storage stays canonical $/min.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    NumberField(
+                        label = "Posted time-based rate ($/${state.postedTimeRateUnit.suffix})",
+                        value = state.postedTimeRateText,
+                        modifier = Modifier.weight(1f),
+                        isError = HintField.POSTED_TIME_RATE in warnedFields,
+                    ) { v -> viewModel.update { it.copy(postedTimeRateText = v) } }
+                    SingleChoiceSegmentedButtonRow {
+                        TimeRateUnit.entries.forEachIndexed { index, unit ->
+                            SegmentedButton(
+                                selected = state.postedTimeRateUnit == unit,
+                                onClick = { viewModel.setPostedTimeRateUnit(unit) },
+                                shape = SegmentedButtonDefaults.itemShape(
+                                    index = index,
+                                    count = TimeRateUnit.entries.size,
+                                ),
+                            ) { Text(unit.suffix) }
+                        }
                     }
-                },
-            )
+                }
+                NumberField(
+                    label = "Posted max power (kW)",
+                    value = state.postedMaxPowerText,
+                    isError = HintField.POSTED_MAX_POWER in warnedFields,
+                ) { v ->
+                    viewModel.update { it.copy(postedMaxPowerText = v) }
+                }
+            }
 
-            SectionLabel("Tags")
-            TagsField(
-                tags = state.tags,
-                draft = state.tagDraft,
-                onDraftChange = { v ->
-                    viewModel.update { it.copy(tagDraft = v) }
-                },
-                onAdd = { tag ->
-                    viewModel.update { it.copy(tags = Tags.add(it.tags, tag)) }
-                },
-                onRemove = { tag ->
-                    viewModel.update { it.copy(tags = Tags.remove(it.tags, tag)) }
-                },
-            )
+            CollapsibleSection(
+                title = "More station detail",
+                // Coordinates count as a filled field even though no text
+                // input shows them: a location picked on the map is exactly
+                // the kind of thing that must not vanish behind a fold.
+                filledCount = listOf(
+                    state.address.isNotBlank(),
+                    state.stationName.isNotBlank(),
+                    state.latitude != null && state.longitude != null,
+                ).count { it },
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LocationAutofillCard(
+                        isLoading = state.isFetchingLocation,
+                        onRequestAutofill = {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    PickLocationCard(
+                        onPick = { onPickLocation(state.latitude, state.longitude) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                TextFieldPlain("Address", state.address) { v ->
+                    viewModel.update { it.copy(address = v) }
+                }
+                TextFieldPlain("Station / stall name / stall number", state.stationName) { v ->
+                    viewModel.update { it.copy(stationName = v) }
+                }
+            }
 
-            SectionLabel("Notes")
-            OutlinedTextField(
-                value = state.notes,
-                onValueChange = { v -> viewModel.update { it.copy(notes = v) } },
-                modifier = Modifier.fillMaxWidth().height(120.dp),
-                label = { Text("Notes") },
-            )
+            CollapsibleSection(
+                title = "Trip",
+                filledCount = listOf(
+                    state.tripId != null,
+                    state.continuesPrevious,
+                ).count { it },
+            ) {
+                TripPicker(state) { id -> viewModel.update { it.copy(tripId = id) } }
+                ContinuesPreviousToggle(
+                    checked = state.continuesPrevious,
+                    onCheckedChange = { v -> viewModel.update { it.copy(continuesPrevious = v) } },
+                )
+            }
+
+            CollapsibleSection(
+                title = "Receipts",
+                filledCount = state.receipts.size,
+            ) {
+                ReceiptsCard(
+                    receipts = state.receipts,
+                    onAdd = { showReceiptChooser = true },
+                    onRemove = { path -> viewModel.removeReceipt(path) },
+                    onRename = { receipt -> receiptToRename = receipt },
+                    onPreview = { path ->
+                        if (ReceiptImageStore.isPdf(path)) {
+                            openReceiptExternally(context, path)
+                        } else {
+                            receiptToPreview = path
+                        }
+                    },
+                )
+            }
+
+            CollapsibleSection(
+                title = "Tags",
+                // The uncommitted draft counts: save() folds it into the tag
+                // list, so a tag typed but not entered is real data.
+                filledCount = state.tags.size + if (state.tagDraft.isBlank()) 0 else 1,
+            ) {
+                TagsField(
+                    tags = state.tags,
+                    draft = state.tagDraft,
+                    onDraftChange = { v ->
+                        viewModel.update { it.copy(tagDraft = v) }
+                    },
+                    onAdd = { tag ->
+                        viewModel.update { it.copy(tags = Tags.add(it.tags, tag)) }
+                    },
+                    onRemove = { tag ->
+                        viewModel.update { it.copy(tags = Tags.remove(it.tags, tag)) }
+                    },
+                )
+            }
+
+            CollapsibleSection(
+                title = "Notes",
+                filledCount = if (state.notes.isBlank()) 0 else 1,
+            ) {
+                OutlinedTextField(
+                    value = state.notes,
+                    onValueChange = { v -> viewModel.update { it.copy(notes = v) } },
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    label = { Text("Notes") },
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
         }
@@ -621,6 +723,117 @@ private fun SectionLabel(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 8.dp),
     )
+}
+
+/**
+ * A foldable group of optional fields, headed by a tappable row.
+ *
+ * The form runs to two dozen inputs and a typical charge fills fewer than
+ * half, so the groups that usually stay empty fold away. Folding is only safe
+ * if it can never hide something the user entered, which is what the three
+ * rules here are for:
+ *
+ *  - **A group holding a value opens itself.** [filledCount] seeds the initial
+ *    state, so opening an existing session never becomes a hunt. It's also
+ *    re-checked afterwards, because values arrive while the form is on screen:
+ *    the map picker fills in coordinates, GPS autofill fills a city. A group
+ *    that gains its first value opens so the new data doesn't land out of
+ *    sight.
+ *  - **A collapsed group still says what's inside**, via the "n set" badge —
+ *    a fold should never be mistaken for an empty section.
+ *  - **Once the user takes a group in hand, their choice sticks**
+ *    ([userToggled]) — collapsing a filled group has to stay collapsed, or the
+ *    auto-open above would fight them on every keystroke.
+ *
+ * [demandsAttention] overrides all of that and forces the group open. A
+ * validation hint pointing at a field inside a folded group would otherwise be
+ * invisible: the card at the top of the form would name a problem with no way
+ * to see the field it's about.
+ *
+ * Expansion is [rememberSaveable], so it survives rotation and process death —
+ * the map picker and the photo picker both put this screen at risk of the
+ * latter.
+ */
+@Composable
+private fun CollapsibleSection(
+    title: String,
+    filledCount: Int,
+    demandsAttention: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(filledCount > 0) }
+    var userToggled by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(filledCount, demandsAttention) {
+        if (demandsAttention) expanded = true
+        else if (!userToggled && filledCount > 0) expanded = true
+    }
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        label = "sectionChevron",
+    )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HorizontalDivider()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    userToggled = true
+                    expanded = !expanded
+                }
+                // One TalkBack stop that announces the fold state. Without
+                // stateDescription the header reads as bare text and the
+                // chevron — the only thing carrying open/closed — is
+                // invisible to a screen reader.
+                .semantics(mergeDescendants = true) {
+                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                }
+                // 14dp against a line of titleSmall lands on the 48dp touch
+                // target without pinning a height.
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            if (!expanded && filledCount > 0) {
+                Spacer(Modifier.width(8.dp))
+                FilledCountBadge(filledCount)
+            }
+            Spacer(Modifier.weight(1f))
+            Icon(
+                imageVector = Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.rotate(chevronRotation),
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+/** "2 set" on a collapsed group — the promise that folding hid nothing. */
+@Composable
+private fun FilledCountBadge(count: Int) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        Text(
+            "$count set",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
 }
 
 @Composable
