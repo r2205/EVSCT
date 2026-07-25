@@ -2,6 +2,7 @@ package com.evsct.app.ui.sessions
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -109,6 +110,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -121,11 +123,13 @@ import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
 import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.ui.vehicleScopeFromToken
 import com.evsct.app.ui.VehicleScopeTabs
 import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.LocalEvAccents
+import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
 import com.evsct.app.util.Tags
@@ -1802,5 +1806,143 @@ private fun BackupNudgeBanner(
                 }
             }
         }
+    }
+}
+
+/* ------------------------------- Previews -------------------------------- */
+
+/*
+ * A trial set, deliberately small. These render in Android Studio's preview
+ * pane (open this file, then the Split or Design toggle at the top right) with
+ * no build and no device — so the cases below are ones that are a nuisance to
+ * reach by hand in a running app.
+ *
+ * They live in this file because SessionRow and SummaryCard are private, and a
+ * preview can only reach a private composable from the same file.
+ *
+ * Two of them are here specifically because #50 changed both of these to
+ * FlowRow to stop the last column clipping at large font scale, and that PR
+ * shipped saying the large-font case had not been exercised. It still hasn't.
+ * The fontScale = 2f previews are that check.
+ */
+
+private fun previewSession(
+    brand: String? = "Petro-Canada",
+    locationCity: String? = "Kingston",
+    durationSeconds: Long? = 1_800L,
+    waitTimeMinutes: Int? = null,
+    energyKwh: Double? = 42.5,
+    totalCost: Double? = 24.50,
+    chargingType: ChargingType = ChargingType.DC_FAST,
+    tags: String? = null,
+) = ChargingSession(
+    id = 1L,
+    sessionStart = 1_752_000_000_000L,
+    durationSeconds = durationSeconds,
+    waitTimeMinutes = waitTimeMinutes,
+    energyKwh = energyKwh,
+    totalCost = totalCost,
+    chargingType = chargingType,
+    brand = brand,
+    locationCity = locationCity,
+    tags = tags,
+)
+
+@Composable
+private fun PreviewRow(
+    session: ChargingSession,
+    tripName: String? = null,
+    vehicleName: String? = null,
+    hasReceipt: Boolean = false,
+) {
+    EvsctTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            SessionRow(
+                session = session,
+                tripName = tripName,
+                vehicleName = vehicleName,
+                hasReceipt = hasReceipt,
+                isSelected = false,
+                isSelectionMode = false,
+                onClick = {},
+                onLongClick = {},
+                modifier = Modifier.padding(12.dp),
+            )
+        }
+    }
+}
+
+@Preview(name = "Row — typical", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewRowTypical() = PreviewRow(previewSession())
+
+/** Every optional part at once, which is the layout's worst case and takes
+ *  real setup to produce on a device. */
+@Preview(name = "Row — everything set", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewRowEverything() = PreviewRow(
+    previewSession(
+        brand = "Electrify Canada",
+        locationCity = "Saint-Jean-sur-Richelieu",
+        waitTimeMinutes = 7,
+        tags = "roadtrip,reimbursed,winter",
+    ),
+    tripName = "Gaspé loop",
+    vehicleName = "Ioniq 5",
+    hasReceipt = true,
+)
+
+/** The check #50 never ran. If the stat line or the rate chips clip instead of
+ *  wrapping, it shows here. */
+@Preview(name = "Row — 2x font", showBackground = true, widthDp = 400, fontScale = 2f)
+@Composable
+private fun PreviewRowLargeFont() = PreviewRow(
+    previewSession(waitTimeMinutes = 7, tags = "roadtrip"),
+    tripName = "Gaspé loop",
+    vehicleName = "Ioniq 5",
+    hasReceipt = true,
+)
+
+@Preview(
+    name = "Row — dark",
+    showBackground = true,
+    widthDp = 400,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun PreviewRowDark() = PreviewRow(
+    previewSession(chargingType = ChargingType.AC_L2),
+    vehicleName = "Ioniq 5",
+)
+
+/** Mixed currencies plus 2x font is the exact case the FlowRow was for: three
+ *  unweighted columns with the widest possible total. */
+@Preview(name = "Summary — mixed currency, 2x font", showBackground = true, widthDp = 400, fontScale = 2f)
+@Composable
+private fun PreviewSummaryLargeFont() {
+    EvsctTheme {
+        SummaryCard(
+            SessionListUi(
+                isLoading = false,
+                sessionCount = 128,
+                totalKwh = 3_412.75,
+                totalCostByCurrency = CurrencyTotals(mapOf("CAD" to 1_284.50, "USD" to 96.20)),
+            )
+        )
+    }
+}
+
+@Preview(name = "Summary — normal", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewSummaryNormal() {
+    EvsctTheme {
+        SummaryCard(
+            SessionListUi(
+                isLoading = false,
+                sessionCount = 128,
+                totalKwh = 3_412.75,
+                totalCostByCurrency = CurrencyTotals(mapOf("CAD" to 1_284.50)),
+            )
+        )
     }
 }
