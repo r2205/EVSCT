@@ -6,6 +6,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -227,6 +229,7 @@ fun StatsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeadlineCard(state: StatsUi) {
     Card(
@@ -237,9 +240,14 @@ private fun HeadlineCard(state: StatsUi) {
         ),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(
+            // FlowRow, not Row: three unweighted stat columns in a plain Row
+            // have no way to give ground, so at large font scale — or with a
+            // long mixed-currency total — the last one lost width and clipped.
+            // Wrapping to a second line degrades gracefully instead.
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Stat("Sessions", state.sessionCount.toString())
                 // Shared multi-currency stat: one line per currency, so the
@@ -249,9 +257,10 @@ private fun HeadlineCard(state: StatsUi) {
                 Stat("Energy", Format.kwh(state.totalEnergyKwh))
             }
             Spacer(Modifier.height(12.dp))
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Stat("Avg eff. $/kWh", Format.moneyRate(state.avgEffPricePerKwh, "kWh"))
                 Stat("Avg power", Format.kw(state.avgPowerKw))
