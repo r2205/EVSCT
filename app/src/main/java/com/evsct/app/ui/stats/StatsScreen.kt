@@ -236,7 +236,6 @@ fun StatsScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 /**
  * The vehicle id to hand to a screen that can only be scoped to one vehicle —
  * the Year Recap and the Log's brand drill-down, both of which carry a plain
@@ -251,6 +250,7 @@ fun StatsScreen(
 private fun scopedVehicleId(scope: VehicleScope): Long? =
     (scope as? VehicleScope.One)?.id
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeadlineCard(state: StatsUi) {
     Card(
