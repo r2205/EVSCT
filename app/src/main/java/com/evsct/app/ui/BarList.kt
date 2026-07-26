@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,8 +28,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.evsct.app.ui.theme.EvsctTheme
+import com.evsct.app.util.Format
 
 /**
  * Horizontal bar list shared by the Stats screen and the Year Recap. Each
@@ -127,3 +131,106 @@ fun BarList(
 /** Floor for a non-zero bar: a $2 top-up next to a $400 month should still
  *  paint a visible sliver, not read as zero. */
 private const val MIN_BAR_FRACTION = 0.02f
+
+/* ------------------------------- Previews -------------------------------- */
+
+/*
+ * Two reasons this one is worth previewing rather than trusting.
+ *
+ * [labelWidth] and [valueWidth] are fixed Dp, and the text inside them scales
+ * with the user's font setting. Stats passes labelWidth = 64.dp, which fits
+ * "January" at normal size and cannot at 2x — so the large-font preview below is
+ * a genuine question, not a formality.
+ *
+ * And the tappable variant is where #11 was struck. The brand drill-down's rows
+ * measure ~17dp against a 48dp guideline, and the 48dp minimum was reverted in
+ * 520af92 because it roughly doubled the card's height. The note in that commit
+ * says any future fix needs the target without the height — capping the row
+ * count, or making the card the affordance. These previews are where that gets
+ * judged instead of guessed at.
+ */
+
+private val previewBrands = listOf(
+    "Petro-Canada" to 486.20,
+    "Electrify Canada" to 312.75,
+    "Flo" to 208.40,
+    "ChargePoint" to 96.10,
+    "Tesla" to 41.85,
+)
+
+@Preview(name = "Bars — brands by spend", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewBarListBrands() {
+    EvsctTheme {
+        BarList(
+            items = previewBrands,
+            labelWidth = 96.dp,
+            formatValue = { Format.money(it, "CAD") },
+            modifier = Modifier.padding(12.dp),
+        )
+    }
+}
+
+/** Tappable rows, which is the brand drill-down. The thing to judge is whether
+ *  a row is a plausible tap target at this height — the question #11 left open. */
+@Preview(name = "Bars — tappable rows", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewBarListTappable() {
+    EvsctTheme {
+        BarList(
+            items = previewBrands,
+            labelWidth = 96.dp,
+            formatValue = { Format.money(it, "CAD") },
+            modifier = Modifier.padding(12.dp),
+            onRowClick = {},
+        )
+    }
+}
+
+/** Stats' real labelWidth of 64.dp at 2x font. A fixed-width column holding
+ *  text that has doubled has to wrap, ellipsize, or clip, and the 14dp bar
+ *  beside it doesn't grow to match. */
+@Preview(
+    name = "Bars — 64dp labels at 2x font",
+    showBackground = true,
+    widthDp = 400,
+    fontScale = 2f,
+)
+@Composable
+private fun PreviewBarListLargeFont() {
+    EvsctTheme {
+        BarList(
+            items = listOf(
+                "January" to 148.20,
+                "February" to 96.75,
+                "March" to 210.40,
+            ),
+            labelWidth = 64.dp,
+            formatValue = { Format.money(it, "CAD") },
+            modifier = Modifier.padding(12.dp),
+        )
+    }
+}
+
+/** Degenerate data the screens can genuinely produce: one row, where the single
+ *  value is also the maximum and the bar fills completely, and a set of zeros,
+ *  where maxValue is 0 and every bar collapses to the empty track. */
+@Preview(name = "Bars — single row and all zeros", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewBarListDegenerate() {
+    EvsctTheme {
+        Column(modifier = Modifier.padding(12.dp)) {
+            BarList(
+                items = listOf("Petro-Canada" to 486.20),
+                labelWidth = 96.dp,
+                formatValue = { Format.money(it, "CAD") },
+            )
+            Spacer(Modifier.height(16.dp))
+            BarList(
+                items = listOf("April" to 0.0, "May" to 0.0),
+                labelWidth = 96.dp,
+                formatValue = { Format.money(it, "CAD") },
+            )
+        }
+    }
+}
