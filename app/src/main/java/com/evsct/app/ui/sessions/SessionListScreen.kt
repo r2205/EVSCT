@@ -2,6 +2,7 @@ package com.evsct.app.ui.sessions
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -109,6 +110,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -120,12 +122,15 @@ import com.evsct.app.ui.EmptyState
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
+import com.evsct.app.ui.StatColumns
 import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.ui.vehicleScopeFromToken
 import com.evsct.app.ui.VehicleScopeTabs
 import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.LocalEvAccents
+import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.Derived
 import com.evsct.app.util.Format
 import com.evsct.app.util.Tags
@@ -809,7 +814,6 @@ private fun TripPickerRow(label: String, emphasis: Boolean, onClick: () -> Unit)
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryCard(state: SessionListUi) {
     Card(
@@ -819,24 +823,22 @@ private fun SummaryCard(state: SessionListUi) {
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
     ) {
-        // FlowRow, not Row: three unweighted stat columns can't give ground,
-        // so at large font scale — or with a long mixed-currency total — the
-        // last one clipped. Same fix as the Stats headline.
-        FlowRow(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Stat("Sessions", state.sessionCount.toString())
-            MoneyStat("Total cost", state.totalCostByCurrency)
-            Stat("Energy", Format.kwh(state.totalKwh))
+        // Three stats across is the right shape only while all three fit, and
+        // the FlowRow from #50 stopped them clipping without making them line
+        // up. StatColumns owns that decision now, shared with the Stats
+        // headline; ui/StatStacking.kt has the reasoning.
+        StatColumns(modifier = Modifier.fillMaxWidth().padding(16.dp)) { statModifier ->
+            Stat("Sessions", state.sessionCount.toString(), statModifier)
+            MoneyStat("Total cost", state.totalCostByCurrency, statModifier)
+            Stat("Energy", Format.kwh(state.totalKwh), statModifier)
         }
     }
 }
 
+
 @Composable
-private fun Stat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             value,
             style = MaterialTheme.typography.titleLarge,
@@ -863,18 +865,33 @@ private fun SessionRow(
     val typeAccent = LocalEvAccents.current.forType(session.chargingType)
     val barColor = typeAccent.accent
     val tags = remember(session.tags) { Tags.parse(session.tags) }
-    val rowDescription = remember(session, tripName, vehicleName, hasReceipt, tags) {
-        sessionRowDescription(session, tripName, vehicleName, hasReceipt, tags)
+    // Hoisted above the description because both it and the chips further down
+    // render these two, and the spoken form has to agree with what's on screen
+    // — including staying silent when the user has the time rate switched off.
+    val effPrice = Derived.effectiveEnergyPricePerKwh(session)
+    val timeRate = cardTimeRate(session, units.cardTimeRate)
+    // timeRate has to be a key: it depends on the user's card preference, which
+    // `session` says nothing about, so keying on the session alone would leave
+    // the old rate spoken after a toggle in Settings. effPrice is implied by
+    // the session and keyed anyway, so the list doesn't have to be read as a
+    // claim about which inputs matter.
+    val rowDescription = remember(
+        session, tripName, vehicleName, hasReceipt, tags, effPrice, timeRate,
+    ) {
+        sessionRowDescription(
+            session, tripName, vehicleName, hasReceipt, tags, effPrice, timeRate,
+        )
     }
     Card(
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             // One node per row, phrased as a sentence. Left alone, the card
-            // read as a dozen loose fragments — including the two "·"
-            // separators below, announced as "middle dot" — and the visual
-            // grouping that makes a row scannable is exactly what a screen
-            // reader can't recover.
+            // read as a dozen loose fragments, and the visual grouping that
+            // makes a row scannable is exactly what a screen reader can't
+            // recover. (It also used to announce two "·" separators as "middle
+            // dot"; those are gone now — the stat line below wraps, and a
+            // separator can't survive a line break.)
             //
             // clearAndSetSemantics rather than semantics(mergeDescendants):
             // ContentDescription's merge policy APPENDS descendants' own
@@ -978,16 +995,25 @@ private fun SessionRow(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(
+                // FlowRow, and the "·" separators are gone with the plain Row
+                // that held them. #50 converted the summary card and the Stats
+                // headline for this reason and missed this line, which is the
+                // one that actually clips: a Row can't wrap, so at large font
+                // scale "85 kW avg" ran out of width and got cut.
+                //
+                // The dots couldn't survive the change. A wrapped line breaks
+                // wherever the width runs out, which strands a separator at the
+                // end of one line or the start of the next, reading as a typo
+                // rather than punctuation. Spacing carries the grouping instead,
+                // which is also what the row's spoken description already does —
+                // the dots were only ever announced as "middle dot".
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     TypeBadge(session.chargingType)
-                    Spacer(Modifier.width(8.dp))
                     Text(Format.kwh(session.energyKwh), style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.width(12.dp))
-                    Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.width(12.dp))
                     val waitNote = session.waitTimeMinutes
                         ?.takeIf { it > 0 }
                         ?.let { " +${it}m wait" }
@@ -996,21 +1022,10 @@ private fun SessionRow(
                         Format.duration(session.durationSeconds) + waitNote,
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    Spacer(Modifier.width(12.dp))
-                    Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.width(12.dp))
                     Text(
                         Format.kw(Derived.effectiveAvgPowerKw(session)) + " avg",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                }
-                val effPrice = Derived.effectiveEnergyPricePerKwh(session)
-                val timeRate = when (units.cardTimeRate) {
-                    CardTimeRate.PER_MINUTE ->
-                        Derived.effectiveTimeRatePerMin(session)?.let { Format.moneyPerTime(it, "min") }
-                    CardTimeRate.PER_HOUR ->
-                        Derived.effectiveTimeRatePerHour(session)?.let { Format.moneyPerTime(it, "hr") }
-                    CardTimeRate.OFF -> null
                 }
                 if (effPrice != null || timeRate != null || tripName != null || vehicleName != null) {
                     Spacer(Modifier.height(6.dp))
@@ -1032,7 +1047,7 @@ private fun SessionRow(
                         }
                         if (timeRate != null) {
                             Text(
-                                "Eff. $timeRate",
+                                "Eff. ${Format.moneyPerTime(timeRate.value, timeRate.shortUnit)}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1154,6 +1169,34 @@ private fun ChargingType.spokenLabel(): String = when (this) {
     ChargingType.AC_L1 -> "AC level 1"
 }
 
+/**
+ * The cost-per-time rate a row shows, already resolved against the user's
+ * [CardTimeRate] preference — null when they've switched it off, or when the
+ * session has no cost or no duration to divide.
+ *
+ * One function decides this because two callers need the same answer in
+ * different words: the visible chip wants "min" and the spoken sentence wants
+ * "minute". Interpreting the preference twice is how the two drift apart.
+ */
+internal data class CardTimeRateValue(
+    val value: Double,
+    /** Compact unit for the chip: "min", "hr". */
+    val shortUnit: String,
+    /** Spoken unit, which [Format]'s abbreviations don't survive out loud. */
+    val spokenUnit: String,
+)
+
+internal fun cardTimeRate(
+    session: ChargingSession,
+    preference: CardTimeRate,
+): CardTimeRateValue? = when (preference) {
+    CardTimeRate.PER_MINUTE -> Derived.effectiveTimeRatePerMin(session)
+        ?.let { CardTimeRateValue(it, shortUnit = "min", spokenUnit = "minute") }
+    CardTimeRate.PER_HOUR -> Derived.effectiveTimeRatePerHour(session)
+        ?.let { CardTimeRateValue(it, shortUnit = "hr", spokenUnit = "hour") }
+    CardTimeRate.OFF -> null
+}
+
 /* The compact units [Format] renders are right for the eye and wrong for the
  * ear: "kWh" and "kW" get spelled out letter by letter. These reuse Format's
  * (locale-aware) number formatting and swap the unit for a word. */
@@ -1163,6 +1206,18 @@ private fun spokenKwh(value: Double?): String? =
 
 private fun spokenKw(value: Double?): String? =
     value?.let { Format.kw(it).replace("kW", "kilowatts") }
+
+/* The rate chips are the worst of the lot: "Eff. $0.550/kWh" reads as "eff
+ * dollar zero point five five zero slash k-W-h". The slash is the real damage
+ * — it turns a rate into two unrelated numbers — so it becomes "per", and
+ * "Eff." becomes the word it abbreviates. */
+
+private fun spokenEnergyRate(perKwh: Double): String =
+    "effective " + Format.moneyRate(perKwh, "kWh").replace("/kWh", " per kilowatt hour")
+
+private fun spokenTimeRate(rate: CardTimeRateValue): String =
+    "effective " + Format.moneyPerTime(rate.value, rate.shortUnit)
+        .replace("/${rate.shortUnit}", " per ${rate.spokenUnit}")
 
 /** "1 hour 25 minutes" — [Format.duration]'s "1h 25m" reads as bare letters,
  *  and its "0m 42s" second branch matters little out loud. */
@@ -1188,8 +1243,12 @@ internal fun spokenDuration(seconds: Long?): String? {
 
 /**
  * One spoken sentence for a session row, following the same reading order the
- * card lays out visually: who and where, what it cost and when, how the
- * charge went, then the pills that qualify it.
+ * card lays out visually: who and where, what it cost and when, how the charge
+ * went, what it worked out to per unit, then the pills that qualify it.
+ *
+ * [effectiveEnergyRate] and [effectiveTimeRate] are supplied rather than
+ * derived, because whether the time rate appears at all is a user preference
+ * and this sentence must say exactly what the row shows — no more, and no less.
  */
 internal fun sessionRowDescription(
     session: ChargingSession,
@@ -1197,6 +1256,8 @@ internal fun sessionRowDescription(
     vehicleName: String?,
     hasReceipt: Boolean,
     tags: List<String>,
+    effectiveEnergyRate: Double?,
+    effectiveTimeRate: CardTimeRateValue?,
 ): String {
     val parts = mutableListOf<String>()
     parts += session.brand ?: "Unknown brand"
@@ -1210,6 +1271,12 @@ internal fun sessionRowDescription(
         parts += if (it == 1) "1 minute wait" else "$it minutes wait"
     }
     spokenKw(Derived.effectiveAvgPowerKw(session))?.let { parts += "$it average" }
+    // Both rates are passed in rather than derived here, so the sentence can't
+    // announce a rate the card isn't showing. "effective" repeats on each, as
+    // "Eff." does on screen, rather than being folded into one clause — the
+    // two rates are separate facts and a listener gets one pass at them.
+    effectiveEnergyRate?.let { parts += spokenEnergyRate(it) }
+    effectiveTimeRate?.let { parts += spokenTimeRate(it) }
     vehicleName?.let { parts += it }
     tripName?.let { parts += "trip $it" }
     if (hasReceipt) parts += "receipt attached"
@@ -1744,5 +1811,161 @@ private fun BackupNudgeBanner(
                 }
             }
         }
+    }
+}
+
+/* ------------------------------- Previews -------------------------------- */
+
+/*
+ * A trial set, deliberately small. These render in Android Studio's preview
+ * pane (open this file, then the Split or Design toggle at the top right) with
+ * no build and no device — so the cases below are ones that are a nuisance to
+ * reach by hand in a running app.
+ *
+ * They live in this file because SessionRow and SummaryCard are private, and a
+ * preview can only reach a private composable from the same file.
+ *
+ * Two of them are here specifically because #50 changed both of these to
+ * FlowRow to stop the last column clipping at large font scale, and that PR
+ * shipped saying the large-font case had not been exercised. It still hasn't.
+ * The fontScale = 2f previews are that check.
+ */
+
+private fun previewSession(
+    brand: String? = "Petro-Canada",
+    locationCity: String? = "Kingston",
+    durationSeconds: Long? = 1_800L,
+    waitTimeMinutes: Int? = null,
+    energyKwh: Double? = 42.5,
+    totalCost: Double? = 24.50,
+    chargingType: ChargingType = ChargingType.DC_FAST,
+    tags: String? = null,
+) = ChargingSession(
+    id = 1L,
+    sessionStart = 1_752_000_000_000L,
+    durationSeconds = durationSeconds,
+    waitTimeMinutes = waitTimeMinutes,
+    energyKwh = energyKwh,
+    totalCost = totalCost,
+    chargingType = chargingType,
+    brand = brand,
+    locationCity = locationCity,
+    tags = tags,
+)
+
+@Composable
+private fun PreviewRow(
+    session: ChargingSession,
+    tripName: String? = null,
+    vehicleName: String? = null,
+    hasReceipt: Boolean = false,
+) {
+    EvsctTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            SessionRow(
+                session = session,
+                tripName = tripName,
+                vehicleName = vehicleName,
+                hasReceipt = hasReceipt,
+                isSelected = false,
+                isSelectionMode = false,
+                onClick = {},
+                onLongClick = {},
+                modifier = Modifier.padding(12.dp),
+            )
+        }
+    }
+}
+
+@Preview(name = "Row — typical", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewRowTypical() = PreviewRow(previewSession())
+
+/** Every optional part at once, which is the layout's worst case and takes
+ *  real setup to produce on a device. */
+@Preview(name = "Row — everything set", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewRowEverything() = PreviewRow(
+    previewSession(
+        brand = "Electrify Canada",
+        locationCity = "Saint-Jean-sur-Richelieu",
+        waitTimeMinutes = 7,
+        tags = "roadtrip,reimbursed,winter",
+    ),
+    tripName = "Gaspé loop",
+    vehicleName = "Ioniq 5",
+    hasReceipt = true,
+)
+
+/** The check #50 never ran. If the stat line or the rate chips clip instead of
+ *  wrapping, it shows here. */
+@Preview(name = "Row — 2x font", showBackground = true, widthDp = 400, fontScale = 2f)
+@Composable
+private fun PreviewRowLargeFont() = PreviewRow(
+    previewSession(waitTimeMinutes = 7, tags = "roadtrip"),
+    tripName = "Gaspé loop",
+    vehicleName = "Ioniq 5",
+    hasReceipt = true,
+)
+
+@Preview(
+    name = "Row — dark",
+    showBackground = true,
+    widthDp = 400,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun PreviewRowDark() = PreviewRow(
+    previewSession(chargingType = ChargingType.AC_L2),
+    vehicleName = "Ioniq 5",
+)
+
+/** Mixed currencies plus 2x font is the exact case the FlowRow was for: three
+ *  unweighted columns with the widest possible total. */
+@Preview(name = "Summary — mixed currency, 2x font", showBackground = true, widthDp = 400, fontScale = 2f)
+@Composable
+private fun PreviewSummaryLargeFont() {
+    EvsctTheme {
+        SummaryCard(
+            SessionListUi(
+                isLoading = false,
+                sessionCount = 128,
+                totalKwh = 3_412.75,
+                totalCostByCurrency = CurrencyTotals(mapOf("CAD" to 1_284.50, "USD" to 96.20)),
+            )
+        )
+    }
+}
+
+/** Just under [STACK_STATS_FONT_SCALE], so this is the wrapped-row branch — the
+ *  layout the stacking exists to replace. Keep it: it's the check that the
+ *  fallback still behaves for the widths font scale can't predict. */
+@Preview(name = "Summary — 1.3x (still a row)", showBackground = true, widthDp = 400, fontScale = 1.3f)
+@Composable
+private fun PreviewSummaryBelowThreshold() {
+    EvsctTheme {
+        SummaryCard(
+            SessionListUi(
+                isLoading = false,
+                sessionCount = 128,
+                totalKwh = 3_412.75,
+                totalCostByCurrency = CurrencyTotals(mapOf("CAD" to 1_284.50, "USD" to 96.20)),
+            )
+        )
+    }
+}
+
+@Preview(name = "Summary — normal", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewSummaryNormal() {
+    EvsctTheme {
+        SummaryCard(
+            SessionListUi(
+                isLoading = false,
+                sessionCount = 128,
+                totalKwh = 3_412.75,
+                totalCostByCurrency = CurrencyTotals(mapOf("CAD" to 1_284.50)),
+            )
+        )
     }
 }

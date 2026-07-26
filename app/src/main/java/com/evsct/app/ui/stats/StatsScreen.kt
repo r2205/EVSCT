@@ -6,8 +6,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -54,6 +52,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,11 +60,15 @@ import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.ui.BarList
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.MoneyStat
+import com.evsct.app.ui.STACK_STATS_FONT_SCALE
+import com.evsct.app.ui.StatColumns
 import com.evsct.app.ui.VehicleScope
 import com.evsct.app.ui.VehicleScopeTabs
 import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.ui.forType
+import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.ui.theme.LocalEvAccents
+import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.Format
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -236,7 +239,6 @@ fun StatsScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeadlineCard(state: StatsUi) {
     Card(
@@ -247,30 +249,22 @@ private fun HeadlineCard(state: StatsUi) {
         ),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            // FlowRow, not Row: three unweighted stat columns in a plain Row
-            // have no way to give ground, so at large font scale — or with a
-            // long mixed-currency total — the last one lost width and clipped.
-            // Wrapping to a second line degrades gracefully instead.
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Stat("Sessions", state.sessionCount.toString())
+            // StatColumns decides row-versus-stacked; see ui/StatStacking.kt for
+            // why wrapping alone wasn't enough. The second row is the reason
+            // this is shared rather than done twice: two stats, so a wrap leaves
+            // each one floating alone and centred on its own line.
+            StatColumns(modifier = Modifier.fillMaxWidth()) { statModifier ->
+                Stat("Sessions", state.sessionCount.toString(), statModifier)
                 // Shared multi-currency stat: one line per currency, so the
                 // headline never has to silently drop foreign-currency spend
                 // the way the single-currency charts below do.
-                MoneyStat("Total cost", state.totalCostByCurrency)
-                Stat("Energy", Format.kwh(state.totalEnergyKwh))
+                MoneyStat("Total cost", state.totalCostByCurrency, statModifier)
+                Stat("Energy", Format.kwh(state.totalEnergyKwh), statModifier)
             }
             Spacer(Modifier.height(12.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Stat("Avg eff. $/kWh", Format.moneyRate(state.avgEffPricePerKwh, "kWh"))
-                Stat("Avg power", Format.kw(state.avgPowerKw))
+            StatColumns(modifier = Modifier.fillMaxWidth()) { statModifier ->
+                Stat("Avg eff. $/kWh", Format.moneyRate(state.avgEffPricePerKwh, "kWh"), statModifier)
+                Stat("Avg power", Format.kw(state.avgPowerKw), statModifier)
             }
             if (state.excludedByCurrency > 0) {
                 val n = state.excludedByCurrency
@@ -358,8 +352,8 @@ private fun GasSavingsCard(state: StatsUi) {
 }
 
 @Composable
-private fun Stat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(label, style = MaterialTheme.typography.labelSmall)
     }
@@ -644,3 +638,58 @@ private fun ChargingType.shortLabel(): String = when (this) {
     ChargingType.AC_L1 -> "AC L1"
 }
 
+
+/* ------------------------------- Previews -------------------------------- */
+
+/*
+ * The headline had no previews, which is why its two SpaceAround rows went
+ * unexamined through #50 and #51 — the same defect the Log's summary card was
+ * just fixed for, and the second row is the sharper case because it holds only
+ * two stats.
+ *
+ * The thresholds are named rather than typed twice, so these stay pinned to the
+ * value in ui/StatStacking.kt if it ever moves.
+ */
+
+private fun previewStats(mixedCurrency: Boolean = false) = StatsUi(
+    isLoading = false,
+    sessionCount = 128,
+    totalEnergyKwh = 3_412.75,
+    totalCostByCurrency = CurrencyTotals(
+        if (mixedCurrency) mapOf("CAD" to 1_284.50, "USD" to 96.20)
+        else mapOf("CAD" to 1_284.50)
+    ),
+    avgEffPricePerKwh = 0.376,
+    avgPowerKw = 84.2,
+)
+
+@Preview(name = "Headline — normal", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewHeadlineNormal() {
+    EvsctTheme { HeadlineCard(previewStats()) }
+}
+
+/** Exactly at the threshold, so this is the first stacked step. */
+@Preview(
+    name = "Headline — stacked at threshold",
+    showBackground = true,
+    widthDp = 400,
+    fontScale = STACK_STATS_FONT_SCALE,
+)
+@Composable
+private fun PreviewHeadlineStacked() {
+    EvsctTheme { HeadlineCard(previewStats(mixedCurrency = true)) }
+}
+
+/** One step below the threshold: still a wrapped row, which is the branch the
+ *  stacking replaces and therefore the one worth keeping an eye on. */
+@Preview(
+    name = "Headline — 1.3x, still a row",
+    showBackground = true,
+    widthDp = 400,
+    fontScale = 1.3f,
+)
+@Composable
+private fun PreviewHeadlineBelowThreshold() {
+    EvsctTheme { HeadlineCard(previewStats(mixedCurrency = true)) }
+}
