@@ -6,6 +6,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -51,6 +52,10 @@ fun VehicleScopeTabs(
             Tab(
                 selected = index == selectedIndex,
                 onClick = { onSelect(tabScope) },
+                // Tagged by label, not index: a test that says "tap Unassigned"
+                // shouldn't care how many vehicles precede it — that count is
+                // exactly what varies between the cases worth testing.
+                modifier = Modifier.testTag("scopeTab:$label"),
                 text = {
                     Text(
                         label,

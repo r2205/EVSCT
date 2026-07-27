@@ -84,6 +84,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.focus.FocusDirection
@@ -777,9 +778,13 @@ private fun SectionLabel(text: String) {
  * Expansion is [rememberSaveable], so it survives rotation and process death —
  * the map picker and the photo picker both put this screen at risk of the
  * latter.
+ *
+ * Internal rather than private so [CollapsibleSectionTest] can drive the fold
+ * rules directly — they are this screen's real behavioral guarantees, and
+ * unit tests compile into the same module.
  */
 @Composable
-private fun CollapsibleSection(
+internal fun CollapsibleSection(
     title: String,
     filledCount: Int,
     startExpanded: Boolean = false,
@@ -809,6 +814,11 @@ private fun CollapsibleSection(
                 // stateDescription the header reads as bare text and the
                 // chevron — the only thing carrying open/closed — is
                 // invisible to a screen reader.
+                //
+                // The testTag is how CollapsibleSectionTest folds and unfolds
+                // the group; the title suffix keeps it addressable once the
+                // form's seven sections are on screen together.
+                .testTag("sectionHeader:$title")
                 .semantics(mergeDescendants = true) {
                     stateDescription = if (expanded) "Expanded" else "Collapsed"
                 }

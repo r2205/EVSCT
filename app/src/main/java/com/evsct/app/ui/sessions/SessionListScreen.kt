@@ -109,6 +109,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -907,6 +908,10 @@ private fun SessionRow(
             .clearAndSetSemantics {
                 contentDescription = rowDescription
                 if (isSelectionMode) selected = isSelected
+                // Set inside the block, not as a .testTag() modifier: this
+                // clears descendant semantics, and the tag must be part of
+                // what's kept, not part of what's cleared.
+                testTag = "sessionRow"
             },
         shape = RoundedCornerShape(14.dp),
         colors = if (isSelected) CardDefaults.cardColors(
