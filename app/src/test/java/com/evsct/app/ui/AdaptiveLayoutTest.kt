@@ -22,6 +22,8 @@ class AdaptiveLayoutTest {
     @get:Rule
     val compose = createComposeRule()
 
+    /** One call per test: setContent is once-per-rule, which is also why the
+     *  boundary check below is two tests rather than one asserting both sides. */
     private fun wideAt(widthDp: Int, heightDp: Int): Boolean {
         var result = false
         compose.setContent {
@@ -47,8 +49,12 @@ class AdaptiveLayoutTest {
     }
 
     @Test
-    fun `the boundary is inclusive at the named breakpoint`() {
+    fun `the named breakpoint itself is wide — the boundary is inclusive`() {
         assertEquals(true, wideAt(widthDp = WIDE_WINDOW_MIN_DP, heightDp = 400))
+    }
+
+    @Test
+    fun `one dp under the breakpoint is narrow`() {
         assertEquals(false, wideAt(widthDp = WIDE_WINDOW_MIN_DP - 1, heightDp = 400))
     }
 }
