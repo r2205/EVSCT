@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
@@ -41,6 +42,14 @@ import com.evsct.app.util.Format
  * of the track so small-but-real entries don't disappear next to a big
  * outlier. When [onRowClick] is set, rows become tappable and grow a
  * trailing chevron (how Stats' brand drill-down advertises itself).
+ *
+ * [labelWidth] and [valueWidth] name widths at normal font scale; internally
+ * both are multiplied by the user's font scale. They hold text, which is sized
+ * in sp and grows with the font setting, while dp does not — at 2x that gap
+ * broke "$148.20 CAD" mid-number, leaving "0 CAD" alone on a second line. The
+ * bar track absorbs what the scaled columns take, equally in every row, so
+ * bars stay comparable across rows; at large scales they get short, which is
+ * the right trade — the numbers are the data, the bars are the glance.
  */
 @Composable
 fun BarList(
@@ -48,10 +57,16 @@ fun BarList(
     labelWidth: Dp,
     formatValue: (Double) -> String,
     modifier: Modifier = Modifier,
-    valueWidth: Dp = 82.dp,
+    // 96 fits "$1,284.50 CAD" — a four-digit total with grouping — on one
+    // line; the old 82 held only eleven-odd characters, so real Stats data
+    // could word-wrap "CAD" onto a second line at normal font scale.
+    valueWidth: Dp = 96.dp,
     onRowClick: ((String) -> Unit)? = null,
 ) {
     val maxValue = items.maxOfOrNull { it.second } ?: 0.0
+    val fontScale = LocalDensity.current.fontScale
+    val scaledLabelWidth = labelWidth * fontScale
+    val scaledValueWidth = valueWidth * fontScale
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEach { (label, value) ->
             Row(
@@ -77,7 +92,7 @@ fun BarList(
                     label,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(labelWidth),
+                    modifier = Modifier.width(scaledLabelWidth),
                 )
                 Box(
                     modifier = Modifier
@@ -113,7 +128,7 @@ fun BarList(
                 Text(
                     formatValue(value),
                     style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.width(valueWidth),
+                    modifier = Modifier.width(scaledValueWidth),
                 )
                 if (onRowClick != null) {
                     Icon(
@@ -137,10 +152,11 @@ private const val MIN_BAR_FRACTION = 0.02f
 /*
  * Two reasons this one is worth previewing rather than trusting.
  *
- * [labelWidth] and [valueWidth] are fixed Dp, and the text inside them scales
- * with the user's font setting. Stats passes labelWidth = 64.dp, which fits
- * "January" at normal size and cannot at 2x — so the large-font preview below is
- * a genuine question, not a formality.
+ * The 2x preview below asked whether fixed-dp columns survive scaled text, and
+ * the answer was no — "January" wrapped, and "$148.20 CAD" broke mid-number.
+ * The columns scale with fontScale now, so its job has flipped from question
+ * to regression watch: if it ever shows a wrapped label or a split value
+ * again, the scaling has been lost.
  *
  * And the tappable variant is where #11 was struck. The brand drill-down's rows
  * measure ~17dp against a 48dp guideline, and the 48dp minimum was reverted in
@@ -187,9 +203,9 @@ private fun PreviewBarListTappable() {
     }
 }
 
-/** Stats' real labelWidth of 64.dp at 2x font. A fixed-width column holding
- *  text that has doubled has to wrap, ellipsize, or clip, and the 14dp bar
- *  beside it doesn't grow to match. */
+/** Stats' real labelWidth of 64.dp at 2x font. Before the columns scaled with
+ *  fontScale this wrapped the months and split the values mid-number; now it's
+ *  the watch that they hold one line, with the bars giving the ground. */
 @Preview(
     name = "Bars — 64dp labels at 2x font",
     showBackground = true,

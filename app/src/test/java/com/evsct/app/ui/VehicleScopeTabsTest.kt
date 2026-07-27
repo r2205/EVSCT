@@ -1,8 +1,15 @@
 package com.evsct.app.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.theme.EvsctTheme
@@ -90,5 +97,57 @@ class VehicleScopeTabsTest {
         )
         compose.onNodeWithTag("scopeTab:All").performClick()
         compose.runOnIdle { assertEquals(VehicleScope.All, selected) }
+    }
+
+    /* ---------------------------- Overflow behavior --------------------------- */
+
+    // ScrollableTabRow composes every tab and scrolls the strip, which a static
+    // preview cannot show — it renders one clipped frame, indistinguishable
+    // from a strip that can't scroll at all. This was verified by hand once (on
+    // a phone, with dummy vehicles added to force the overflow); these two pin
+    // that session's findings so nobody has to repeat it.
+
+    private val manyVehicles = listOf(
+        Vehicle(id = 1L, name = "EV6"),
+        Vehicle(id = 2L, name = "Mach-E"),
+        Vehicle(id = 3L, name = "Ioniq 5"),
+        Vehicle(id = 4L, name = "Model Y"),
+    )
+
+    private fun setNarrowTabs(scope: VehicleScope, onSelect: (VehicleScope) -> Unit = {}) {
+        compose.setContent {
+            EvsctTheme {
+                // Narrow enough that six tabs must overflow: the strip's
+                // minimum tab width alone exceeds 300dp several times over.
+                Box(Modifier.width(300.dp)) {
+                    VehicleScopeTabs(
+                        vehicles = manyVehicles,
+                        includeUnassigned = true,
+                        scope = scope,
+                        onSelect = onSelect,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `Unassigned stays reachable by scrolling when the tabs overflow`() {
+        var selected: VehicleScope? = null
+        setNarrowTabs(scope = VehicleScope.All, onSelect = { selected = it })
+        // Off-screen first, deliberately: without this a strip that shrank its
+        // tabs to fit would pass the rest without ever scrolling.
+        compose.onNodeWithTag("scopeTab:Unassigned").assertIsNotDisplayed()
+        compose.onNodeWithTag("scopeTab:Unassigned").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(VehicleScope.Unassigned, selected) }
+    }
+
+    @Test
+    fun `arriving with the last tab selected scrolls it into view`() {
+        // The other half of what a still frame can't show. If this regressed,
+        // the Log would open scoped to Unassigned with the selection invisible
+        // off the right edge — a screen that looks like nothing is selected.
+        setNarrowTabs(scope = VehicleScope.Unassigned)
+        compose.onNodeWithTag("scopeTab:Unassigned").assertIsDisplayed()
     }
 }
