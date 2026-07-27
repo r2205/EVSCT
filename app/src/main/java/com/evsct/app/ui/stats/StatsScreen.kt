@@ -76,6 +76,7 @@ import com.evsct.app.util.Format
 fun StatsScreen(
     onOpenYearRecap: (VehicleScope) -> Unit,
     onOpenLogForBrand: (brand: String, scope: VehicleScope) -> Unit,
+    onOpenVehicles: () -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -138,6 +139,7 @@ fun StatsScreen(
                     includeUnassigned = state.hasUnassignedSessions,
                     scope = state.vehicleScope,
                     onSelect = viewModel::setVehicleScope,
+                    onManageVehicles = onOpenVehicles,
                 )
             }
 

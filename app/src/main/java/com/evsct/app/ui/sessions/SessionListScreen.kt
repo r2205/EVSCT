@@ -147,6 +147,7 @@ fun SessionListScreen(
     onStartTrackedSession: (sessionId: Long) -> Unit,
     onEditSession: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenVehicles: () -> Unit,
     /** Brand-drill-down payload from Stats, read off this entry's
      *  SavedStateHandle by the nav graph (same relay the map picker
      *  uses). Vehicle id uses a -1 sentinel for "all vehicles". */
@@ -394,6 +395,7 @@ fun SessionListScreen(
                     includeUnassigned = state.hasUnassignedSessions,
                     scope = state.vehicleScope,
                     onSelect = { scope -> viewModel.setVehicleScope(scope) },
+                    onManageVehicles = onOpenVehicles,
                 )
             }
             if (state.backupNudge.show && !state.isSelectionMode) {
@@ -440,14 +442,18 @@ fun SessionListScreen(
                     // First-launch path: no vehicles, no sessions. Saving a
                     // session without a vehicle works but leaves it untagged
                     // and skews per-vehicle stats, so route the user to set
-                    // up a vehicle first.
+                    // up a vehicle first — straight to the Vehicles screen,
+                    // whose own empty state offers "Add vehicle". The old
+                    // target was Settings, which asked a brand-new user to
+                    // find Vehicles inside a screen they'd never opened,
+                    // right after the body told them what to do.
                     EmptyState(
                         icon = Icons.Default.DirectionsCar,
                         title = "Welcome to EVSCT",
                         body = "Add a vehicle first so charging sessions can " +
                             "be tagged to it for stats and efficiency tracking.",
-                        actionLabel = "Open Settings",
-                        onAction = onOpenSettings,
+                        actionLabel = "Add a vehicle",
+                        onAction = onOpenVehicles,
                     )
                 } else {
                     // Nothing to show, per bucket. All of these go through the
