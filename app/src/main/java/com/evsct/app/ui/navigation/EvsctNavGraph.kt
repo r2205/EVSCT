@@ -1,9 +1,13 @@
 package com.evsct.app.ui.navigation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
@@ -13,12 +17,15 @@ import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -29,6 +36,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.isWideWindow
+import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.ui.toToken
 import com.evsct.app.ui.map.MapPickerScreen
 import com.evsct.app.ui.map.MapScreen
@@ -144,53 +153,62 @@ private val TOP_LEVEL_DESTINATIONS = listOf(
 fun EvsctNavGraph(navController: NavHostController) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    // The bar lives on the four top-level screens only. Sub-screens
+    // The tab chrome lives on the four top-level screens only. Sub-screens
     // (edit forms, detail pages, settings, the map picker) keep their
     // full height and their own back semantics.
-    val showBottomBar = TOP_LEVEL_DESTINATIONS.any { it.route == currentRoute }
+    val showNavChrome = TOP_LEVEL_DESTINATIONS.any { it.route == currentRoute }
+    // Wide windows — a phone in landscape, a tablet — get a side rail
+    // instead of a bottom bar. In landscape the bar was the single worst
+    // spender of the dimension that's suddenly scarce: height.
+    val wide = isWideWindow()
 
-    Scaffold(
-        bottomBar = {
-            // Slide the bar out under sub-screens instead of blinking away —
-            // enter/exit mirror each other so tab↔detail transitions feel
-            // like one continuous surface.
+    val selectTab: (TopLevelDestination) -> Unit = { dest ->
+        // Same mid-transition guard as every other navigation lambda in
+        // this graph.
+        backStackEntry?.ifResumed {
+            navController.navigate(dest.route) {
+                // Canonical tab behavior: one stack segment per tab, saved
+                // when you leave and restored when you return, with back
+                // always landing on the Log.
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (wide) {
+            // Mirror of the bottom bar's slide, rotated: out through the
+            // start edge under sub-screens instead of blinking away.
             AnimatedVisibility(
-                visible = showBottomBar,
-                enter = slideInVertically(initialOffsetY = { it }),
-                exit = slideOutVertically(targetOffsetY = { it }),
+                visible = showNavChrome,
+                enter = slideInHorizontally(initialOffsetX = { -it }),
+                exit = slideOutHorizontally(targetOffsetX = { -it }),
             ) {
-                NavigationBar {
-                    TOP_LEVEL_DESTINATIONS.forEach { dest ->
-                        NavigationBarItem(
-                            selected = currentRoute == dest.route,
-                            onClick = {
-                                // Same mid-transition guard as every other
-                                // navigation lambda in this graph.
-                                backStackEntry?.ifResumed {
-                                    navController.navigate(dest.route) {
-                                        // Canonical tab behavior: one stack
-                                        // segment per tab, saved when you
-                                        // leave and restored when you return,
-                                        // with back always landing on the Log.
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            },
-                            // Label text carries the name for TalkBack; the
-                            // icon is decorative alongside it.
-                            icon = { Icon(dest.icon, contentDescription = null) },
-                            label = { Text(dest.label) },
-                        )
+                EvsctNavigationRail(currentRoute, onSelect = selectTab)
+            }
+        }
+        Scaffold(
+            modifier = Modifier.weight(1f),
+            bottomBar = {
+                if (!wide) {
+                    // Slide the bar out under sub-screens instead of blinking
+                    // away — enter/exit mirror each other so tab↔detail
+                    // transitions feel like one continuous surface.
+                    AnimatedVisibility(
+                        visible = showNavChrome,
+                        enter = slideInVertically(initialOffsetY = { it }),
+                        exit = slideOutVertically(targetOffsetY = { it }),
+                    ) {
+                        EvsctNavigationBar(currentRoute, onSelect = selectTab)
                     }
                 }
-            }
-        },
-    ) { padding ->
-        NavHost(
+            },
+        ) { padding ->
+            NavHost(
             navController = navController,
             startDestination = Routes.SESSION_LIST,
             // consumeWindowInsets: the outer Scaffold already accounts for
@@ -432,5 +450,65 @@ fun EvsctNavGraph(navController: NavHostController) {
             )
         }
         }
+        }
     }
+}
+
+/* --------------------------- Navigation chrome ---------------------------- */
+
+/* The two faces of the same four destinations. Extracted from the graph so
+ * they take plain data — a route and a callback — which is what lets the
+ * previews below render them without a NavController, and keeps the item
+ * loop written once per orientation rather than inline in the graph. */
+
+@Composable
+private fun EvsctNavigationBar(
+    currentRoute: String?,
+    onSelect: (TopLevelDestination) -> Unit,
+) {
+    NavigationBar {
+        TOP_LEVEL_DESTINATIONS.forEach { dest ->
+            NavigationBarItem(
+                selected = currentRoute == dest.route,
+                onClick = { onSelect(dest) },
+                // Label text carries the name for TalkBack; the icon is
+                // decorative alongside it.
+                icon = { Icon(dest.icon, contentDescription = null) },
+                label = { Text(dest.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun EvsctNavigationRail(
+    currentRoute: String?,
+    onSelect: (TopLevelDestination) -> Unit,
+) {
+    NavigationRail {
+        TOP_LEVEL_DESTINATIONS.forEach { dest ->
+            NavigationRailItem(
+                selected = currentRoute == dest.route,
+                onClick = { onSelect(dest) },
+                icon = { Icon(dest.icon, contentDescription = null) },
+                label = { Text(dest.label) },
+            )
+        }
+    }
+}
+
+/* ------------------------------- Previews -------------------------------- */
+
+@Preview(name = "Bottom bar — portrait phone", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewNavigationBar() {
+    EvsctTheme { EvsctNavigationBar(currentRoute = Routes.SESSION_LIST, onSelect = {}) }
+}
+
+/** What landscape gains: the four destinations spend width, which landscape
+ *  has, instead of height, which it doesn't. */
+@Preview(name = "Rail — landscape", showBackground = true, widthDp = 96, heightDp = 400)
+@Composable
+private fun PreviewNavigationRail() {
+    EvsctTheme { EvsctNavigationRail(currentRoute = Routes.STATS, onSelect = {}) }
 }
