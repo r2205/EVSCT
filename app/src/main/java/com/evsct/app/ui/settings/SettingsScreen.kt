@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -76,6 +76,7 @@ import com.evsct.app.data.backup.BackupShareChosenReceiver
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.CardTimeRate
 import com.evsct.app.ui.EvsctBarTitle
+import com.evsct.app.ui.readableFormWidth
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -204,7 +205,10 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
-                .fillMaxSize()
+                .fillMaxHeight()
+                // Capped and centred in wide windows; identical to the old
+                // fillMaxSize on a portrait phone. See ui/AdaptiveLayout.kt.
+                .readableFormWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),

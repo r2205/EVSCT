@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -103,6 +104,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.evsct.app.ui.readableFormWidth
 import com.evsct.app.ui.theme.EvsctTheme
 import java.io.File
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -290,7 +292,10 @@ fun SessionEditScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
-                .fillMaxSize()
+                .fillMaxHeight()
+                // Capped and centred in wide windows; identical to the old
+                // fillMaxSize on a portrait phone. See ui/AdaptiveLayout.kt.
+                .readableFormWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
