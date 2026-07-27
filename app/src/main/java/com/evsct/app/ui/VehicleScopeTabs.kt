@@ -6,9 +6,12 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.theme.EvsctTheme
 
 /**
  * The vehicle tab strip shared by the Log and Stats. One tab per bucket that
@@ -49,6 +52,10 @@ fun VehicleScopeTabs(
             Tab(
                 selected = index == selectedIndex,
                 onClick = { onSelect(tabScope) },
+                // Tagged by label, not index: a test that says "tap Unassigned"
+                // shouldn't care how many vehicles precede it — that count is
+                // exactly what varies between the cases worth testing.
+                modifier = Modifier.testTag("scopeTab:$label"),
                 text = {
                     Text(
                         label,
@@ -58,5 +65,80 @@ fun VehicleScopeTabs(
                 },
             )
         }
+    }
+}
+
+/* ------------------------------- Previews -------------------------------- */
+
+/*
+ * The bucket rule from #51 is unit-tested in VehicleScopeTest — what tabs exist,
+ * and when a picker is worth showing at all. What the tests can't say is whether
+ * the row reads right, and the combinations are a nuisance to reach for real:
+ * seeing "1 vehicle + Unassigned" means owning exactly one car and holding on to
+ * an unassigned session.
+ *
+ * Unassigned sits last, after the real vehicles, because it's the exception
+ * bucket rather than a peer. That ordering is the thing to check by eye.
+ */
+
+private fun previewVehicles(vararg names: String) =
+    names.mapIndexed { i, name -> Vehicle(id = i + 1L, name = name) }
+
+@Preview(name = "Tabs — two vehicles", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewTabsTwoVehicles() {
+    EvsctTheme {
+        VehicleScopeTabs(
+            vehicles = previewVehicles("EV6", "Mach-E"),
+            includeUnassigned = false,
+            scope = VehicleScope.All,
+            onSelect = {},
+        )
+    }
+}
+
+/** The case that used to render nothing at all: one vehicle plus orphans. The
+ *  old rule required 2+ vehicles, so a lone car and some unassigned sessions
+ *  showed one undifferentiated list with no headings. */
+@Preview(name = "Tabs — one vehicle + Unassigned", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewTabsOneVehiclePlusUnassigned() {
+    EvsctTheme {
+        VehicleScopeTabs(
+            vehicles = previewVehicles("EV6"),
+            includeUnassigned = true,
+            scope = VehicleScope.Unassigned,
+            onSelect = {},
+        )
+    }
+}
+
+/** Enough tabs to scroll, with Unassigned selected at the far end — the check
+ *  that the selected tab is reachable rather than stranded off-screen. */
+@Preview(name = "Tabs — scrolling, Unassigned selected", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewTabsScrolling() {
+    EvsctTheme {
+        VehicleScopeTabs(
+            vehicles = previewVehicles("EV6", "Mach-E", "Ioniq 5", "Model Y"),
+            includeUnassigned = true,
+            scope = VehicleScope.Unassigned,
+            onSelect = {},
+        )
+    }
+}
+
+/** Vehicle names are free text, so one long enough to dominate the row is a
+ *  case the app permits and nobody has looked at. */
+@Preview(name = "Tabs — long name, 1.5x font", showBackground = true, widthDp = 400, fontScale = 1.5f)
+@Composable
+private fun PreviewTabsLongName() {
+    EvsctTheme {
+        VehicleScopeTabs(
+            vehicles = previewVehicles("Volkswagen ID.4 Pro S AWD", "EV6"),
+            includeUnassigned = true,
+            scope = VehicleScope.One(1L),
+            onSelect = {},
+        )
     }
 }

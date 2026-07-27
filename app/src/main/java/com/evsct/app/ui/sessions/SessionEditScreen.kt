@@ -84,6 +84,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.focus.FocusDirection
@@ -99,8 +100,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.evsct.app.ui.theme.EvsctTheme
 import java.io.File
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.activity.compose.BackHandler
@@ -775,9 +778,13 @@ private fun SectionLabel(text: String) {
  * Expansion is [rememberSaveable], so it survives rotation and process death —
  * the map picker and the photo picker both put this screen at risk of the
  * latter.
+ *
+ * Internal rather than private so [CollapsibleSectionTest] can drive the fold
+ * rules directly — they are this screen's real behavioral guarantees, and
+ * unit tests compile into the same module.
  */
 @Composable
-private fun CollapsibleSection(
+internal fun CollapsibleSection(
     title: String,
     filledCount: Int,
     startExpanded: Boolean = false,
@@ -807,6 +814,11 @@ private fun CollapsibleSection(
                 // stateDescription the header reads as bare text and the
                 // chevron — the only thing carrying open/closed — is
                 // invisible to a screen reader.
+                //
+                // The testTag is how CollapsibleSectionTest folds and unfolds
+                // the group; the title suffix keeps it addressable once the
+                // form's seven sections are on screen together.
+                .testTag("sectionHeader:$title")
                 .semantics(mergeDescendants = true) {
                     stateDescription = if (expanded) "Expanded" else "Collapsed"
                 }
@@ -2054,4 +2066,116 @@ private fun LiveElapsedChip(sessionStart: Long, onUse: (Long) -> Unit) {
             labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
         ),
     )
+}
+
+/* ------------------------------- Previews -------------------------------- */
+
+/*
+ * The seven folding groups from #50, which that PR shipped marked "not yet
+ * exercised" and which nothing has checked since.
+ *
+ * One thing writing these turned up: **"collapsed with a badge" is not a
+ * reachable starting state.** `expanded` initialises to
+ * `startExpanded || filledCount > 0`, and the LaunchedEffect re-opens any group
+ * that holds a value, so a group with content is always open on arrival. The
+ * badge only appears after the user manually collapses a filled group — which is
+ * the intended behaviour (auto-open beats a badge) but means the badge itself has
+ * likely never been looked at. Hence the separate FilledCountBadge preview: a
+ * static preview of the section can't produce it. Studio's interactive preview
+ * can, by clicking the header.
+ */
+
+@Composable
+private fun PreviewSectionBody() {
+    OutlinedTextField(
+        value = "",
+        onValueChange = {},
+        label = { Text("Battery at start (%)") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = "",
+        onValueChange = {},
+        label = { Text("Battery at end (%)") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** Reviewing a saved charge: the group came back empty, so it folds. This is
+ *  the state that makes a long form shorter, and the only collapsed one a
+ *  static preview can render. */
+@Preview(name = "Section — collapsed, empty", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewSectionCollapsed() {
+    EvsctTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            CollapsibleSection(title = "Battery & wait", filledCount = 0) {
+                PreviewSectionBody()
+            }
+        }
+    }
+}
+
+/** Holding two values, so it opens either way — the guarantee that folding
+ *  never hides entered data. */
+@Preview(name = "Section — open because filled", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewSectionFilled() {
+    EvsctTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            CollapsibleSection(title = "Battery & wait", filledCount = 2) {
+                PreviewSectionBody()
+            }
+        }
+    }
+}
+
+/** Forced open by a validation hint pointing inside it. Without this the hint
+ *  card would name a problem with no way to reach the field. */
+@Preview(name = "Section — forced open by a hint", showBackground = true, widthDp = 400)
+@Composable
+private fun PreviewSectionDemandsAttention() {
+    EvsctTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            CollapsibleSection(
+                title = "Posted rates",
+                filledCount = 0,
+                demandsAttention = true,
+            ) {
+                PreviewSectionBody()
+            }
+        }
+    }
+}
+
+/** Several stacked, which is what the form actually looks like: the dividers and
+ *  the 14dp header padding carry the rhythm. At 1.5x because the header row is
+ *  the touch target that padding was tuned for. */
+@Preview(
+    name = "Sections — stacked, 1.5x font",
+    showBackground = true,
+    widthDp = 400,
+    fontScale = 1.5f,
+)
+@Composable
+private fun PreviewSectionsStacked() {
+    EvsctTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            CollapsibleSection(title = "Battery & wait", filledCount = 0) { PreviewSectionBody() }
+            CollapsibleSection(title = "Posted rates", filledCount = 0) { PreviewSectionBody() }
+            CollapsibleSection(title = "More station detail", filledCount = 0) { PreviewSectionBody() }
+            CollapsibleSection(title = "Trip", filledCount = 0) { PreviewSectionBody() }
+        }
+    }
+}
+
+/** Unreachable inside a freshly composed section, so previewed on its own. */
+@Preview(name = "Badge — n set", showBackground = true, widthDp = 200, heightDp = 80)
+@Composable
+private fun PreviewFilledCountBadge() {
+    EvsctTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            FilledCountBadge(3)
+        }
+    }
 }

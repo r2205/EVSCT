@@ -19,6 +19,8 @@ playServicesMaps = "19.0.0"
 mapsCompose = "4.4.1"
 junit = "4.13.2"
 work = "2.10.0"
+robolectric = "4.14.1"
+androidxTestExtJunit = "1.2.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -60,6 +62,14 @@ maps-compose = { group = "com.google.maps.android", name = "maps-compose", versi
 maps-compose-utils = { group = "com.google.maps.android", name = "maps-compose-utils", version.ref = "mapsCompose" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+# JVM-side Compose UI tests: ui-test-junit4 drives composables, Robolectric
+# stands in for the device, ui-test-manifest registers the host activity.
+# The two Compose artifacts take their version from the BOM.
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

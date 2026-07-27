@@ -96,6 +96,17 @@ android {
         buildConfigField("String", "GIT_COMMIT_DATE", "\"$gitCommitDateValue\"")
     }
 
+    testOptions {
+        unitTests {
+            // Compose UI tests run on the JVM via Robolectric, inside the same
+            // testDebugUnitTest task CI already executes — deliberately not the
+            // emulator route, which would need a device in CI. Robolectric
+            // inflates real resources (themes, the merged manifest), which is
+            // what this flag provides to unit tests.
+            isIncludeAndroidResources = true
+        }
+    }
+
     signingConfigs {
         // Only declared when keystore.properties points at a real keystore; the
         // release buildType below picks this up when present and otherwise falls
@@ -224,4 +235,13 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(kotlin("test"))
+
+    // JVM-side Compose UI tests (see testOptions above). ui-test-manifest is
+    // debugImplementation because testDebugUnitTest runs against the debug
+    // variant: its manifest entry for the host activity merges into the debug
+    // manifest, where Robolectric finds it. R8 never sees it in release.
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

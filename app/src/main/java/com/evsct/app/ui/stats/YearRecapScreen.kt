@@ -31,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,12 +44,14 @@ import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,12 +70,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.ui.BarList
 import com.evsct.app.ui.LocalUserUnits
+import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.util.Format
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,22 +133,7 @@ fun YearRecapScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    // The scope belongs on screen, not only in the exported
-                    // file's title. Without it a recap that had silently
-                    // widened to every session looked identical to a correctly
-                    // scoped one — which is how a scoped-to-Unassigned recap
-                    // quietly showing everything went unnoticed.
-                    Column {
-                        Text("Year recap", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            state.vehicleName ?: "All vehicles",
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                },
+                title = { RecapTitle(state.vehicleName) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -565,3 +555,75 @@ private fun ExportButtonContent(text: String, busy: Boolean) {
     }
     Text(text)
 }
+
+/**
+ * The recap's two-line title: what it is, and which bucket it covers.
+ *
+ * The scope line exists because a recap that had silently widened to every
+ * session looked identical to a correctly scoped one — which is how a
+ * scoped-to-Unassigned recap quietly showing everything went unnoticed until it
+ * was reported. Pulled out of the `TopAppBar` so the case it guards against can
+ * actually be looked at: a name long enough to ellipsize is the one that would
+ * put the two states back on equal footing.
+ *
+ * [vehicleName] null means every vehicle.
+ */
+@Composable
+private fun RecapTitle(vehicleName: String?) {
+    Column {
+        Text("Year recap", fontWeight = FontWeight.SemiBold)
+        Text(
+            vehicleName ?: "All vehicles",
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/* ------------------------------- Previews -------------------------------- */
+
+/*
+ * Rendered on the primary container the real TopAppBar uses, so the scope line's
+ * contrast against it is what's on screen rather than what it would be on a
+ * plain background.
+ */
+
+@Composable
+private fun PreviewTitleOnBar(vehicleName: String?) {
+    EvsctTheme {
+        Surface(color = MaterialTheme.colorScheme.primary) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                CompositionLocalProvider(
+                    LocalContentColor provides MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    RecapTitle(vehicleName)
+                }
+            }
+        }
+    }
+}
+
+@Preview(name = "Recap title — all vehicles", showBackground = true, widthDp = 400, heightDp = 96)
+@Composable
+private fun PreviewRecapTitleAll() = PreviewTitleOnBar(null)
+
+@Preview(name = "Recap title — one vehicle", showBackground = true, widthDp = 400, heightDp = 96)
+@Composable
+private fun PreviewRecapTitleVehicle() = PreviewTitleOnBar("EV6")
+
+/** The Unassigned bucket, which is the scope the missing label used to hide. */
+@Preview(name = "Recap title — Unassigned", showBackground = true, widthDp = 400, heightDp = 96)
+@Composable
+private fun PreviewRecapTitleUnassigned() = PreviewTitleOnBar("Unassigned")
+
+/** maxLines = 1 with an ellipsis: the check is that enough of the name survives
+ *  to tell two vehicles apart, since that is the whole job of this line. */
+@Preview(name = "Recap title — long name", showBackground = true, widthDp = 400, heightDp = 96)
+@Composable
+private fun PreviewRecapTitleLongName() =
+    PreviewTitleOnBar("Volkswagen ID.4 Pro S AWD (winter wheels)")

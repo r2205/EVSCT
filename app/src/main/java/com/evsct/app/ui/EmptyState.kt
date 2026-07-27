@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.QueryStats
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,7 +25,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.evsct.app.ui.theme.EvsctTheme
 
 /**
  * Friendly empty-state placeholder for screens with no data yet — first-run
@@ -82,5 +88,88 @@ fun EmptyState(
                 }
             }
         }
+    }
+}
+
+/* ------------------------------- Previews -------------------------------- */
+
+/*
+ * #51 gave Trips and Vehicles an action button and routed the Log's hand-written
+ * copy through here, and none of it was ever looked at outside a running app —
+ * which is the awkward part of an empty state: reaching it means deleting your
+ * data.
+ *
+ * The pairs below are chosen to cover the two shapes callers actually use
+ * (with and without an action) and the two ways the layout can go wrong: a body
+ * long enough to wrap, and a font scale large enough to push the button off.
+ */
+
+@Preview(name = "Empty — with action", showBackground = true, widthDp = 400, heightDp = 340)
+@Composable
+private fun PreviewEmptyStateWithAction() {
+    EvsctTheme {
+        EmptyState(
+            icon = Icons.Default.DirectionsCar,
+            title = "No vehicles yet",
+            body = "Add the car you charge so sessions can be tracked against it.",
+            actionLabel = "Add vehicle",
+            onAction = {},
+        )
+    }
+}
+
+/** The Stats variant: no action, because the route out is another screen. */
+@Preview(name = "Empty — no action", showBackground = true, widthDp = 400, heightDp = 340)
+@Composable
+private fun PreviewEmptyStateNoAction() {
+    EvsctTheme {
+        EmptyState(
+            icon = Icons.Default.QueryStats,
+            title = "No sessions yet",
+            body = "Stats appear here once you've logged at least one charging session.",
+        )
+    }
+}
+
+/**
+ * The case #51 actually fixed. The old hand-written copy in SessionListScreen
+ * lacked centred text, so a wrapping body hugged the left inside a centred
+ * block. Two wrapped lines is what makes that visible, so it's worth a preview
+ * even now that the copy is gone.
+ */
+@Preview(name = "Empty — wrapping body", showBackground = true, widthDp = 400, heightDp = 380)
+@Composable
+private fun PreviewEmptyStateWrappingBody() {
+    EvsctTheme {
+        EmptyState(
+            icon = Icons.Default.SearchOff,
+            title = "No matching sessions",
+            body = "Nothing matches the filters and search text currently applied. " +
+                "Clearing them brings the whole log back.",
+            actionLabel = "Clear filters",
+            onAction = {},
+        )
+    }
+}
+
+/** Fixed 72dp disc, growing text, and a button below it — the combination most
+ *  likely to overflow the height it's given. */
+@Preview(
+    name = "Empty — 2x font",
+    showBackground = true,
+    widthDp = 400,
+    heightDp = 520,
+    fontScale = 2f,
+)
+@Composable
+private fun PreviewEmptyStateLargeFont() {
+    EvsctTheme {
+        EmptyState(
+            icon = Icons.Default.DirectionsCar,
+            title = "No vehicles yet",
+            body = "Add the car you charge so sessions can be tracked against it.",
+            actionLabel = "Add vehicle",
+            onAction = {},
+        )
     }
 }
