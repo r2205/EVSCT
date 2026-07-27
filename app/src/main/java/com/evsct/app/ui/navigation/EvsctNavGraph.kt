@@ -6,9 +6,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.union
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bolt
@@ -18,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailDefaults
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -485,7 +491,17 @@ private fun EvsctNavigationRail(
     currentRoute: String?,
     onSelect: (TopLevelDestination) -> Unit,
 ) {
-    NavigationRail {
+    // The default insets are the system bars only; a camera cutout is a
+    // separate inset the default ignores, and this rail is the one component
+    // the app puts against the edge that hole-punch cameras live on in
+    // landscape. Union rather than replace keeps the default's status-bar
+    // handling. Found on a real hole-punch phone — cutouts are one of the
+    // things the preview pane cannot show.
+    NavigationRail(
+        windowInsets = NavigationRailDefaults.windowInsets.union(
+            WindowInsets.displayCutout.only(WindowInsetsSides.Start),
+        ),
+    ) {
         TOP_LEVEL_DESTINATIONS.forEach { dest ->
             NavigationRailItem(
                 selected = currentRoute == dest.route,
