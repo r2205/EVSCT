@@ -66,6 +66,17 @@ data class ValidationHint(
     val fields: Set<HintField> = emptySet(),
 )
 
+/**
+ * One station from the user's history, carrying everything the station
+ * determines — its identity in text, and the pricing context: charging type,
+ * pricing model, posted rates, max power, currency, coordinates. What a
+ * visit determines (energy, cost, duration, battery, odometer) is
+ * deliberately absent: picking a stop pre-fills the station, never the charge.
+ *
+ * The pricing fields travel as a coherent set from one visit — see
+ * [computeRecentStops] — so a stop can't pair one visit's pricing model with
+ * another visit's rate.
+ */
 data class RecentStop(
     val brand: String?,
     val city: String?,
@@ -73,6 +84,14 @@ data class RecentStop(
     val address: String?,
     val stationName: String?,
     val stallName: String?,
+    val chargingType: ChargingType,
+    val pricingModel: PricingModel,
+    val postedEnergyPricePerKwh: Double?,
+    val postedTimeRatePerMin: Double?,
+    val postedMaxPowerKw: Double?,
+    val currency: String,
+    val latitude: Double?,
+    val longitude: Double?,
     val lastUsedAt: Long,
     val visits: Int,
 ) {
@@ -752,55 +771,44 @@ class SessionEditViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Fill the form's station context from a recent stop.
+     *
+     * A replacement, not a merge: re-picking a different stop must not keep
+     * the previous stop's residue, so a null field clears its target rather
+     * than skipping it. What the visit determines — energy, cost, duration,
+     * battery, odometer, notes — is untouched, and so is the vehicle: the
+     * station doesn't know which car you drove.
+     *
+     * Rates echo in canonical $/min exactly as loading a saved session does,
+     * including forcing the unit toggle to match — see the load path. Hints
+     * recompute because the posted-rate fields participate in validation.
+     */
     fun applyStop(stop: RecentStop) = _state.update { current ->
-        current.copy(
+        // Same reset [update] performs on a keystroke: the stop's rate
+        // supersedes any pre-flip text, or a later unit toggle would restore
+        // text from before the pick.
+        timeRateFlipUndo = null
+        withHints(current.copy(
             brand = stop.brand?.trim().orEmpty(),
             city = stop.city.orEmpty(),
             province = stop.province.orEmpty(),
             address = stop.address.orEmpty(),
             stationName = stop.stationName.orEmpty(),
             stallName = stop.stallName.orEmpty(),
-        )
+            chargingType = stop.chargingType,
+            pricingModel = stop.pricingModel,
+            currency = stop.currency,
+            postedEnergyPriceText = stop.postedEnergyPricePerKwh?.toString().orEmpty(),
+            postedTimeRateText = stop.postedTimeRatePerMin?.toString().orEmpty(),
+            postedTimeRateUnit = if (stop.postedTimeRatePerMin != null) TimeRateUnit.PER_MINUTE
+            else current.postedTimeRateUnit,
+            postedMaxPowerText = stop.postedMaxPowerKw?.toString().orEmpty(),
+            latitude = stop.latitude,
+            longitude = stop.longitude,
+        ))
     }
 
-    private fun computeRecentStops(sessions: List<ChargingSession>): List<RecentStop> {
-        if (sessions.isEmpty()) return emptyList()
-        return sessions
-            .filter {
-                !it.brand.isNullOrBlank() ||
-                    !it.locationCity.isNullOrBlank() ||
-                    !it.locationAddress.isNullOrBlank()
-            }
-            .groupBy { stopKey(it) }
-            .map { (_, group) ->
-                val mostRecent = group.maxBy { it.sessionStart }
-                RecentStop(
-                    brand = mostRecent.brand,
-                    city = mostRecent.locationCity,
-                    province = mostRecent.locationProvince,
-                    address = mostRecent.locationAddress,
-                    stationName = mostRecent.stationName,
-                    stallName = mostRecent.stallName,
-                    lastUsedAt = mostRecent.sessionStart,
-                    visits = group.size,
-                )
-            }
-            .sortedByDescending { it.lastUsedAt }
-    }
-
-    private fun stopKey(s: ChargingSession): String =
-        stopKey(brand = s.brand, address = s.locationAddress, city = s.locationCity)
-
-    /** Stops are grouped by brand + address + city only. Station/stall name
-     *  is intentionally NOT part of the key — visits to the same physical
-     *  charger should group together even when each visit logs a different
-     *  stall number. */
-    private fun stopKey(brand: String?, address: String?, city: String?): String =
-        listOfNotNull(
-            brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-            address?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-            city?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-        ).joinToString("|")
 
     /** Resolve the current odometer reading in km. When the user hasn't
      *  edited the displayed text, return the loaded km verbatim — converting
@@ -1209,3 +1217,79 @@ class SessionEditViewModel @Inject constructor(
         }
     }
 }
+
+/**
+ * Group the session history into stations, newest first.
+ *
+ * File-level rather than a ViewModel method so [RecentStopsTest] can drive it
+ * without constructing the Hilt ViewModel and its eleven dependencies — it is
+ * a pure function of the session list.
+ *
+ * Field sourcing is deliberately uneven:
+ *
+ * - **Identity text comes from the most recent visit**, staying faithful to
+ *   whatever the user last called the place.
+ * - **The pricing set — model, both posted rates, max power — comes whole from
+ *   the newest visit that recorded any of it.** A quick log that skipped the
+ *   rates would otherwise blank the stop's pricing context, and per-field
+ *   cherry-picking could pair one visit's pricing model with another visit's
+ *   rate — a set that never appeared on any sign.
+ * - **Coordinates come from the newest visit that has them**, so one log
+ *   without a map pick doesn't lose the station's pin.
+ */
+internal fun computeRecentStops(sessions: List<ChargingSession>): List<RecentStop> {
+    if (sessions.isEmpty()) return emptyList()
+    return sessions
+        .filter {
+            !it.brand.isNullOrBlank() ||
+                !it.locationCity.isNullOrBlank() ||
+                !it.locationAddress.isNullOrBlank()
+        }
+        .groupBy { stopKey(it) }
+        .map { (_, group) ->
+            val mostRecent = group.maxBy { it.sessionStart }
+            val pricingSource = group
+                .filter {
+                    it.postedEnergyPricePerKwh != null ||
+                        it.postedTimeRatePerMin != null ||
+                        it.postedMaxPowerKw != null
+                }
+                .maxByOrNull { it.sessionStart }
+            val coordinateSource = group
+                .filter { it.latitude != null && it.longitude != null }
+                .maxByOrNull { it.sessionStart }
+            RecentStop(
+                brand = mostRecent.brand,
+                city = mostRecent.locationCity,
+                province = mostRecent.locationProvince,
+                address = mostRecent.locationAddress,
+                stationName = mostRecent.stationName,
+                stallName = mostRecent.stallName,
+                chargingType = mostRecent.chargingType,
+                pricingModel = (pricingSource ?: mostRecent).pricingModel,
+                postedEnergyPricePerKwh = pricingSource?.postedEnergyPricePerKwh,
+                postedTimeRatePerMin = pricingSource?.postedTimeRatePerMin,
+                postedMaxPowerKw = pricingSource?.postedMaxPowerKw,
+                currency = mostRecent.currency,
+                latitude = coordinateSource?.latitude,
+                longitude = coordinateSource?.longitude,
+                lastUsedAt = mostRecent.sessionStart,
+                visits = group.size,
+            )
+        }
+        .sortedByDescending { it.lastUsedAt }
+}
+
+private fun stopKey(s: ChargingSession): String =
+    stopKey(brand = s.brand, address = s.locationAddress, city = s.locationCity)
+
+/** Stops are grouped by brand + address + city only. Station/stall name
+ *  is intentionally NOT part of the key — visits to the same physical
+ *  charger should group together even when each visit logs a different
+ *  stall number. */
+internal fun stopKey(brand: String?, address: String?, city: String?): String =
+    listOfNotNull(
+        brand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+        address?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+        city?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+    ).joinToString("|")
