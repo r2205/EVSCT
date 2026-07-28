@@ -1,10 +1,16 @@
 package com.evsct.app.ui
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +28,14 @@ import com.evsct.app.ui.theme.EvsctTheme
  * identical, and adding [VehicleScope.Unassigned] would have meant editing the
  * same code twice — the copy-and-drift that left the Log's empty states looking
  * unlike everyone else's.
+ *
+ * [onManageVehicles] pins a car icon to the strip's end that opens the
+ * Vehicles screen — item #5's answer to that screen living only behind the
+ * Settings gear: reachable from exactly the place vehicles are already on
+ * screen, at no cost to the nav bar. It sits outside the scrollable strip so
+ * a long garage can't push it out of reach, and it's an icon rather than a
+ * tab because it navigates instead of filtering — a tab that never shows as
+ * selected would break the strip's own selection model.
  */
 @Composable
 fun VehicleScopeTabs(
@@ -30,6 +44,7 @@ fun VehicleScopeTabs(
     scope: VehicleScope,
     onSelect: (VehicleScope) -> Unit,
     modifier: Modifier = Modifier,
+    onManageVehicles: (() -> Unit)? = null,
 ) {
     // Explicit element type: left to builder inference, the first add() would
     // pin this to Pair<VehicleScope.All, String> and reject the others.
@@ -41,29 +56,42 @@ fun VehicleScopeTabs(
         if (includeUnassigned) add(VehicleScope.Unassigned to "Unassigned")
     }
     val selectedIndex = tabs.indexOfFirst { it.first == scope }.coerceAtLeast(0)
-    ScrollableTabRow(
-        selectedTabIndex = selectedIndex,
-        modifier = modifier,
-        edgePadding = 12.dp,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.primary,
-    ) {
-        tabs.forEachIndexed { index, (tabScope, label) ->
-            Tab(
-                selected = index == selectedIndex,
-                onClick = { onSelect(tabScope) },
-                // Tagged by label, not index: a test that says "tap Unassigned"
-                // shouldn't care how many vehicles precede it — that count is
-                // exactly what varies between the cases worth testing.
-                modifier = Modifier.testTag("scopeTab:$label"),
-                text = {
-                    Text(
-                        label,
-                        fontWeight = if (index == selectedIndex) FontWeight.SemiBold
-                        else FontWeight.Normal,
-                    )
-                },
-            )
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        ScrollableTabRow(
+            selectedTabIndex = selectedIndex,
+            modifier = Modifier.weight(1f),
+            edgePadding = 12.dp,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary,
+        ) {
+            tabs.forEachIndexed { index, (tabScope, label) ->
+                Tab(
+                    selected = index == selectedIndex,
+                    onClick = { onSelect(tabScope) },
+                    // Tagged by label, not index: a test that says "tap
+                    // Unassigned" shouldn't care how many vehicles precede it —
+                    // that count is exactly what varies between the cases worth
+                    // testing.
+                    modifier = Modifier.testTag("scopeTab:$label"),
+                    text = {
+                        Text(
+                            label,
+                            fontWeight = if (index == selectedIndex) FontWeight.SemiBold
+                            else FontWeight.Normal,
+                        )
+                    },
+                )
+            }
+        }
+        if (onManageVehicles != null) {
+            IconButton(onClick = onManageVehicles) {
+                Icon(
+                    Icons.Default.DirectionsCar,
+                    // Also the TalkBack name — the affordance is icon-only.
+                    contentDescription = "Manage vehicles",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -93,6 +121,7 @@ private fun PreviewTabsTwoVehicles() {
             includeUnassigned = false,
             scope = VehicleScope.All,
             onSelect = {},
+            onManageVehicles = {},
         )
     }
 }

@@ -243,6 +243,7 @@ fun EvsctNavGraph(navController: NavHostController) {
                     entry.ifResumed { navController.navigate(Routes.sessionEdit(id)) }
                 },
                 onOpenSettings = { entry.ifResumed { navController.navigate(Routes.SETTINGS) } },
+                onOpenVehicles = { entry.ifResumed { navController.navigate(Routes.VEHICLE_LIST) } },
                 requestedBrandFilter = handle.get<String>(Routes.LOG_BRAND_FILTER_KEY),
                 requestedBrandScopeToken = handle.get<String>(Routes.LOG_BRAND_SCOPE_KEY),
                 onBrandFilterRequestConsumed = {
@@ -256,6 +257,7 @@ fun EvsctNavGraph(navController: NavHostController) {
                 onOpenYearRecap = { scope ->
                     entry.ifResumed { navController.navigate(Routes.yearRecap(scope)) }
                 },
+                onOpenVehicles = { entry.ifResumed { navController.navigate(Routes.VEHICLE_LIST) } },
                 onOpenLogForBrand = { brand, scope ->
                     entry.ifResumed {
                         // Hand the Log its drill-down payload, then switch

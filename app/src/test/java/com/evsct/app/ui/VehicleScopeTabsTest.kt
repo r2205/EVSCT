@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -38,6 +39,7 @@ class VehicleScopeTabsTest {
         includeUnassigned: Boolean,
         scope: VehicleScope = VehicleScope.All,
         onSelect: (VehicleScope) -> Unit = {},
+        onManageVehicles: (() -> Unit)? = null,
     ) {
         compose.setContent {
             EvsctTheme {
@@ -46,6 +48,7 @@ class VehicleScopeTabsTest {
                     includeUnassigned = includeUnassigned,
                     scope = scope,
                     onSelect = onSelect,
+                    onManageVehicles = onManageVehicles,
                 )
             }
         }
@@ -99,6 +102,36 @@ class VehicleScopeTabsTest {
         compose.runOnIdle { assertEquals(VehicleScope.All, selected) }
     }
 
+    /* --------------------------- Manage affordance --------------------------- */
+
+    // Item #5: the Vehicles screen's second front door, on the strip where
+    // vehicles are already on screen. Optional because the strip shouldn't
+    // grow chrome in contexts that can't navigate (previews, future callers).
+
+    @Test
+    fun `a manage handler puts the affordance on the strip, and clicks reach it`() {
+        var opened = false
+        setTabs(twoVehicles, includeUnassigned = false, onManageVehicles = { opened = true })
+        compose.onNodeWithContentDescription("Manage vehicles").performClick()
+        compose.runOnIdle { assertEquals(true, opened) }
+    }
+
+    @Test
+    fun `no handler, no affordance`() {
+        setTabs(twoVehicles, includeUnassigned = false, onManageVehicles = null)
+        compose.onNodeWithContentDescription("Manage vehicles").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the affordance stays put while the strip scrolls`() {
+        // It sits outside the ScrollableTabRow precisely so a long garage
+        // can't push it out of reach — displayed without any scrolling even
+        // when the last tab is off-screen.
+        setNarrowTabs(scope = VehicleScope.All, onManageVehicles = {})
+        compose.onNodeWithTag("scopeTab:Unassigned").assertIsNotDisplayed()
+        compose.onNodeWithContentDescription("Manage vehicles").assertIsDisplayed()
+    }
+
     /* ---------------------------- Overflow behavior --------------------------- */
 
     // ScrollableTabRow composes every tab and scrolls the strip, which a static
@@ -114,7 +147,11 @@ class VehicleScopeTabsTest {
         Vehicle(id = 4L, name = "Model Y"),
     )
 
-    private fun setNarrowTabs(scope: VehicleScope, onSelect: (VehicleScope) -> Unit = {}) {
+    private fun setNarrowTabs(
+        scope: VehicleScope,
+        onSelect: (VehicleScope) -> Unit = {},
+        onManageVehicles: (() -> Unit)? = null,
+    ) {
         compose.setContent {
             EvsctTheme {
                 // Narrow enough that six tabs must overflow: the strip's
@@ -125,6 +162,7 @@ class VehicleScopeTabsTest {
                         includeUnassigned = true,
                         scope = scope,
                         onSelect = onSelect,
+                        onManageVehicles = onManageVehicles,
                     )
                 }
             }
