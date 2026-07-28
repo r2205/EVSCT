@@ -197,6 +197,7 @@ fun SessionListScreen(
     // on disk until this offer resolves).
     val pendingUndo by viewModel.pendingDeleteUndo.collectAsStateWithLifecycle()
     val res = LocalContext.current.resources
+    val undoLabel = stringResource(R.string.log_undo)
     LaunchedEffect(pendingUndo) {
         val pending = pendingUndo ?: return@LaunchedEffect
         var resolved = false
@@ -204,7 +205,7 @@ fun SessionListScreen(
             val n = pending.sessions.size
             val result = snackbarHostState.showSnackbar(
                 message = res.getQuantityString(R.plurals.log_deleted_count, n, n),
-                actionLabel = stringResource(R.string.log_undo),
+                actionLabel = undoLabel,
                 duration = SnackbarDuration.Long,
             )
             resolved = true

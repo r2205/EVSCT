@@ -408,6 +408,8 @@ fun MapScreen(
                     TileOverlay(tileProvider = tileProvider, fadeIn = true)
                 }
             }
+            // Resolved here: the effect below is not a composable scope.
+            val chargingStopLabel = stringResource(R.string.map_charging_stop)
             // Push items into the manager whenever the visible stops or the
             // colorByTrip toggle changes. The renderer caches markers and
             // only consults onBeforeClusterItemRendered on first creation —
@@ -455,7 +457,6 @@ fun MapScreen(
             // colors are actually in play (colorByTrip on, pins visible, at
             // least one visible trip); tapping it opens the filter sheet
             // where the same trips can be toggled.
-            val chargingStopLabel = stringResource(R.string.map_charging_stop)
             val legendEntries = legendEntriesFor(state)
             if (state.colorByTrip && !state.heatmapEnabled && legendEntries.isNotEmpty()) {
                 TripLegendOverlay(

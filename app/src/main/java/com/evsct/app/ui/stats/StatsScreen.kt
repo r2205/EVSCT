@@ -500,7 +500,7 @@ private fun TimeOfDayHeatmap(
             // reads as one summary instead. Sighted-only affordances (tap
             // a square) have their info in the Peak label and this text.
             modifier = Modifier.semantics {
-                contentDescription = heatmapSummary(title, grid)
+                contentDescription = heatmapSummary(title, grid, dayLabels)
             },
         ) {
             for (day in 0..6) {
@@ -611,15 +611,15 @@ private fun hourRange(hour: Int): String =
     "${formatHour12(hour)}–${formatHour12((hour + 1) % 24)}"
 
 /** One-sentence TalkBack summary standing in for the whole heatmap grid. */
-private fun heatmapSummary(title: String, grid: List<List<Int>>): String {
+private fun heatmapSummary(title: String, grid: List<List<Int>>, dayLabels: Array<String>): String {
     val total = grid.sumOf { row -> row.sum() }
-    val peak = peakLabel(grid)?.let { " Busiest: $it." } ?: ""
+    val peak = peakLabel(grid, dayLabels)?.let { " Busiest: $it." } ?: ""
     return "$title heatmap of charging by day of week and hour: " +
         "$total session" + (if (total == 1) "" else "s") + " total." + peak
 }
 
 /** "Sat 2 pm" string for the busiest cell, or null when the grid is empty. */
-private fun peakLabel(grid: List<List<Int>>): String? {
+private fun peakLabel(grid: List<List<Int>>, dayLabels: Array<String>): String? {
     var best = 0
     var bestDay = -1
     var bestHour = -1
@@ -630,7 +630,7 @@ private fun peakLabel(grid: List<List<Int>>): String? {
         }
     }
     if (best == 0) return null
-    val day = stringArrayResource(R.array.stats_day_labels)[bestDay]
+    val day = dayLabels[bestDay]
     return "$day ${formatHour12(bestHour)}"
 }
 
@@ -642,7 +642,7 @@ private fun formatHour12(h: Int): String = when {
 }
 
 private fun ChargingType.shortLabel(): String = when (this) {
-    ChargingType.DC_FAST -> stringResource(R.string.stats_dc_fast)
+    ChargingType.DC_FAST -> "DC FAST"
     ChargingType.AC_L2 -> "AC L2"
     ChargingType.AC_L1 -> "AC L1"
 }

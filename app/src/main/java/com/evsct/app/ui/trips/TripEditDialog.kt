@@ -405,6 +405,8 @@ private fun TripPinColorPicker(
                     ) {
                         row.forEach { c ->
                             val selected = c == current
+                            // Resolved here: the semantics block is not a composable scope.
+                            val swatchLabel = stringResource(c.labelRes)
                             Box(
                                 modifier = Modifier
                                     .size(40.dp)
@@ -422,7 +424,7 @@ private fun TripPinColorPicker(
                                     // for TalkBack, which otherwise announces
                                     // ten identical unlabeled buttons.
                                     .semantics {
-                                        contentDescription = stringResource(c.labelRes)
+                                        contentDescription = swatchLabel
                                         this.selected = selected
                                     },
                                 contentAlignment = Alignment.Center,

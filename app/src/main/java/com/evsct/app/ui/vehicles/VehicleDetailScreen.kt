@@ -123,6 +123,12 @@ fun VehicleDetailScreen(
             return@Scaffold
         }
 
+        // Resolved here: LazyColumn's content block is a LazyListScope
+        // builder, not a composable scope.
+        val fastestLabel = stringResource(R.string.vehicle_fastest_charge)
+        val cheapestLabel = stringResource(R.string.vehicle_cheapest_per_kwh)
+        val mostExpensiveLabel = stringResource(R.string.vehicle_most_expensive_per_kwh)
+        val lastChargedLabel = stringResource(R.string.vehicle_last_charged)
         LazyColumn(
             modifier = Modifier.padding(padding).fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
@@ -134,7 +140,7 @@ fun VehicleDetailScreen(
             val highlights = listOfNotNull(
                 state.fastestSession?.let {
                     HighlightTile(
-                        label = stringResource(R.string.vehicle_fastest_charge),
+                        label = fastestLabel,
                         primary = Format.kw(it.value) + " avg",
                         secondary = sessionLabel(it.session),
                         icon = Icons.Default.Speed,
@@ -143,7 +149,7 @@ fun VehicleDetailScreen(
                 },
                 state.cheapestPriceSession?.let {
                     HighlightTile(
-                        label = stringResource(R.string.vehicle_cheapest_per_kwh),
+                        label = cheapestLabel,
                         primary = Format.moneyRate(it.value, "kWh"),
                         secondary = sessionLabel(it.session),
                         icon = Icons.AutoMirrored.Filled.TrendingDown,
@@ -152,7 +158,7 @@ fun VehicleDetailScreen(
                 },
                 state.mostExpensivePriceSession?.let {
                     HighlightTile(
-                        label = stringResource(R.string.vehicle_most_expensive_per_kwh),
+                        label = mostExpensiveLabel,
                         primary = Format.moneyRate(it.value, "kWh"),
                         secondary = sessionLabel(it.session),
                         icon = Icons.AutoMirrored.Filled.TrendingUp,
@@ -161,7 +167,7 @@ fun VehicleDetailScreen(
                 },
                 state.lastChargedAt?.let {
                     HighlightTile(
-                        label = stringResource(R.string.vehicle_last_charged),
+                        label = lastChargedLabel,
                         primary = Format.dateTime(it),
                         secondary = state.mostUsedBrand?.let { (b, n) -> "$b · $n visits" },
                         icon = Icons.Default.Today,

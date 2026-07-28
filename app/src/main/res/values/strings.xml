@@ -25,6 +25,7 @@
     <string name="common_cost_per_kwh">Cost / kWh</string>
     <string name="common_distance">Distance</string>
     <string name="common_energy">Energy</string>
+    <string name="common_save">Save</string>
     <string name="common_sessions">Sessions</string>
     <string name="common_total_cost">Total cost</string>
     <string name="common_unknown">Unknown</string>
@@ -263,7 +264,7 @@
     <string name="stats_charging_type">Charging type</string>
     <string name="stats_charging_vs_gas">%1$s charging vs ~%2$s on gas</string>
     <string name="stats_cost_by">Cost by %1$s</string>
-    <string name="stats_dc_fast">DC Fast</string>
+    <string name="stats_dc_fast">DC FAST</string>
     <string name="stats_energy_by">Energy by %1$s</string>
     <string name="stats_gas_assumptions">Assumes $2.15/L · 12 L/100 km</string>
     <string name="stats_less">Less</string>
@@ -380,6 +381,18 @@
     <string name="mappicker_selected_location">Selected location</string>
     <string name="mappicker_use_this_location">Use this location</string>
 
+    <!-- Trip pin colors -->
+    <string name="pin_azure">Azure</string>
+    <string name="pin_blue">Blue</string>
+    <string name="pin_cyan">Cyan</string>
+    <string name="pin_green">Green</string>
+    <string name="pin_magenta">Magenta</string>
+    <string name="pin_orange">Orange</string>
+    <string name="pin_red">Red</string>
+    <string name="pin_rose">Rose</string>
+    <string name="pin_violet">Violet</string>
+    <string name="pin_yellow">Yellow</string>
+
     <!-- Trip list -->
     <string name="trips_cancel">Cancel</string>
     <string name="trips_delete">Delete</string>
@@ -396,9 +409,14 @@
 
     <!-- Trip detail -->
     <string name="trip_back">Back</string>
+    <string name="trip_collapse">Collapse</string>
     <string name="trip_driving_efficiency">Driving efficiency</string>
     <string name="trip_edit_trip">Edit trip</string>
+    <string name="trip_end">Trip end</string>
+    <string name="trip_expand">Expand</string>
+    <string name="trip_fallback_title">Trip</string>
     <string name="trip_no_sessions_in_this">No sessions in this trip yet</string>
+    <string name="trip_start">Trip start</string>
     <string name="trip_tag_sessions_from_the">Tag sessions from the Log: tap Select (or long-press a session), choose the ones from this trip, then Assign to trip. A session\'s edit form can also pick this trip directly.</string>
     <string name="trip_view_on_map">View on map</string>
 
@@ -408,6 +426,7 @@
     <string name="tripedit_cancel">Cancel</string>
     <string name="tripedit_clear_dates">Clear dates</string>
     <string name="tripedit_close">Close</string>
+    <string name="tripedit_create">Create</string>
     <string name="tripedit_end_battery" formatted="false">End battery %</string>
     <string name="tripedit_end_date">End date…</string>
     <string name="tripedit_end_odometer">End %1$s</string>
@@ -426,6 +445,8 @@
     <string name="tripedit_start_date">Start date…</string>
     <string name="tripedit_start_date_cannot_be">Start date cannot be after end date.</string>
     <string name="tripedit_start_odometer">Start %1$s</string>
+    <string name="tripedit_title_edit">Edit trip</string>
+    <string name="tripedit_title_new">New trip</string>
 
     <!-- Vehicle list -->
     <string name="vehicles_add_the_ev_s">Add the EV(s) you charge so sessions can be tagged and per-vehicle stats become meaningful.</string>
@@ -439,12 +460,15 @@
     <string name="vehicle_back">Back</string>
     <string name="vehicle_cheapest_per_kwh">Cheapest $/kWh</string>
     <string name="vehicle_edit_vehicle">Edit vehicle</string>
+    <string name="vehicle_efficiency">Efficiency</string>
+    <string name="vehicle_fallback_title">Vehicle</string>
     <string name="vehicle_fastest_charge">Fastest charge</string>
     <string name="vehicle_last_charged">Last charged</string>
     <string name="vehicle_lifetime">Lifetime</string>
     <string name="vehicle_most_expensive_per_kwh">Most expensive $/kWh</string>
     <string name="vehicle_nominal_range">%1$s nominal range</string>
     <string name="vehicle_recent_sessions">Recent sessions</string>
+    <string name="vehicle_top_brand">Top brand</string>
     <string name="vehicle_vehicle_not_found">Vehicle not found.</string>
     <string name="vehicle_vehicle_photo_full_screen">Vehicle photo (full screen)</string>
     <string name="vehicle_vehicle_photo_tap_to">Vehicle photo (tap to zoom)</string>
