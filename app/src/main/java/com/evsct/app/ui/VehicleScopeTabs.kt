@@ -13,9 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.evsct.app.R
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.theme.EvsctTheme
 
@@ -48,12 +50,18 @@ fun VehicleScopeTabs(
 ) {
     // Explicit element type: left to builder inference, the first add() would
     // pin this to Pair<VehicleScope.All, String> and reject the others.
-    val tabs = buildList<Pair<VehicleScope, String>> {
-        add(VehicleScope.All to "All")
-        vehicles.forEach { add(VehicleScope.One(it.id) to it.name) }
+    // Each tab carries a display label and a separate testTag token. The
+    // label localizes; the token deliberately does not — a tag that rotated
+    // with the device language would make every test and tag reference
+    // locale-dependent. Vehicle names are user data, identical in both roles.
+    val tabs = buildList<Triple<VehicleScope, String, String>> {
+        add(Triple(VehicleScope.All, stringResource(R.string.tabs_all), "All"))
+        vehicles.forEach { add(Triple(VehicleScope.One(it.id), it.name, it.name)) }
         // Last, after the real vehicles: it's the exception bucket, not a peer
         // of them.
-        if (includeUnassigned) add(VehicleScope.Unassigned to "Unassigned")
+        if (includeUnassigned) {
+            add(Triple(VehicleScope.Unassigned, stringResource(R.string.tabs_unassigned), "Unassigned"))
+        }
     }
     val selectedIndex = tabs.indexOfFirst { it.first == scope }.coerceAtLeast(0)
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
@@ -64,7 +72,7 @@ fun VehicleScopeTabs(
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.primary,
         ) {
-            tabs.forEachIndexed { index, (tabScope, label) ->
+            tabs.forEachIndexed { index, (tabScope, label, tag) ->
                 Tab(
                     selected = index == selectedIndex,
                     onClick = { onSelect(tabScope) },
@@ -72,7 +80,7 @@ fun VehicleScopeTabs(
                     // Unassigned" shouldn't care how many vehicles precede it —
                     // that count is exactly what varies between the cases worth
                     // testing.
-                    modifier = Modifier.testTag("scopeTab:$label"),
+                    modifier = Modifier.testTag("scopeTab:$tag"),
                     text = {
                         Text(
                             label,
@@ -88,7 +96,7 @@ fun VehicleScopeTabs(
                 Icon(
                     Icons.Default.DirectionsCar,
                     // Also the TalkBack name — the affordance is icon-only.
-                    contentDescription = "Manage vehicles",
+                    contentDescription = stringResource(R.string.tabs_manage_vehicles),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

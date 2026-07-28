@@ -48,6 +48,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,6 +59,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.R
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.ui.BarList
 import com.evsct.app.ui.EvsctBarTitle
@@ -84,7 +88,7 @@ fun StatsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { EvsctBarTitle("Stats") },
+                title = { EvsctBarTitle(stringResource(R.string.nav_stats)) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -108,7 +112,7 @@ fun StatsScreen(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Recap")
+                        Text(stringResource(R.string.stats_recap))
                     }
                 },
             )
@@ -152,9 +156,8 @@ fun StatsScreen(
             if (state.sessionCount == 0) {
                 com.evsct.app.ui.EmptyState(
                     icon = Icons.Default.QueryStats,
-                    title = "No sessions yet",
-                    body = "Stats appear here once you've logged at least " +
-                        "one charging session.",
+                    title = stringResource(R.string.stats_no_sessions_yet),
+                    body = stringResource(R.string.stats_stats_appear_here_once),
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
                 )
                 return@Column
@@ -166,10 +169,10 @@ fun StatsScreen(
             )
 
             val bucketNoun = when (state.chartWindow) {
-                StatsChartWindow.LAST_12_MONTHS -> "month"
-                StatsChartWindow.ALL_YEARS -> "year"
+                StatsChartWindow.LAST_12_MONTHS -> stringResource(R.string.stats_bucket_month)
+                StatsChartWindow.ALL_YEARS -> stringResource(R.string.stats_bucket_year)
             }
-            ChartCard("Cost by $bucketNoun") {
+            ChartCard(stringResource(R.string.stats_cost_by, bucketNoun)) {
                 BarList(
                     items = state.costSeries,
                     labelWidth = 64.dp,
@@ -177,7 +180,7 @@ fun StatsScreen(
                 )
             }
 
-            ChartCard("Energy by $bucketNoun") {
+            ChartCard(stringResource(R.string.stats_energy_by, bucketNoun)) {
                 BarList(
                     items = state.energySeries,
                     labelWidth = 64.dp,
@@ -187,8 +190,8 @@ fun StatsScreen(
 
             if (state.byBrandCost.isNotEmpty()) {
                 ChartCard(
-                    "Top brands by spend",
-                    subtitle = "Tap a brand to see its sessions in the Log",
+                    stringResource(R.string.stats_top_brands),
+                    subtitle = stringResource(R.string.stats_tap_a_brand_to),
                 ) {
                     BarList(
                         items = state.byBrandCost,
@@ -202,7 +205,7 @@ fun StatsScreen(
             }
 
             if (state.byType.values.sum() > 0) {
-                ChartCard("Charging type") {
+                ChartCard(stringResource(R.string.stats_charging_type)) {
                     TypeSplitBar(state.byType)
                     Spacer(Modifier.height(8.dp))
                     TypeLegend(state.byType)
@@ -213,21 +216,21 @@ fun StatsScreen(
             val anyAc = state.acByDayHour.any { row -> row.any { it > 0 } }
             if (anyDc || anyAc) {
                 ChartCard(
-                    "When you charge",
-                    subtitle = "Rows are days, columns are hours — tap a square for its count",
+                    stringResource(R.string.stats_when_you_charge),
+                    subtitle = stringResource(R.string.stats_rows_are_days_columns),
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         val accents = LocalEvAccents.current
                         if (anyDc) {
                             TimeOfDayHeatmap(
-                                title = "DC Fast",
+                                title = stringResource(R.string.stats_dc_fast),
                                 grid = state.dcFastByDayHour,
                                 accent = accents.dcFast.accent,
                             )
                         }
                         if (anyAc) {
                             TimeOfDayHeatmap(
-                                title = "AC (L2 + L1)",
+                                title = stringResource(R.string.stats_ac_l2_l1),
                                 grid = state.acByDayHour,
                                 accent = accents.acL2.accent,
                             )
@@ -256,25 +259,25 @@ private fun HeadlineCard(state: StatsUi) {
             // this is shared rather than done twice: two stats, so a wrap leaves
             // each one floating alone and centred on its own line.
             StatColumns(modifier = Modifier.fillMaxWidth()) { statModifier ->
-                Stat("Sessions", state.sessionCount.toString(), statModifier)
+                Stat(stringResource(R.string.common_sessions), state.sessionCount.toString(), statModifier)
                 // Shared multi-currency stat: one line per currency, so the
                 // headline never has to silently drop foreign-currency spend
                 // the way the single-currency charts below do.
-                MoneyStat("Total cost", state.totalCostByCurrency, statModifier)
-                Stat("Energy", Format.kwh(state.totalEnergyKwh), statModifier)
+                MoneyStat(stringResource(R.string.common_total_cost), state.totalCostByCurrency, statModifier)
+                Stat(stringResource(R.string.common_energy), Format.kwh(state.totalEnergyKwh), statModifier)
             }
             Spacer(Modifier.height(12.dp))
             StatColumns(modifier = Modifier.fillMaxWidth()) { statModifier ->
-                Stat("Avg eff. $/kWh", Format.moneyRate(state.avgEffPricePerKwh, "kWh"), statModifier)
-                Stat("Avg power", Format.kw(state.avgPowerKw), statModifier)
+                Stat(stringResource(R.string.stats_avg_eff_price), Format.moneyRate(state.avgEffPricePerKwh, "kWh"), statModifier)
+                Stat(stringResource(R.string.common_avg_power), Format.kw(state.avgPowerKw), statModifier)
             }
             if (state.excludedByCurrency > 0) {
                 val n = state.excludedByCurrency
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Cost charts below are in ${state.costCurrency}. " +
-                        if (n == 1) "1 session in another currency doesn't appear in them."
-                        else "$n sessions in another currency don't appear in them.",
+                    pluralStringResource(
+                        R.plurals.stats_excluded_by_currency, n, state.costCurrency, n,
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
@@ -323,15 +326,15 @@ private fun GasSavingsCard(state: StatsUi) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "vs gas this month",
+                stringResource(R.string.stats_vs_gas_this_month),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                if (savedPositive) "Saved $savedAbsText"
-                else "Paid $savedAbsText more than gas",
+                if (savedPositive) stringResource(R.string.stats_saved, savedAbsText)
+                else stringResource(R.string.stats_paid_more, savedAbsText),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = if (savedPositive) MaterialTheme.colorScheme.primary
@@ -339,13 +342,16 @@ private fun GasSavingsCard(state: StatsUi) {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "${Format.money(state.thisMonthCost, state.costCurrency)} charging vs " +
-                    "~${Format.money(state.thisMonthGasCost, state.costCurrency)} on gas",
+                stringResource(
+                    R.string.stats_charging_vs_gas,
+                    Format.money(state.thisMonthCost, state.costCurrency),
+                    Format.money(state.thisMonthGasCost, state.costCurrency),
+                ),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                "Assumes \$2.15/L · 12 L/100 km",
+                stringResource(R.string.stats_gas_assumptions),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -469,7 +475,7 @@ private fun TimeOfDayHeatmap(
     // dark grid — which already read well — is untouched.
     val emptyCellColor = MaterialTheme.colorScheme.outlineVariant
     val selectedOutline = MaterialTheme.colorScheme.onSurface
-    val dayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    val dayLabels = stringArrayResource(R.array.stats_day_labels)
 
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -479,9 +485,9 @@ private fun TimeOfDayHeatmap(
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
             )
-            peakLabel(grid)?.let { peak ->
+            peakLabel(grid, dayLabels)?.let { peak ->
                 Text(
-                    "Peak: $peak",
+                    stringResource(R.string.stats_peak, peak),
                     style = labelStyle,
                     color = labelColor,
                 )
@@ -494,7 +500,7 @@ private fun TimeOfDayHeatmap(
             // reads as one summary instead. Sighted-only affordances (tap
             // a square) have their info in the Peak label and this text.
             modifier = Modifier.semantics {
-                contentDescription = heatmapSummary(title, grid)
+                contentDescription = heatmapSummary(title, grid, dayLabels)
             },
         ) {
             for (day in 0..6) {
@@ -565,13 +571,13 @@ private fun TimeOfDayHeatmap(
                 .padding(start = 25.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            listOf("12 am", "6 am", "noon", "6 pm", "11 pm").forEach { tick ->
+            stringArrayResource(R.array.stats_hour_ticks).forEach { tick ->
                 Text(tick, style = labelStyle, color = labelColor)
             }
         }
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Less", style = labelStyle, color = labelColor)
+            Text(stringResource(R.string.stats_less), style = labelStyle, color = labelColor)
             Spacer(Modifier.width(4.dp))
             listOf(0.2f, 0.4f, 0.6f, 0.8f, 1f).forEach { alpha ->
                 Box(
@@ -584,14 +590,15 @@ private fun TimeOfDayHeatmap(
                 )
             }
             Spacer(Modifier.width(4.dp))
-            Text("More", style = labelStyle, color = labelColor)
+            Text(stringResource(R.string.stats_more), style = labelStyle, color = labelColor)
         }
         selected?.let { (day, hour) ->
             val count = grid[day][hour]
             Spacer(Modifier.height(4.dp))
             Text(
-                "${dayLabels[day]} ${hourRange(hour)} · $count session" +
-                    (if (count == 1) "" else "s"),
+                pluralStringResource(
+                    R.plurals.stats_heatmap_cell, count, dayLabels[day], hourRange(hour), count,
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Medium,
             )
@@ -604,15 +611,15 @@ private fun hourRange(hour: Int): String =
     "${formatHour12(hour)}–${formatHour12((hour + 1) % 24)}"
 
 /** One-sentence TalkBack summary standing in for the whole heatmap grid. */
-private fun heatmapSummary(title: String, grid: List<List<Int>>): String {
+private fun heatmapSummary(title: String, grid: List<List<Int>>, dayLabels: Array<String>): String {
     val total = grid.sumOf { row -> row.sum() }
-    val peak = peakLabel(grid)?.let { " Busiest: $it." } ?: ""
+    val peak = peakLabel(grid, dayLabels)?.let { " Busiest: $it." } ?: ""
     return "$title heatmap of charging by day of week and hour: " +
         "$total session" + (if (total == 1) "" else "s") + " total." + peak
 }
 
 /** "Sat 2 pm" string for the busiest cell, or null when the grid is empty. */
-private fun peakLabel(grid: List<List<Int>>): String? {
+private fun peakLabel(grid: List<List<Int>>, dayLabels: Array<String>): String? {
     var best = 0
     var bestDay = -1
     var bestHour = -1
@@ -623,7 +630,7 @@ private fun peakLabel(grid: List<List<Int>>): String? {
         }
     }
     if (best == 0) return null
-    val day = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")[bestDay]
+    val day = dayLabels[bestDay]
     return "$day ${formatHour12(bestHour)}"
 }
 
@@ -635,7 +642,7 @@ private fun formatHour12(h: Int): String = when {
 }
 
 private fun ChargingType.shortLabel(): String = when (this) {
-    ChargingType.DC_FAST -> "DC Fast"
+    ChargingType.DC_FAST -> "DC FAST"
     ChargingType.AC_L2 -> "AC L2"
     ChargingType.AC_L1 -> "AC L1"
 }

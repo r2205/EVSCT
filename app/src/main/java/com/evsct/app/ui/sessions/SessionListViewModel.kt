@@ -1,7 +1,9 @@
 package com.evsct.app.ui.sessions
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.evsct.app.R
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
@@ -48,11 +50,11 @@ data class SessionFilters(
  * missing the sort field fall to the end of the list so the ones with data
  * stay actionable at the top.
  */
-enum class SortOption(val label: String) {
-    DATE("Date (newest)"),
-    COST("Cost (highest)"),
-    EFFICIENCY("Efficiency ($/kWh)"),
-    BRAND("Brand (A–Z)"),
+enum class SortOption(@StringRes val labelRes: Int) {
+    DATE(R.string.log_sort_date),
+    COST(R.string.log_sort_cost),
+    EFFICIENCY(R.string.log_sort_efficiency),
+    BRAND(R.string.log_sort_brand),
 }
 
 data class BackupNudge(

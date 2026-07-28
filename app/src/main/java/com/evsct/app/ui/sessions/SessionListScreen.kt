@@ -105,6 +105,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -116,6 +118,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.R
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.prefs.CardTimeRate
@@ -193,14 +196,16 @@ fun SessionListScreen(
     // Undo re-inserts the rows (and re-links any receipt files, which stay
     // on disk until this offer resolves).
     val pendingUndo by viewModel.pendingDeleteUndo.collectAsStateWithLifecycle()
+    val res = LocalContext.current.resources
+    val undoLabel = stringResource(R.string.log_undo)
     LaunchedEffect(pendingUndo) {
         val pending = pendingUndo ?: return@LaunchedEffect
         var resolved = false
         try {
             val n = pending.sessions.size
             val result = snackbarHostState.showSnackbar(
-                message = if (n == 1) "Session deleted" else "$n sessions deleted",
-                actionLabel = "Undo",
+                message = res.getQuantityString(R.plurals.log_deleted_count, n, n),
+                actionLabel = undoLabel,
                 duration = SnackbarDuration.Long,
             )
             resolved = true
@@ -291,7 +296,7 @@ fun SessionListScreen(
                     // "Log" (the tab's label), not "Charging log": with the
                     // brand mark leading the title, the long form ellipsizes
                     // next to this bar's four actions on 360dp-wide phones.
-                    title = { EvsctBarTitle("Log") },
+                    title = { EvsctBarTitle(stringResource(R.string.nav_log)) },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -301,12 +306,12 @@ fun SessionListScreen(
                         IconButton(onClick = { showSearch = !showSearch }) {
                             Icon(
                                 if (showSearch) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = if (showSearch) "Close search" else "Search",
+                                contentDescription = if (showSearch) stringResource(R.string.log_close_search) else stringResource(R.string.log_search),
                             )
                         }
                         Box {
                             IconButton(onClick = { showSortMenu = true }) {
-                                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
+                                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = stringResource(R.string.log_sort))
                             }
                             SortMenu(
                                 expanded = showSortMenu,
@@ -322,11 +327,11 @@ fun SessionListScreen(
                             // Visible route into multi-select — long-press
                             // on a row also works but nothing advertised it.
                             IconButton(onClick = { viewModel.requestSelectionMode() }) {
-                                Icon(Icons.Default.Checklist, contentDescription = "Select sessions")
+                                Icon(Icons.Default.Checklist, contentDescription = stringResource(R.string.log_select_sessions))
                             }
                         }
                         IconButton(onClick = onOpenSettings) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.log_settings))
                         }
                     },
                 )
@@ -346,24 +351,27 @@ fun SessionListScreen(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.primary,
                     ) {
-                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Back to top")
+                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.log_back_to_top))
                     }
                 }
                 if (!state.isSelectionMode) {
                     // Labeled at the top of the list ("Add session"), then
                     // collapses to the bare + once the user scrolls — the
                     // label aids discovery, the collapse returns the space.
+                    // Resolved here, not in the semantics block below:
+                    // that lambda is not a composable scope.
+                    val addSessionLabel = stringResource(R.string.log_add_session)
                     ExtendedFloatingActionButton(
                         onClick = { showAddSheet = true },
                         expanded = fabExpanded,
                         icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                        text = { Text("Add session") },
+                        text = { Text(stringResource(R.string.log_add_session)) },
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         // Stable TalkBack name whether expanded (visible
                         // label) or collapsed (icon only, label gone).
                         modifier = Modifier.semantics {
-                            contentDescription = "Add session"
+                            contentDescription = addSessionLabel
                         },
                     )
                 }
@@ -429,10 +437,9 @@ fun SessionListScreen(
                     // yet") would wrongly imply the whole log is empty.
                     EmptyState(
                         icon = Icons.Default.SearchOff,
-                        title = "No matching sessions",
-                        body = "Your search and filters don't match any " +
-                            "sessions.",
-                        actionLabel = "Clear filters",
+                        title = stringResource(R.string.log_no_matching_sessions),
+                        body = stringResource(R.string.log_your_search_and_filters),
+                        actionLabel = stringResource(R.string.log_clear_filters),
                         onAction = {
                             showSearch = false
                             viewModel.clearFilters()
@@ -449,10 +456,9 @@ fun SessionListScreen(
                     // right after the body told them what to do.
                     EmptyState(
                         icon = Icons.Default.DirectionsCar,
-                        title = "Welcome to EVSCT",
-                        body = "Add a vehicle first so charging sessions can " +
-                            "be tagged to it for stats and efficiency tracking.",
-                        actionLabel = "Add a vehicle",
+                        title = stringResource(R.string.log_welcome_to_evsct),
+                        body = stringResource(R.string.log_add_a_vehicle_first),
+                        actionLabel = stringResource(R.string.log_add_a_vehicle),
                         onAction = onOpenVehicles,
                     )
                 } else {
@@ -465,28 +471,27 @@ fun SessionListScreen(
                     EmptyState(
                         icon = Icons.Default.Bolt,
                         title = when (scope) {
-                            VehicleScope.All -> "No sessions yet"
-                            VehicleScope.Unassigned -> "Nothing unassigned"
-                            is VehicleScope.One -> "No sessions for this vehicle"
+                            VehicleScope.All -> stringResource(R.string.log_empty_all_title)
+                            VehicleScope.Unassigned -> stringResource(R.string.log_empty_unassigned_title)
+                            is VehicleScope.One -> stringResource(R.string.log_empty_vehicle_title)
                         },
                         body = when (scope) {
                             VehicleScope.All ->
-                                "Tap Add session to log your first charge."
+                                stringResource(R.string.log_empty_all_body)
                             // Defensive: the Unassigned tab only exists while
                             // such sessions do, and the scope falls back to All
                             // the moment the last one is assigned. The sealed
                             // type still wants a branch.
                             VehicleScope.Unassigned ->
-                                "Every session has a vehicle now."
+                                stringResource(R.string.log_empty_unassigned_body)
                             is VehicleScope.One ->
-                                "Nothing logged against this vehicle yet. Tap " +
-                                    "Add session to log one."
+                                stringResource(R.string.log_empty_vehicle_body)
                         },
                         // A button beats the old "or pick All" instruction,
                         // which asked the user to go find a tab. The All case
                         // needs none: the Add session FAB is already on screen
                         // and labelled, so a second button would duplicate it.
-                        actionLabel = if (scope == VehicleScope.All) null else "Show all sessions",
+                        actionLabel = if (scope == VehicleScope.All) null else stringResource(R.string.log_show_all_sessions),
                         onAction = if (scope == VehicleScope.All) {
                             null
                         } else {
@@ -560,11 +565,10 @@ fun SessionListScreen(
         AlertDialog(
             onDismissRequest = { showBulkDeleteConfirm = false },
             icon = { Icon(Icons.Default.Delete, contentDescription = null) },
-            title = { Text(if (n == 1) "Delete 1 session?" else "Delete $n sessions?") },
+            title = { Text(pluralStringResource(R.plurals.log_delete_confirm_title, n, n)) },
             text = {
                 Text(
-                    "This permanently removes the selected sessions and any " +
-                        "receipts attached to them."
+                    stringResource(R.string.log_this_permanently_removes_the)
                 )
             },
             confirmButton = {
@@ -573,11 +577,11 @@ fun SessionListScreen(
                     showBulkDeleteConfirm = false
                     viewModel.deleteSelectedSessions()
                 }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.log_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBulkDeleteConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showBulkDeleteConfirm = false }) { Text(stringResource(R.string.log_cancel)) }
             },
         )
     }
@@ -636,11 +640,11 @@ private fun SortMenu(
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         SortOption.entries.forEach { option ->
             DropdownMenuItem(
-                text = { Text(option.label) },
+                text = { Text(stringResource(option.labelRes)) },
                 onClick = { onSelect(option) },
                 trailingIcon = {
                     if (option == current) {
-                        Icon(Icons.Default.Check, contentDescription = "Selected")
+                        Icon(Icons.Default.Check, contentDescription = stringResource(R.string.log_selected))
                     }
                 },
             )
@@ -658,7 +662,7 @@ private fun SelectionTopBar(
     onDelete: () -> Unit,
 ) {
     TopAppBar(
-        title = { Text("$selectedCount selected", fontWeight = FontWeight.SemiBold) },
+        title = { Text(stringResource(R.string.log_selected_count, selectedCount), fontWeight = FontWeight.SemiBold) },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             titleContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -667,18 +671,18 @@ private fun SelectionTopBar(
         ),
         navigationIcon = {
             IconButton(onClick = onClear) {
-                Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.log_cancel_selection))
             }
         },
         actions = {
             IconButton(onClick = onSelectAll) {
-                Icon(Icons.Default.DoneAll, contentDescription = "Select all")
+                Icon(Icons.Default.DoneAll, contentDescription = stringResource(R.string.log_select_all))
             }
             IconButton(onClick = onAssignTrip, enabled = selectedCount > 0) {
-                Icon(Icons.AutoMirrored.Filled.Label, contentDescription = "Assign trip")
+                Icon(Icons.AutoMirrored.Filled.Label, contentDescription = stringResource(R.string.log_assign_trip))
             }
             IconButton(onClick = onDelete, enabled = selectedCount > 0) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete selected")
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.log_delete_selected))
             }
         },
     )
@@ -695,7 +699,7 @@ private fun AddSessionChooserSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
-                "Log a charge",
+                stringResource(R.string.log_log_a_charge),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
@@ -703,16 +707,15 @@ private fun AddSessionChooserSheet(
             Spacer(Modifier.height(8.dp))
             AddSessionChooserRow(
                 icon = Icons.Default.Bolt,
-                title = "Track a charge now",
-                subtitle = "Start a live timer for a charge happening right now. " +
-                    "A notification keeps it handy while you wait.",
+                title = stringResource(R.string.log_track_a_charge_now),
+                subtitle = stringResource(R.string.log_start_a_live_timer),
                 onClick = onTrackNow,
             )
             HorizontalDivider()
             AddSessionChooserRow(
                 icon = Icons.Default.Add,
-                title = "Log a past charge",
-                subtitle = "Backfill the details of a charge you've already finished.",
+                title = stringResource(R.string.log_log_a_past_charge),
+                subtitle = stringResource(R.string.log_backfill_the_details_of),
                 onClick = onAddPast,
             )
             Spacer(Modifier.height(24.dp))
@@ -769,21 +772,21 @@ private fun TripPickerSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
-                "Assign $selectedCount session${if (selectedCount == 1) "" else "s"} to…",
+                pluralStringResource(R.plurals.log_assign_to, selectedCount, selectedCount),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
             )
             Spacer(Modifier.height(8.dp))
             TripPickerRow(
-                label = "Unassigned",
+                label = stringResource(R.string.log_unassigned),
                 emphasis = false,
                 onClick = { onPick(null) },
             )
             HorizontalDivider()
             if (trips.isEmpty()) {
                 Text(
-                    "No trips yet. Create one from the Trips screen.",
+                    stringResource(R.string.log_no_trips_yet_create),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(24.dp),
@@ -835,9 +838,9 @@ private fun SummaryCard(state: SessionListUi) {
         // up. StatColumns owns that decision now, shared with the Stats
         // headline; ui/StatStacking.kt has the reasoning.
         StatColumns(modifier = Modifier.fillMaxWidth().padding(16.dp)) { statModifier ->
-            Stat("Sessions", state.sessionCount.toString(), statModifier)
-            MoneyStat("Total cost", state.totalCostByCurrency, statModifier)
-            Stat("Energy", Format.kwh(state.totalKwh), statModifier)
+            Stat(stringResource(R.string.common_sessions), state.sessionCount.toString(), statModifier)
+            MoneyStat(stringResource(R.string.common_total_cost), state.totalCostByCurrency, statModifier)
+            Stat(stringResource(R.string.common_energy), Format.kwh(state.totalKwh), statModifier)
         }
     }
 }
@@ -970,7 +973,7 @@ private fun SessionRow(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            session.brand ?: "Unknown",
+                            session.brand ?: stringResource(R.string.common_unknown),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -985,7 +988,7 @@ private fun SessionRow(
                             if (hasReceipt) {
                                 Icon(
                                     imageVector = androidx.compose.material.icons.Icons.Default.Receipt,
-                                    contentDescription = "Has receipt",
+                                    contentDescription = stringResource(R.string.log_has_receipt),
                                     tint = MaterialTheme.colorScheme.outline,
                                     modifier = Modifier.size(14.dp),
                                 )
@@ -1051,14 +1054,17 @@ private fun SessionRow(
                     ) {
                         if (effPrice != null) {
                             Text(
-                                "Eff. ${Format.moneyRate(effPrice, "kWh")}",
+                                stringResource(R.string.log_effective_rate, Format.moneyRate(effPrice, "kWh")),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         if (timeRate != null) {
                             Text(
-                                "Eff. ${Format.moneyPerTime(timeRate.value, timeRate.shortUnit)}",
+                                stringResource(
+                                    R.string.log_effective_rate,
+                                    Format.moneyPerTime(timeRate.value, timeRate.shortUnit),
+                                ),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1365,12 +1371,12 @@ private fun SearchAndFilterStrip(
             OutlinedTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = { Text("Search city, address, notes…") },
+                placeholder = { Text(stringResource(R.string.log_search_city_address_notes)) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = if (query.isNotEmpty()) {
                     {
                         IconButton(onClick = { onQueryChange("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.log_clear_search))
                         }
                     }
                 } else null,
@@ -1386,11 +1392,11 @@ private fun SearchAndFilterStrip(
                 },
             ) {
                 IconButton(onClick = onOpenFilterSheet) {
-                    Icon(Icons.Default.Tune, contentDescription = "Filters")
+                    Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.log_filters))
                 }
             }
             if (filters.hasActive) {
-                TextButton(onClick = onClearAll) { Text("Clear") }
+                TextButton(onClick = onClearAll) { Text(stringResource(R.string.log_clear)) }
             }
         }
         if (anyChip) {
@@ -1404,7 +1410,7 @@ private fun SearchAndFilterStrip(
                         onClick = onClearBrand,
                         label = { Text(brand) },
                         leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
-                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove brand filter") },
+                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.log_remove_brand_filter)) },
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         ),
@@ -1415,7 +1421,7 @@ private fun SearchAndFilterStrip(
                         onClick = onClearDateRange,
                         label = { Text(formatDateRange(filters.dateFrom, filters.dateTo)) },
                         leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
-                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove date filter") },
+                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.log_remove_date_filter)) },
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         ),
@@ -1431,7 +1437,7 @@ private fun SearchAndFilterStrip(
                         onClick = onClearTags,
                         label = { Text(label) },
                         leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
-                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove tag filter") },
+                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.log_remove_tag_filter)) },
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         ),
@@ -1442,13 +1448,18 @@ private fun SearchAndFilterStrip(
     }
 }
 
+private fun formatDate(at: Long): String =
+    java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+        .format(java.util.Date(at))
+
+@Composable
 private fun formatDateRange(from: Long?, to: Long?): String {
     val fmt = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
     return when {
         from != null && to != null -> "${fmt.format(java.util.Date(from))} – ${fmt.format(java.util.Date(to))}"
-        from != null -> "From ${fmt.format(java.util.Date(from))}"
-        to != null -> "Until ${fmt.format(java.util.Date(to))}"
-        else -> "Date"
+        from != null -> stringResource(R.string.log_date_from, fmt.format(java.util.Date(from)))
+        to != null -> stringResource(R.string.log_date_until, fmt.format(java.util.Date(to)))
+        else -> stringResource(R.string.log_date)
     }
 }
 
@@ -1487,30 +1498,30 @@ private fun FilterSheet(
                 .padding(horizontal = 24.dp),
         ) {
             Text(
-                "Filter sessions",
+                stringResource(R.string.log_filter_sessions),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(16.dp))
 
-            Text("Date range", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.log_date_range), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             ) {
-                DatePresetChip("All time", isActive = dateFrom == null && dateTo == null) {
+                DatePresetChip(stringResource(R.string.log_preset_all_time), isActive = dateFrom == null && dateTo == null) {
                     dateFrom = null; dateTo = null
                 }
-                DatePresetChip("This month", isActive = matchesPreset(dateFrom, dateTo, DatePreset.THIS_MONTH)) {
+                DatePresetChip(stringResource(R.string.log_preset_this_month), isActive = matchesPreset(dateFrom, dateTo, DatePreset.THIS_MONTH)) {
                     val (f, t) = DatePreset.THIS_MONTH.range()
                     dateFrom = f; dateTo = t
                 }
-                DatePresetChip("Last 3 mo.", isActive = matchesPreset(dateFrom, dateTo, DatePreset.LAST_3_MONTHS)) {
+                DatePresetChip(stringResource(R.string.log_preset_last_3_months), isActive = matchesPreset(dateFrom, dateTo, DatePreset.LAST_3_MONTHS)) {
                     val (f, t) = DatePreset.LAST_3_MONTHS.range()
                     dateFrom = f; dateTo = t
                 }
-                DatePresetChip("Last year", isActive = matchesPreset(dateFrom, dateTo, DatePreset.LAST_YEAR)) {
+                DatePresetChip(stringResource(R.string.log_preset_last_year), isActive = matchesPreset(dateFrom, dateTo, DatePreset.LAST_YEAR)) {
                     val (f, t) = DatePreset.LAST_YEAR.range()
                     dateFrom = f; dateTo = t
                 }
@@ -1519,11 +1530,11 @@ private fun FilterSheet(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(
                     onClick = { showFromPicker = true },
-                    label = { Text(dateFrom?.let { "From: ${formatDateRange(it, null).removePrefix("From ")}" } ?: "From…") },
+                    label = { Text(dateFrom?.let { stringResource(R.string.log_from_label, formatDate(it)) } ?: stringResource(R.string.log_from_placeholder)) },
                 )
                 AssistChip(
                     onClick = { showToPicker = true },
-                    label = { Text(dateTo?.let { "To: ${formatDateRange(null, it).removePrefix("Until ")}" } ?: "To…") },
+                    label = { Text(dateTo?.let { stringResource(R.string.log_to_label, formatDate(it)) } ?: stringResource(R.string.log_to_placeholder)) },
                 )
             }
             // Visible validation when the user accidentally inverts the range —
@@ -1533,18 +1544,18 @@ private fun FilterSheet(
             if (dateRangeInvalid) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "“From” must be on or before “To”.",
+                    stringResource(R.string.log_from_must_be_on),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
 
             Spacer(Modifier.height(20.dp))
-            Text("Brand", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.log_brand), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             if (brands.isEmpty()) {
                 Text(
-                    "No brands recorded yet.",
+                    stringResource(R.string.log_no_brands_recorded_yet),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1556,7 +1567,7 @@ private fun FilterSheet(
                     FilterChip(
                         selected = brand == null,
                         onClick = { brand = null },
-                        label = { Text("Any brand") },
+                        label = { Text(stringResource(R.string.log_any_brand)) },
                     )
                     brands.forEach { b ->
                         FilterChip(
@@ -1569,11 +1580,11 @@ private fun FilterSheet(
             }
 
             Spacer(Modifier.height(20.dp))
-            Text("Tags", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.log_tags), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             if (tags.isEmpty()) {
                 Text(
-                    "No tags yet — add some when editing a session.",
+                    stringResource(R.string.log_no_tags_yet_add),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1602,13 +1613,13 @@ private fun FilterSheet(
                 horizontalArrangement = Arrangement.End,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.log_cancel)) }
                 Spacer(Modifier.width(8.dp))
                 androidx.compose.material3.Button(
                     enabled = !dateRangeInvalid,
                     onClick = { onApply(brand, dateFrom, dateTo, tagSelection) },
                 ) {
-                    Text("Apply")
+                    Text(stringResource(R.string.log_apply))
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -1623,10 +1634,10 @@ private fun FilterSheet(
                 TextButton(onClick = {
                     dateFrom = pickerState.selectedDateMillis?.let { pickedDayStart(it) }
                     showFromPicker = false
-                }) { Text("OK") }
+                }) { Text(stringResource(R.string.log_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showFromPicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showFromPicker = false }) { Text(stringResource(R.string.log_cancel)) }
             },
         ) {
             DatePicker(state = pickerState)
@@ -1640,10 +1651,10 @@ private fun FilterSheet(
                 TextButton(onClick = {
                     dateTo = pickerState.selectedDateMillis?.let { pickedDayEnd(it) }
                     showToPicker = false
-                }) { Text("OK") }
+                }) { Text(stringResource(R.string.log_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showToPicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showToPicker = false }) { Text(stringResource(R.string.log_cancel)) }
             },
         ) {
             DatePicker(state = pickerState)
@@ -1745,13 +1756,12 @@ private fun StaleTrackingBanner(
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Still charging?",
+                        stringResource(R.string.log_still_charging),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "A tracked charge started ${Format.dateTime(session.sessionStart)} " +
-                            "is still running. Open it to finish or delete it.",
+                        stringResource(R.string.log_tracked_running, Format.dateTime(session.sessionStart)),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -1760,7 +1770,7 @@ private fun StaleTrackingBanner(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                androidx.compose.material3.TextButton(onClick = onOpen) { Text("Open session") }
+                androidx.compose.material3.TextButton(onClick = onOpen) { Text(stringResource(R.string.log_open_session)) }
             }
         }
     }
@@ -1774,16 +1784,15 @@ private fun BackupNudgeBanner(
 ) {
     val daysText = nudge.daysSinceLastBackup?.let { d ->
         when {
-            d < 1L -> "today"
-            d == 1L -> "1 day ago"
-            d < 365L -> "$d days ago"
-            else -> "over a year ago"
+            d < 1L -> stringResource(R.string.log_backup_today)
+            d < 365L -> pluralStringResource(R.plurals.log_backup_days_ago, d.toInt(), d.toInt())
+            else -> stringResource(R.string.log_backup_over_year)
         }
     }
     val message = if (daysText == null) {
-        "You haven't backed up yet — protect your sessions before they're lost."
+        stringResource(R.string.log_backup_never)
     } else {
-        "Last backup was $daysText. Time to refresh it."
+        stringResource(R.string.log_backup_refresh, daysText)
     }
 
     Card(
@@ -1804,7 +1813,7 @@ private fun BackupNudgeBanner(
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Back up your data?",
+                        stringResource(R.string.log_back_up_your_data),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -1815,10 +1824,10 @@ private fun BackupNudgeBanner(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Not now") }
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.log_not_now)) }
                 Spacer(Modifier.width(4.dp))
                 androidx.compose.material3.TextButton(onClick = onOpenSettings) {
-                    Text("Open Settings")
+                    Text(stringResource(R.string.log_open_settings))
                 }
             }
         }

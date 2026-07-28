@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusDirection
@@ -66,6 +67,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.evsct.app.R
 import com.evsct.app.ui.readableFormWidth
 import java.io.File
 
@@ -122,8 +124,8 @@ fun VehicleEditScreen(
                             // Until the load lands, isNew defaults true even
                             // for an existing vehicle — don't claim either.
                             state.isLoading -> ""
-                            state.isNew -> "New vehicle"
-                            else -> "Edit vehicle"
+                            state.isNew -> stringResource(R.string.vehicleedit_title_new)
+                            else -> stringResource(R.string.vehicleedit_title_edit)
                         },
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
@@ -136,20 +138,20 @@ fun VehicleEditScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = { requestExit() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.vehicleedit_back))
                     }
                 },
                 actions = {
                     if (!state.isNew) {
                         IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.vehicleedit_delete))
                         }
                     }
                     // Saving before the load lands would insert a blank NEW
                     // row (isNew still defaults true), not update the one
                     // being opened.
                     IconButton(onClick = { viewModel.save(onDone) }, enabled = !state.isLoading) {
-                        Icon(Icons.Default.Check, contentDescription = "Save")
+                        Icon(Icons.Default.Check, contentDescription = stringResource(R.string.vehicleedit_save))
                     }
                 },
             )
@@ -191,7 +193,7 @@ fun VehicleEditScreen(
             OutlinedTextField(
                 value = state.name,
                 onValueChange = { v -> viewModel.update { it.copy(name = v) } },
-                label = { Text("Display name") },
+                label = { Text(stringResource(R.string.vehicleedit_display_name)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(
@@ -205,12 +207,12 @@ fun VehicleEditScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 NumField(
-                    label = "Year",
+                    label = stringResource(R.string.vehicleedit_year),
                     value = state.year,
                     modifier = Modifier.weight(1f),
                 ) { v -> viewModel.update { it.copy(year = v) } }
                 TextEntry(
-                    label = "Make",
+                    label = stringResource(R.string.vehicleedit_make),
                     value = state.make,
                     modifier = Modifier.weight(2f),
                 ) { v -> viewModel.update { it.copy(make = v) } }
@@ -220,12 +222,12 @@ fun VehicleEditScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 TextEntry(
-                    label = "Model",
+                    label = stringResource(R.string.vehicleedit_model),
                     value = state.model,
                     modifier = Modifier.weight(2f),
                 ) { v -> viewModel.update { it.copy(model = v) } }
                 TextEntry(
-                    label = "Trim",
+                    label = stringResource(R.string.vehicleedit_trim),
                     value = state.trim,
                     modifier = Modifier.weight(1f),
                 ) { v -> viewModel.update { it.copy(trim = v) } }
@@ -236,26 +238,26 @@ fun VehicleEditScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 NumField(
-                    label = "Battery (kWh)",
+                    label = stringResource(R.string.vehicleedit_battery_kwh),
                     value = state.batteryKwh,
                     modifier = Modifier.weight(1f),
                 ) { v -> viewModel.update { it.copy(batteryKwh = v) } }
                 NumField(
-                    label = "Range (${com.evsct.app.util.Units.distanceUnit(state.useMiles)})",
+                    label = stringResource(R.string.vehicleedit_range_unit, com.evsct.app.util.Units.distanceUnit(state.useMiles)),
                     value = state.rangeText,
                     modifier = Modifier.weight(1f),
                 ) { v -> viewModel.update { it.copy(rangeText = v) } }
             }
 
             TextEntry(
-                label = "VIN (optional)",
+                label = stringResource(R.string.vehicleedit_vin_optional),
                 value = state.vin,
             ) { v -> viewModel.update { it.copy(vin = v) } }
 
             OutlinedTextField(
                 value = state.notes,
                 onValueChange = { v -> viewModel.update { it.copy(notes = v) } },
-                label = { Text("Notes") },
+                label = { Text(stringResource(R.string.vehicleedit_notes)) },
                 modifier = Modifier.fillMaxWidth().height(120.dp),
             )
 
@@ -275,9 +277,9 @@ fun VehicleEditScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Default vehicle", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.vehicleedit_default_vehicle), style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        "Pre-selected when logging new sessions.",
+                        stringResource(R.string.vehicleedit_pre_selected_when_logging),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -294,8 +296,8 @@ fun VehicleEditScreen(
     if (showDiscardConfirm) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDiscardConfirm = false },
-            title = { Text("Discard changes?") },
-            text = { Text("This vehicle has unsaved edits. Leaving now throws them away.") },
+            title = { Text(stringResource(R.string.vehicleedit_discard_changes)) },
+            text = { Text(stringResource(R.string.vehicleedit_this_vehicle_has_unsaved)) },
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
@@ -303,12 +305,12 @@ fun VehicleEditScreen(
                         onDone()
                     },
                 ) {
-                    Text("Discard", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.vehicleedit_discard), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showDiscardConfirm = false }) {
-                    Text("Keep editing")
+                    Text(stringResource(R.string.vehicleedit_keep_editing))
                 }
             },
         )
@@ -318,11 +320,10 @@ fun VehicleEditScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             icon = { Icon(Icons.Default.Delete, contentDescription = null) },
-            title = { Text("Delete this vehicle?") },
+            title = { Text(stringResource(R.string.vehicleedit_delete_this_vehicle)) },
             text = {
                 Text(
-                    "Sessions previously tagged with this vehicle will keep their data " +
-                        "but be unassigned."
+                    stringResource(R.string.vehicleedit_sessions_previously_tagged_with)
                 )
             },
             confirmButton = {
@@ -333,12 +334,12 @@ fun VehicleEditScreen(
                         viewModel.deleteAndExit(onDone)
                     },
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.vehicleedit_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.vehicleedit_cancel))
                 }
             },
         )
@@ -386,10 +387,10 @@ private fun ProfileImage(
                 OutlinedButton(onClick = onPick) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text(if (imagePath == null) "Add photo" else "Change photo")
+                    Text(if (imagePath == null) stringResource(R.string.vehicleedit_add_photo) else stringResource(R.string.vehicleedit_change_photo))
                 }
                 if (imagePath != null) {
-                    OutlinedButton(onClick = onClear) { Text("Remove") }
+                    OutlinedButton(onClick = onClear) { Text(stringResource(R.string.vehicleedit_remove)) }
                 }
             }
         }
