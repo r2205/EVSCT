@@ -36,10 +36,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.R
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
@@ -69,7 +72,7 @@ fun TripDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        state.trip?.name ?: "Trip",
+                        state.trip?.name ?: stringResource(R.string.trip_fallback_title),
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
                 },
@@ -81,7 +84,7 @@ fun TripDetailScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.trip_back))
                     }
                 },
                 actions = {
@@ -92,11 +95,11 @@ fun TripDetailScreen(
                         // geocode backfill may locate them on arrival.
                         if (state.sessions.isNotEmpty()) {
                             IconButton(onClick = { onViewOnMap(trip.id) }) {
-                                Icon(Icons.Default.Map, contentDescription = "View on map")
+                                Icon(Icons.Default.Map, contentDescription = stringResource(R.string.trip_view_on_map))
                             }
                         }
                         IconButton(onClick = { showEdit = true }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit trip")
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.trip_edit_trip))
                         }
                     }
                 },
@@ -121,9 +124,9 @@ fun TripDetailScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Stat("Sessions", st.sessionCount.toString())
-                            MoneyStat("Total cost", st.totalCostByCurrency)
-                            Stat("Energy", Format.kwh(st.totalEnergyKwh))
+                            Stat(stringResource(R.string.common_sessions), st.sessionCount.toString())
+                            MoneyStat(stringResource(R.string.common_total_cost), st.totalCostByCurrency)
+                            Stat(stringResource(R.string.common_energy), Format.kwh(st.totalEnergyKwh))
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -133,13 +136,13 @@ fun TripDetailScreen(
                             val missing = state.sessionsWithoutDuration
                             val timeText = Format.duration(state.totalChargeSeconds) +
                                 if (missing > 0) "*" else ""
-                            Stat("Charge time", timeText)
+                            Stat(stringResource(R.string.common_charge_time), timeText)
                             if (missing > 0) {
                                 val sCount = st.sessionCount
                                 Text(
-                                    text = "* $missing of $sCount session" +
-                                        (if (sCount == 1) "" else "s") +
-                                        " missing duration",
+                                    text = pluralStringResource(
+                                        R.plurals.common_missing_duration, sCount, missing, sCount,
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier
@@ -153,12 +156,12 @@ fun TripDetailScreen(
                                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Stat("Distance", Format.distance(st.totalDistanceKm, units.useMiles))
+                                Stat(stringResource(R.string.common_distance), Format.distance(st.totalDistanceKm, units.useMiles))
                                 Stat(
-                                    "Cost / $distUnit",
+                                    stringResource(R.string.common_cost_per_distance, distUnit),
                                     Format.moneyRatePerDistance(st.costPerKm, units.useMiles),
                                 )
-                                Stat("Cost / kWh", Format.moneyRate(st.costPerKwh, "kWh"))
+                                Stat(stringResource(R.string.common_cost_per_kwh), Format.moneyRate(st.costPerKwh, "kWh"))
                             }
                         }
                     }
@@ -175,11 +178,8 @@ fun TripDetailScreen(
                     item {
                         com.evsct.app.ui.EmptyState(
                             icon = Icons.Default.Bolt,
-                            title = "No sessions in this trip yet",
-                            body = "Tag sessions from the Log: tap Select (or " +
-                                "long-press a session), choose the ones from this " +
-                                "trip, then Assign to trip. A session's edit form " +
-                                "can also pick this trip directly.",
+                            title = stringResource(R.string.trip_no_sessions_in_this),
+                            body = stringResource(R.string.trip_tag_sessions_from_the),
                             modifier = Modifier.fillParentMaxWidth().padding(24.dp),
                         )
                     }
@@ -190,7 +190,7 @@ fun TripDetailScreen(
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("${s.brand ?: "Unknown"} · ${s.locationCity ?: "—"}", fontWeight = FontWeight.Medium)
+                                Text("${s.brand ?: stringResource(R.string.common_unknown)} · ${s.locationCity ?: "—"}", fontWeight = FontWeight.Medium)
                                 Text(Format.money(s.totalCost, s.currency))
                             }
                             Text(Format.dateTime(s.sessionStart), style = MaterialTheme.typography.bodySmall)
@@ -253,7 +253,7 @@ private fun EfficiencyCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Driving efficiency",
+                        stringResource(R.string.trip_driving_efficiency),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold,
@@ -272,7 +272,7 @@ private fun EfficiencyCard(
                 Spacer(Modifier.width(8.dp))
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    contentDescription = if (expanded) stringResource(R.string.trip_collapse) else stringResource(R.string.trip_expand),
                 )
             }
             if (expanded) {
@@ -339,10 +339,11 @@ private fun LegRow(leg: DrivingLeg, useMiles: Boolean) {
     }
 }
 
+@Composable
 private fun legLabel(s: ChargingSession): String = when (s.id) {
     // Virtual endpoints carrying the trip-level battery/odometer readings.
-    EfficiencyAnalysis.TRIP_START_ANCHOR_ID -> "Trip start"
-    EfficiencyAnalysis.TRIP_END_ANCHOR_ID -> "Trip end"
+    EfficiencyAnalysis.TRIP_START_ANCHOR_ID -> stringResource(R.string.trip_start)
+    EfficiencyAnalysis.TRIP_END_ANCHOR_ID -> stringResource(R.string.trip_end)
     else -> s.locationCity?.takeIf { it.isNotBlank() }
         ?: s.brand?.takeIf { it.isNotBlank() }
         ?: Format.date(s.sessionStart)

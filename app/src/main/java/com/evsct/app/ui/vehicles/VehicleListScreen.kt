@@ -36,11 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.evsct.app.R
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.EmptyState
 
@@ -57,7 +59,7 @@ fun VehicleListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Vehicles", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.vehicles_vehicles), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -65,7 +67,7 @@ fun VehicleListScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.vehicles_back))
                     }
                 },
             )
@@ -76,7 +78,7 @@ fun VehicleListScreen(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add vehicle")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.vehicles_add_vehicle))
             }
         },
     ) { padding ->
@@ -92,13 +94,12 @@ fun VehicleListScreen(
         } else if (loaded.isEmpty()) {
             EmptyState(
                 icon = Icons.Default.DirectionsCar,
-                title = "No vehicles yet",
-                body = "Add the EV(s) you charge so sessions can be tagged " +
-                    "and per-vehicle stats become meaningful.",
+                title = stringResource(R.string.vehicles_no_vehicles_yet),
+                body = stringResource(R.string.vehicles_add_the_ev_s),
                 // This screen sits behind the Settings gear, so it's the one
                 // a new user has seen least — an unlabelled + in the corner
                 // was the only way forward from here.
-                actionLabel = "Add vehicle",
+                actionLabel = stringResource(R.string.vehicles_add_vehicle),
                 onAction = onAddVehicle,
                 modifier = Modifier.padding(padding).fillMaxSize(),
             )
@@ -139,7 +140,7 @@ private fun VehicleRow(vehicle: Vehicle, onClick: () -> Unit) {
                         Spacer(Modifier.width(6.dp))
                         Icon(
                             imageVector = Icons.Default.Star,
-                            contentDescription = "Default vehicle",
+                            contentDescription = stringResource(R.string.vehicles_default_vehicle),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(16.dp),
                         )
@@ -149,7 +150,7 @@ private fun VehicleRow(vehicle: Vehicle, onClick: () -> Unit) {
                     Text(vehicle.displayLabel, style = MaterialTheme.typography.bodySmall)
                 }
                 vehicle.batteryCapacityKwh?.let {
-                    Text("$it kWh battery", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.common_battery_kwh, it), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

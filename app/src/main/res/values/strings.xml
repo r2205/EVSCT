@@ -1,4 +1,553 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every user-facing string the composable layer renders. Extracted in one
+  pass (item #9) so the app can be translated by adding a values-<lang>/
+  twin of this file. Names are <screen>_<meaning>; the common_ group is
+  copy shared across screens.
+
+  Deliberately NOT here (the phase-2 boundary, in ui code on purpose):
+  ViewModel-authored text (validation hints, operation feedback, export
+  labels), the spoken TalkBack sentence builders, Format's unit suffixes,
+  the CSV/PDF/HTML exporters, and notification text. Those need design
+  changes (resource-aware seams), not find-and-replace, and are recorded
+  as the remaining work if translation actually ships.
+-->
 <resources>
+
+    <!-- App -->
     <string name="app_name">EVSCT</string>
+
+    <!-- Shared -->
+    <string name="common_avg_power">Avg power</string>
+    <string name="common_battery_kwh">%1$s kWh battery</string>
+    <string name="common_charge_time">Charge time</string>
+    <string name="common_cost_per_distance">Cost / %1$s</string>
+    <string name="common_cost_per_kwh">Cost / kWh</string>
+    <string name="common_distance">Distance</string>
+    <string name="common_energy">Energy</string>
+    <string name="common_sessions">Sessions</string>
+    <string name="common_total_cost">Total cost</string>
+    <string name="common_unknown">Unknown</string>
+    <plurals name="common_missing_duration">
+        <item quantity="one">* %1$d of %2$d session missing duration</item>
+        <item quantity="other">* %1$d of %2$d sessions missing duration</item>
+    </plurals>
+
+    <!-- Navigation -->
+    <string name="nav_log">Log</string>
+    <string name="nav_map">Map</string>
+    <string name="nav_stats">Stats</string>
+    <string name="nav_trips">Trips</string>
+
+    <!-- Vehicle scope tabs -->
+    <string name="tabs_all">All</string>
+    <string name="tabs_manage_vehicles">Manage vehicles</string>
+    <string name="tabs_unassigned">Unassigned</string>
+
+    <!-- Log -->
+    <string name="log_add_a_vehicle">Add a vehicle</string>
+    <string name="log_add_a_vehicle_first">Add a vehicle first so charging sessions can be tagged to it for stats and efficiency tracking.</string>
+    <string name="log_add_session">Add session</string>
+    <string name="log_any_brand">Any brand</string>
+    <string name="log_apply">Apply</string>
+    <string name="log_assign_trip">Assign trip</string>
+    <string name="log_back_to_top">Back to top</string>
+    <string name="log_back_up_your_data">Back up your data?</string>
+    <string name="log_backfill_the_details_of">Backfill the details of a charge you\'ve already finished.</string>
+    <string name="log_backup_never">You haven\'t backed up yet — protect your sessions before they\'re lost.</string>
+    <string name="log_backup_over_year">over a year ago</string>
+    <string name="log_backup_refresh">Last backup was %1$s. Time to refresh it.</string>
+    <string name="log_backup_today">today</string>
+    <string name="log_brand">Brand</string>
+    <string name="log_cancel">Cancel</string>
+    <string name="log_cancel_selection">Cancel selection</string>
+    <string name="log_clear">Clear</string>
+    <string name="log_clear_filters">Clear filters</string>
+    <string name="log_clear_search">Clear search</string>
+    <string name="log_close_search">Close search</string>
+    <string name="log_date">Date</string>
+    <string name="log_date_from">From %1$s</string>
+    <string name="log_date_range">Date range</string>
+    <string name="log_date_until">Until %1$s</string>
+    <string name="log_delete">Delete</string>
+    <string name="log_delete_selected">Delete selected</string>
+    <string name="log_effective_rate">Eff. %1$s</string>
+    <string name="log_empty_all_body">Tap Add session to log your first charge.</string>
+    <string name="log_empty_all_title">No sessions yet</string>
+    <string name="log_empty_unassigned_body">Every session has a vehicle now.</string>
+    <string name="log_empty_unassigned_title">Nothing unassigned</string>
+    <string name="log_empty_vehicle_body">Nothing logged against this vehicle yet. Tap Add session to log one.</string>
+    <string name="log_empty_vehicle_title">No sessions for this vehicle</string>
+    <string name="log_filter_sessions">Filter sessions</string>
+    <string name="log_filters">Filters</string>
+    <string name="log_from_label">From: %1$s</string>
+    <string name="log_from_must_be_on">\"From\" must be on or before \"To\".</string>
+    <string name="log_from_placeholder">From…</string>
+    <string name="log_has_receipt">Has receipt</string>
+    <string name="log_log_a_charge">Log a charge</string>
+    <string name="log_log_a_past_charge">Log a past charge</string>
+    <string name="log_no_brands_recorded_yet">No brands recorded yet.</string>
+    <string name="log_no_matching_sessions">No matching sessions</string>
+    <string name="log_no_tags_yet_add">No tags yet — add some when editing a session.</string>
+    <string name="log_no_trips_yet_create">No trips yet. Create one from the Trips screen.</string>
+    <string name="log_not_now">Not now</string>
+    <string name="log_ok">OK</string>
+    <string name="log_open_session">Open session</string>
+    <string name="log_open_settings">Open Settings</string>
+    <string name="log_preset_all_time">All time</string>
+    <string name="log_preset_last_3_months">Last 3 mo.</string>
+    <string name="log_preset_last_year">Last year</string>
+    <string name="log_preset_this_month">This month</string>
+    <string name="log_remove_brand_filter">Remove brand filter</string>
+    <string name="log_remove_date_filter">Remove date filter</string>
+    <string name="log_remove_tag_filter">Remove tag filter</string>
+    <string name="log_search">Search</string>
+    <string name="log_search_city_address_notes">Search city, address, notes…</string>
+    <string name="log_select_all">Select all</string>
+    <string name="log_select_sessions">Select sessions</string>
+    <string name="log_selected">Selected</string>
+    <string name="log_selected_count">%1$d selected</string>
+    <string name="log_settings">Settings</string>
+    <string name="log_show_all_sessions">Show all sessions</string>
+    <string name="log_sort">Sort</string>
+    <string name="log_sort_brand">Brand (A–Z)</string>
+    <string name="log_sort_cost">Cost (highest)</string>
+    <string name="log_sort_date">Date (newest)</string>
+    <string name="log_sort_efficiency">Efficiency ($/kWh)</string>
+    <string name="log_start_a_live_timer">Start a live timer for a charge happening right now. A notification keeps it handy while you wait.</string>
+    <string name="log_still_charging">Still charging?</string>
+    <string name="log_tags">Tags</string>
+    <string name="log_this_permanently_removes_the">This permanently removes the selected sessions and any receipts attached to them.</string>
+    <string name="log_to_label">To: %1$s</string>
+    <string name="log_to_placeholder">To…</string>
+    <string name="log_track_a_charge_now">Track a charge now</string>
+    <string name="log_tracked_running">A tracked charge started %1$s is still running. Open it to finish or delete it.</string>
+    <string name="log_unassigned">Unassigned</string>
+    <string name="log_undo">Undo</string>
+    <string name="log_welcome_to_evsct">Welcome to EVSCT</string>
+    <string name="log_your_search_and_filters">Your search and filters don\'t match any sessions.</string>
+    <plurals name="log_assign_to">
+        <item quantity="one">Assign %1$d session to…</item>
+        <item quantity="other">Assign %1$d sessions to…</item>
+    </plurals>
+    <plurals name="log_backup_days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+    <plurals name="log_delete_confirm_title">
+        <item quantity="one">Delete %1$d session?</item>
+        <item quantity="other">Delete %1$d sessions?</item>
+    </plurals>
+    <plurals name="log_deleted_count">
+        <item quantity="one">Session deleted</item>
+        <item quantity="other">%1$d sessions deleted</item>
+    </plurals>
+
+    <!-- Session form -->
+    <string name="form_">:</string>
+    <string name="form_add_a_vehicle_from">Add a vehicle from Settings to tag sessions by car.</string>
+    <string name="form_add_another">Add another</string>
+    <string name="form_add_odometer">Add odometer</string>
+    <string name="form_add_tag">Add tag…</string>
+    <string name="form_address">Address</string>
+    <string name="form_attach_receipt_as">Attach receipt as…</string>
+    <string name="form_attach_receipts">Attach receipts</string>
+    <string name="form_auto_fill_from_your">Auto-fill from your location</string>
+    <string name="form_back">Back</string>
+    <string name="form_battery_end" formatted="false">Battery end %</string>
+    <string name="form_battery_start" formatted="false">Battery start %</string>
+    <string name="form_battery_wait">Battery &amp; wait</string>
+    <string name="form_brands_all">All networks</string>
+    <string name="form_brands_used">Used in your sessions</string>
+    <string name="form_cancel">Cancel</string>
+    <string name="form_charging_duration">Charging duration</string>
+    <string name="form_choose_a_brand">Choose a brand</string>
+    <string name="form_city">City</string>
+    <string name="form_clear">Clear</string>
+    <string name="form_continues_from_previous_session">Continues from previous session</string>
+    <string name="form_currently_selected">Currently selected</string>
+    <string name="form_date">Date</string>
+    <string name="form_date_time">Date / time</string>
+    <string name="form_delete">Delete</string>
+    <string name="form_delete_this_session">Delete this session?</string>
+    <string name="form_discard">Discard</string>
+    <string name="form_discard_changes">Discard changes?</string>
+    <string name="form_drop_a_pin_manually">Drop a pin manually</string>
+    <string name="form_e_g_25_1">e.g. 25  ·  1:25  ·  0:11:00</string>
+    <string name="form_e_g_sk">e.g. SK</string>
+    <string name="form_e_g_work_charge">e.g. work charge</string>
+    <string name="form_energy_delivered_kwh">Energy delivered (kWh)</string>
+    <string name="form_file_name">File name</string>
+    <string name="form_gps_finding">Finding…</string>
+    <string name="form_gps_use">Use GPS</string>
+    <string name="form_keep_editing">Keep editing</string>
+    <string name="form_location_denied">Location permission denied.</string>
+    <string name="form_more_station_detail">More station detail</string>
+    <string name="form_no_matches">No matches.</string>
+    <string name="form_none">None</string>
+    <string name="form_notes">Notes</string>
+    <string name="form_odometer_unit">Odometer (%1$s)</string>
+    <string name="form_open_brand_picker">Open brand picker</string>
+    <string name="form_open_receipt">Open receipt</string>
+    <string name="form_pdf">PDF</string>
+    <string name="form_photo">Photo</string>
+    <string name="form_photo_or_pdf_add">Photo or PDF — add as many as you need.</string>
+    <string name="form_pick_a_pdf_file">Pick a PDF file from your device.</string>
+    <string name="form_pick_from_your_gallery">Pick from your gallery or camera roll.</string>
+    <string name="form_pick_on_map">Pick on map</string>
+    <string name="form_posted_energy_price">Posted energy price ($/kWh)</string>
+    <string name="form_posted_max_power_kw">Posted max power (kW)</string>
+    <string name="form_posted_rates">Posted rates</string>
+    <string name="form_posted_time_rate">Posted time-based rate ($/%1$s)</string>
+    <string name="form_pricing_flat">Flat</string>
+    <string name="form_pricing_free">Free</string>
+    <string name="form_pricing_hybrid">Hybrid</string>
+    <string name="form_pricing_per_kwh">$/kWh</string>
+    <string name="form_pricing_per_minute">$/min</string>
+    <string name="form_prov_state">Prov / State</string>
+    <string name="form_receipt_photo">Receipt photo</string>
+    <string name="form_receipt_photo_full_screen">Receipt photo (full screen)</string>
+    <string name="form_receipts">Receipts</string>
+    <string name="form_recent_stops">Recent stops</string>
+    <string name="form_remove">Remove</string>
+    <string name="form_remove_tag">Remove %1$s</string>
+    <string name="form_rename">Rename</string>
+    <string name="form_rename_receipt">Rename receipt</string>
+    <string name="form_save">Save</string>
+    <string name="form_save_anyway">Save anyway</string>
+    <string name="form_save_session">Save session</string>
+    <string name="form_save_without_odometer">Save without odometer?</string>
+    <string name="form_search_brand_city_address">Search brand, city, address…</string>
+    <string name="form_search_or_type_a">Search or type a custom brand…</string>
+    <string name="form_section_collapsed">Collapsed</string>
+    <string name="form_section_expanded">Expanded</string>
+    <string name="form_section_session">Session</string>
+    <string name="form_section_station">Station</string>
+    <string name="form_section_vehicle">Vehicle</string>
+    <string name="form_station_brand">Station brand</string>
+    <string name="form_station_name">Station / stall name / stall number</string>
+    <string name="form_tags">Tags</string>
+    <string name="form_tap_to_choose">Tap to choose…</string>
+    <string name="form_tap_to_open_in">Tap to open in your PDF viewer.</string>
+    <string name="form_the_odometer_reading_helps">The odometer reading helps with trip distance and efficiency stats. You can still save without it.</string>
+    <string name="form_this_session_has_unsaved">This session has unsaved edits. Leaving now throws them away.</string>
+    <string name="form_this_will_permanently_remove">This will permanently remove this charging session from your log.</string>
+    <string name="form_tick_if_no_untracked">Tick if no untracked charging happened since your last logged session (extends km/kWh stats across trips).</string>
+    <string name="form_time">Time</string>
+    <string name="form_title_edit">Edit session</string>
+    <string name="form_title_new">New session</string>
+    <string name="form_total_cost_currency">Total cost (%1$s)</string>
+    <string name="form_trip">Trip</string>
+    <string name="form_type_ac_l1">AC L1</string>
+    <string name="form_type_ac_l2">AC L2</string>
+    <string name="form_type_dc_fast">DC Fast</string>
+    <string name="form_unassigned">Unassigned</string>
+    <string name="form_use_a_recent_stop">Use a recent stop…</string>
+    <string name="form_use_brand">Use \"%1$s\"</string>
+    <string name="form_use_elapsed">Use elapsed: %1$s</string>
+    <string name="form_wait_time_min_optional">Wait time (min, optional)</string>
+    <plurals name="form_filled_count">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d set</item>
+    </plurals>
+    <plurals name="form_hints_title">
+        <item quantity="one">Heads-up</item>
+        <item quantity="other">%1$d things to double-check</item>
+    </plurals>
+
+    <!-- Stats -->
+    <string name="stats_ac_l2_l1">AC (L2 + L1)</string>
+    <string name="stats_avg_eff_price">Avg eff. $/kWh</string>
+    <string name="stats_bucket_month">month</string>
+    <string name="stats_bucket_year">year</string>
+    <string name="stats_charging_type">Charging type</string>
+    <string name="stats_charging_vs_gas">%1$s charging vs ~%2$s on gas</string>
+    <string name="stats_cost_by">Cost by %1$s</string>
+    <string name="stats_dc_fast">DC Fast</string>
+    <string name="stats_energy_by">Energy by %1$s</string>
+    <string name="stats_gas_assumptions">Assumes $2.15/L · 12 L/100 km</string>
+    <string name="stats_less">Less</string>
+    <string name="stats_more">More</string>
+    <string name="stats_no_sessions_yet">No sessions yet</string>
+    <string name="stats_paid_more">Paid %1$s more than gas</string>
+    <string name="stats_peak">Peak: %1$s</string>
+    <string name="stats_recap">Recap</string>
+    <string name="stats_rows_are_days_columns">Rows are days, columns are hours — tap a square for its count</string>
+    <string name="stats_saved">Saved %1$s</string>
+    <string name="stats_stats_appear_here_once">Stats appear here once you\'ve logged at least one charging session.</string>
+    <string name="stats_tap_a_brand_to">Tap a brand to see its sessions in the Log</string>
+    <string name="stats_top_brands">Top brands by spend</string>
+    <string name="stats_vs_gas_this_month">vs gas this month</string>
+    <string name="stats_when_you_charge">When you charge</string>
+    <plurals name="stats_excluded_by_currency">
+        <item quantity="one">Cost charts below are in %1$s. %2$d session in another currency doesn\'t appear in them.</item>
+        <item quantity="other">Cost charts below are in %1$s. %2$d sessions in another currency don\'t appear in them.</item>
+    </plurals>
+    <plurals name="stats_heatmap_cell">
+        <item quantity="one">%1$s %2$s · %3$d session</item>
+        <item quantity="other">%1$s %2$s · %3$d sessions</item>
+    </plurals>
+    <string-array name="stats_day_labels">
+        <item>Sun</item>
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+    </string-array>
+    <string-array name="stats_hour_ticks">
+        <item>12 am</item>
+        <item>6 am</item>
+        <item>noon</item>
+        <item>6 pm</item>
+        <item>11 pm</item>
+    </string-array>
+
+    <!-- Year recap -->
+    <string name="recap_all_vehicles">All vehicles</string>
+    <string name="recap_back">Back</string>
+    <string name="recap_charging_map">Charging map</string>
+    <string name="recap_format_html">Interactive page with the charging map — opens in any browser.</string>
+    <string name="recap_format_pdf">One-page summary — easy to print or archive.</string>
+    <string name="recap_longest_trip">Longest trip</string>
+    <string name="recap_monthly_cost">Monthly cost</string>
+    <string name="recap_no_sessions_in_year">No sessions in %1$d yet.</string>
+    <string name="recap_ok">OK</string>
+    <string name="recap_save_as">Save as %1$s…</string>
+    <string name="recap_share_as">Share %1$s…</string>
+    <string name="recap_share_title">Share recap</string>
+    <string name="recap_top_brands">Top brands</string>
+    <string name="recap_year_recap">Year recap</string>
+    <plurals name="recap_excluded_by_currency">
+        <item quantity="one">Cost totals are in %1$s. %2$d session in another currency excluded.</item>
+        <item quantity="other">Cost totals are in %1$s. %2$d sessions in another currency excluded.</item>
+    </plurals>
+
+    <!-- Map -->
+    <string name="map_all_vehicles">All vehicles</string>
+    <string name="map_charging_stop">Charging stop</string>
+    <string name="map_empty_filtered">Every stop is hidden by your current filter.</string>
+    <string name="map_empty_none">No locations to map yet. Add a session with GPS autofill or a real address.</string>
+    <string name="map_empty_unlocated">Could not locate any stops. Check that addresses are filled in.</string>
+    <string name="map_filter">Filter</string>
+    <string name="map_filter_map">Filter map</string>
+    <string name="map_fix_failed">Couldn\'t get a location fix. Check that location is turned on.</string>
+    <string name="map_hide_all">Hide all</string>
+    <string name="map_legend_more">+%1$d more…</string>
+    <string name="map_locating_stops">Locating %1$d stops…</string>
+    <string name="map_map_type">Map type</string>
+    <string name="map_multiple_trips">Multiple trips</string>
+    <string name="map_my_location">My location</string>
+    <string name="map_no_trips_to_filter">No trips to filter.</string>
+    <string name="map_permission_off">Location permission is off — the map can\'t jump to where you are.</string>
+    <string name="map_reset">Reset</string>
+    <string name="map_show_all">Show all</string>
+    <string name="map_show_pins_for_vehicle">Show pins for vehicle</string>
+    <string name="map_show_pins_from">Show pins from</string>
+    <string name="map_unassigned">Unassigned</string>
+    <string name="map_untripped">Untripped</string>
+    <string name="map_untripped_sessions">Untripped sessions</string>
+    <plurals name="map_backfill_failed">
+        <item quantity="one">%1$d address couldn\'t be located — those stops stay off the map. Check the address, or open the session and use Pick on map.</item>
+        <item quantity="other">%1$d addresses couldn\'t be located — those stops stay off the map. Check the address, or open the session and use Pick on map.</item>
+    </plurals>
+    <plurals name="map_stop_sessions">
+        <item quantity="one">%1$d session — tap to open</item>
+        <item quantity="other">%1$d sessions — tap to open</item>
+    </plurals>
+
+    <!-- Map type menu -->
+    <string name="maptype_cluster_nearby_pins">Cluster nearby pins</string>
+    <string name="maptype_clustering_on">Clustering on</string>
+    <string name="maptype_color_pins_by_trip">Color pins by trip</string>
+    <string name="maptype_default">Default</string>
+    <string name="maptype_heatmap">Heatmap</string>
+    <string name="maptype_heatmap_on">Heatmap on</string>
+    <string name="maptype_hybrid">Hybrid</string>
+    <string name="maptype_satellite">Satellite</string>
+    <string name="maptype_selected">Selected</string>
+    <string name="maptype_terrain">Terrain</string>
+    <string name="maptype_trip_colors_on">Trip colors on</string>
+    <string name="maptype_trip_routes">Trip routes</string>
+    <string name="maptype_trip_routes_on">Trip routes on</string>
+
+    <!-- Map picker -->
+    <string name="mappicker_cancel">Cancel</string>
+    <string name="mappicker_map_type">Map type</string>
+    <string name="mappicker_my_location">My location</string>
+    <string name="mappicker_pick_location">Pick location</string>
+    <string name="mappicker_selected_location">Selected location</string>
+    <string name="mappicker_use_this_location">Use this location</string>
+
+    <!-- Trip list -->
+    <string name="trips_cancel">Cancel</string>
+    <string name="trips_delete">Delete</string>
+    <string name="trips_delete_confirm_title">Delete \"%1$s\"?</string>
+    <string name="trips_delete_trip">Delete trip</string>
+    <string name="trips_new_trip">New trip</string>
+    <string name="trips_no_trips_yet">No trips yet</string>
+    <string name="trips_sessions_tagged_with_this">Sessions tagged with this trip will keep their data but be untagged.</string>
+    <string name="trips_trips_group_sessions_for">Trips group sessions for road-trip totals and color-coded map pins.</string>
+    <plurals name="trips_summary">
+        <item quantity="one">%1$d session · %2$s · %3$s</item>
+        <item quantity="other">%1$d sessions · %2$s · %3$s</item>
+    </plurals>
+
+    <!-- Trip detail -->
+    <string name="trip_back">Back</string>
+    <string name="trip_driving_efficiency">Driving efficiency</string>
+    <string name="trip_edit_trip">Edit trip</string>
+    <string name="trip_no_sessions_in_this">No sessions in this trip yet</string>
+    <string name="trip_tag_sessions_from_the">Tag sessions from the Log: tap Select (or long-press a session), choose the ones from this trip, then Assign to trip. A session\'s edit form can also pick this trip directly.</string>
+    <string name="trip_view_on_map">View on map</string>
+
+    <!-- Trip editor -->
+    <string name="tripedit_auto_let_the_app">Auto — let the app pick the least-used color</string>
+    <string name="tripedit_battery_must_be_between" formatted="false">Battery % must be between 0 and 100.</string>
+    <string name="tripedit_cancel">Cancel</string>
+    <string name="tripedit_clear_dates">Clear dates</string>
+    <string name="tripedit_close">Close</string>
+    <string name="tripedit_end_battery" formatted="false">End battery %</string>
+    <string name="tripedit_end_date">End date…</string>
+    <string name="tripedit_end_odometer">End %1$s</string>
+    <string name="tripedit_map_pin_color">Map pin color</string>
+    <string name="tripedit_map_pin_color_value">Map pin color: %1$s</string>
+    <string name="tripedit_name">Name</string>
+    <string name="tripedit_notes_optional">Notes (optional)</string>
+    <string name="tripedit_odometer_order_error">Start %1$s cannot be more than End %2$s.</string>
+    <string name="tripedit_ok">OK</string>
+    <string name="tripedit_optional_battery_when_the" formatted="false">Optional: battery % when the trip began and ended. With the odometer readings these measure the drives to the first charge and home from the last one.</string>
+    <string name="tripedit_optional_dates_label_the">Optional: dates label the trip and sort the list (newest first).</string>
+    <string name="tripedit_optional_distance_is_computed">Optional: distance is computed as End − Start when both are filled.</string>
+    <string name="tripedit_pin_color_auto">Auto</string>
+    <string name="tripedit_pins_for_this_trip">Pins for this trip will use this color on the map.</string>
+    <string name="tripedit_start_battery" formatted="false">Start battery %</string>
+    <string name="tripedit_start_date">Start date…</string>
+    <string name="tripedit_start_date_cannot_be">Start date cannot be after end date.</string>
+    <string name="tripedit_start_odometer">Start %1$s</string>
+
+    <!-- Vehicle list -->
+    <string name="vehicles_add_the_ev_s">Add the EV(s) you charge so sessions can be tagged and per-vehicle stats become meaningful.</string>
+    <string name="vehicles_add_vehicle">Add vehicle</string>
+    <string name="vehicles_back">Back</string>
+    <string name="vehicles_default_vehicle">Default vehicle</string>
+    <string name="vehicles_no_vehicles_yet">No vehicles yet</string>
+    <string name="vehicles_vehicles">Vehicles</string>
+
+    <!-- Vehicle detail -->
+    <string name="vehicle_back">Back</string>
+    <string name="vehicle_cheapest_per_kwh">Cheapest $/kWh</string>
+    <string name="vehicle_edit_vehicle">Edit vehicle</string>
+    <string name="vehicle_fastest_charge">Fastest charge</string>
+    <string name="vehicle_last_charged">Last charged</string>
+    <string name="vehicle_lifetime">Lifetime</string>
+    <string name="vehicle_most_expensive_per_kwh">Most expensive $/kWh</string>
+    <string name="vehicle_nominal_range">%1$s nominal range</string>
+    <string name="vehicle_recent_sessions">Recent sessions</string>
+    <string name="vehicle_vehicle_not_found">Vehicle not found.</string>
+    <string name="vehicle_vehicle_photo_full_screen">Vehicle photo (full screen)</string>
+    <string name="vehicle_vehicle_photo_tap_to">Vehicle photo (tap to zoom)</string>
+
+    <!-- Vehicle editor -->
+    <string name="vehicleedit_add_photo">Add photo</string>
+    <string name="vehicleedit_back">Back</string>
+    <string name="vehicleedit_battery_kwh">Battery (kWh)</string>
+    <string name="vehicleedit_cancel">Cancel</string>
+    <string name="vehicleedit_change_photo">Change photo</string>
+    <string name="vehicleedit_default_vehicle">Default vehicle</string>
+    <string name="vehicleedit_delete">Delete</string>
+    <string name="vehicleedit_delete_this_vehicle">Delete this vehicle?</string>
+    <string name="vehicleedit_discard">Discard</string>
+    <string name="vehicleedit_discard_changes">Discard changes?</string>
+    <string name="vehicleedit_display_name">Display name</string>
+    <string name="vehicleedit_keep_editing">Keep editing</string>
+    <string name="vehicleedit_make">Make</string>
+    <string name="vehicleedit_model">Model</string>
+    <string name="vehicleedit_notes">Notes</string>
+    <string name="vehicleedit_pre_selected_when_logging">Pre-selected when logging new sessions.</string>
+    <string name="vehicleedit_range_unit">Range (%1$s)</string>
+    <string name="vehicleedit_remove">Remove</string>
+    <string name="vehicleedit_save">Save</string>
+    <string name="vehicleedit_sessions_previously_tagged_with">Sessions previously tagged with this vehicle will keep their data but be unassigned.</string>
+    <string name="vehicleedit_this_vehicle_has_unsaved">This vehicle has unsaved edits. Leaving now throws them away.</string>
+    <string name="vehicleedit_title_edit">Edit vehicle</string>
+    <string name="vehicleedit_title_new">New vehicle</string>
+    <string name="vehicleedit_trim">Trim</string>
+    <string name="vehicleedit_vin_optional">VIN (optional)</string>
+    <string name="vehicleedit_year">Year</string>
+
+    <!-- Settings -->
+    <string name="settings_about">About</string>
+    <string name="settings_also_send_android_notification">Also send Android notification</string>
+    <string name="settings_back">Back</string>
+    <string name="settings_backup">Backup</string>
+    <string name="settings_backup_reminder">Backup reminder</string>
+    <string name="settings_brings_back_the_data">"Brings back the data as it was just before your last restore or replace-import (snapshot taken automatically "</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_charging_network_names_and">Charging network names and vehicle makes/models are trademarks of their respective owners, shown only to label your own sessions and vehicles. EVSCT is an independent app with no affiliation to any of them.</string>
+    <string name="settings_commit_prefix">"Commit "</string>
+    <string name="settings_default_currency">Default currency</string>
+    <string name="settings_display_preferences_existing_data">Display preferences. Existing data is stored once and shown in your chosen units.</string>
+    <string name="settings_distance">Distance</string>
+    <string name="settings_each_session_keeps_the">Each session keeps the currency it was saved with. The default is used for new sessions and for totals on the dashboard.</string>
+    <string name="settings_erase_and_import">Erase and import</string>
+    <string name="settings_erase_and_restore">Erase and restore</string>
+    <string name="settings_export_csv">Export to CSV…</string>
+    <string name="settings_export_every_session_to">Export every session to a CSV file you can open in Excel or Google Sheets. Save picks a folder on this device; Share sends the file out via Drive, email, or any other app you have installed.</string>
+    <string name="settings_full_backup">Full backup</string>
+    <string name="settings_import">Import</string>
+    <string name="settings_import_csv">Import CSV…</string>
+    <string name="settings_import_legacy_xlsx">Import legacy XLSX?</string>
+    <string name="settings_import_sessions_from_a">Import sessions from a previously exported CSV.</string>
+    <string name="settings_import_the_legacy_dc">Import the legacy \\"DC Fast Charging.xlsx\\" sheet you\'ve been keeping. This is intended to be run once when first setting up the app.</string>
+    <string name="settings_import_xlsx">Import legacy XLSX…</string>
+    <string name="settings_kilometres">Kilometres</string>
+    <string name="settings_last_backed_up">"Last backed up: "</string>
+    <string name="settings_manage_your_evs_and">Manage your EVs and choose a default for new sessions.</string>
+    <string name="settings_miles">Miles</string>
+    <string name="settings_never">never</string>
+    <string name="settings_nudge_me_when_its">Nudge me when it\'s been a while since my last full backup.</string>
+    <string name="settings_ok">OK</string>
+    <string name="settings_one_time_xlsx_import">One-time XLSX import</string>
+    <string name="settings_pick_file">Pick file</string>
+    <string name="settings_privacy_policy">Privacy policy</string>
+    <string name="settings_rate_off">Off</string>
+    <string name="settings_rate_per_hr">$/hr</string>
+    <string name="settings_rate_per_min">$/min</string>
+    <string name="settings_remind_me_after_days">Remind me after (days)</string>
+    <string name="settings_replace_all_sessions">Replace all sessions?</string>
+    <string name="settings_replace_existing_is_ticked">\\"Replace existing\\" is ticked: this will erase every session currently in the app and replace them with the contents of the CSV. A snapshot of your current data is saved automatically first, so you can undo this from Settings if it\'s the wrong file.</string>
+    <string name="settings_replace_existing_sessions_before">Replace existing sessions before import</string>
+    <string name="settings_restore_backup">Restore from backup…</string>
+    <string name="settings_restore_from_backup">Restore from backup?</string>
+    <string name="settings_save_backup">Save backup file…</string>
+    <string name="settings_save_or_restore_everything">Save or restore everything — sessions, trips, vehicles, and vehicle photos — as a single .zip. Save picks a folder on this device; Share sends the file out via Drive, email, or any other app you have installed. Android\'s automatic backup doesn\'t include photos or receipts, so this is the only complete copy.</string>
+    <string name="settings_share_backup">Share backup</string>
+    <string name="settings_share_backup_button">Share backup file…</string>
+    <string name="settings_share_csv">Share CSV</string>
+    <string name="settings_share_csv_button">Share CSV file…</string>
+    <string name="settings_show_each_charges_cost">Show each charge\'s cost per minute or hour on its card, computed from cost ÷ charging time.</string>
+    <string name="settings_show_the_reminder_in">Show the reminder in the notification shade, not just inside the app.</string>
+    <string name="settings_system_follows_your_phones">System follows your phone\'s dark-mode setting; Light and Dark force the corresponding palette.</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_this_replaces_everything_currently">This replaces everything currently in the app with the snapshot taken just before your last restore or replace-import. The data you\'re replacing is snapshotted first, so you can undo the undo.</string>
+    <string name="settings_this_will_append_every">This will append every row from the chosen .xlsx into your sessions. Run it only once to avoid duplicates.</string>
+    <string name="settings_this_will_erase_every">This will erase every session, trip, and vehicle currently in the app and replace them with the contents of the backup file. A snapshot of your current data is saved automatically first, so you can undo this from Settings if it\'s the wrong file.</string>
+    <string name="settings_threshold_range">Between %1$d and %2$d days. Default: %3$d.</string>
+    <string name="settings_time_rate_on_cards">Time rate on cards</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_undo">Undo</string>
+    <string name="settings_undo_last_restore_or">Undo last restore or import?</string>
+    <string name="settings_undo_restore">Undo last restore or import…</string>
+    <string name="settings_units_currency">Units &amp; currency</string>
+    <string name="settings_vehicles">Vehicles</string>
+    <string name="settings_version">EVSCT %1$s (build %2$d)</string>
+    <string name="settings_view_on_github">View on GitHub</string>
+
+    <!-- Image viewer -->
+    <string name="zoom_close">Close</string>
 </resources>

@@ -42,11 +42,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.R
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -111,6 +113,7 @@ fun MapPickerScreen(
     // where "log the charger in front of me" happens, so being able to
     // jump to yourself matters even more here.
     val snackbarHostState = remember { SnackbarHostState() }
+    val fixFailedMsg = stringResource(R.string.map_fix_failed)
     val scope = rememberCoroutineScope()
     var hasLocationPermission by remember { mutableStateOf(viewModel.hasLocationPermission()) }
     var locating by remember { mutableStateOf(false) }
@@ -125,9 +128,7 @@ fun MapPickerScreen(
                     CameraUpdateFactory.newLatLngZoom(LatLng(fix.first, fix.second), 15f),
                 )
             } else {
-                snackbarHostState.showSnackbar(
-                    "Couldn't get a location fix. Check that location is turned on.",
-                )
+                snackbarHostState.showSnackbar(fixFailedMsg)
             }
         }
     }
@@ -159,7 +160,7 @@ fun MapPickerScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("Pick location", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.mappicker_pick_location), fontWeight = FontWeight.SemiBold)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -169,13 +170,13 @@ fun MapPickerScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = { exitOnce(onCancel) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cancel")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.mappicker_cancel))
                     }
                 },
                 actions = {
                     Box {
                         IconButton(onClick = { showLayersMenu = true }) {
-                            Icon(Icons.Default.Layers, contentDescription = "Map type")
+                            Icon(Icons.Default.Layers, contentDescription = stringResource(R.string.mappicker_map_type))
                         }
                         MapTypeMenu(
                             expanded = showLayersMenu,
@@ -201,14 +202,14 @@ fun MapPickerScreen(
                     OutlinedButton(
                         onClick = { exitOnce(onCancel) },
                         modifier = Modifier.weight(1f),
-                    ) { Text("Cancel") }
+                    ) { Text(stringResource(R.string.mappicker_cancel)) }
                     Button(
                         onClick = {
                             val target = cameraPositionState.position.target
                             exitOnce { onConfirm(target.latitude, target.longitude) }
                         },
                         modifier = Modifier.weight(1f),
-                    ) { Text("Use this location") }
+                    ) { Text(stringResource(R.string.mappicker_use_this_location)) }
                 }
             }
         },
@@ -239,7 +240,7 @@ fun MapPickerScreen(
             // pin visibly points.
             Icon(
                 imageVector = Icons.Default.Place,
-                contentDescription = "Selected location",
+                contentDescription = stringResource(R.string.mappicker_selected_location),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -268,7 +269,7 @@ fun MapPickerScreen(
                 if (locating) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Default.MyLocation, contentDescription = "My location")
+                    Icon(Icons.Default.MyLocation, contentDescription = stringResource(R.string.mappicker_my_location))
                 }
             }
             Spacer(modifier = Modifier.width(0.dp))  // No-op; keeps layout tree stable.

@@ -68,6 +68,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -75,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.R
 import com.evsct.app.ui.BarList
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.theme.EvsctTheme
@@ -114,7 +117,7 @@ fun YearRecapScreen(
             putExtra(Intent.EXTRA_TITLE, file.name)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(send, "Share recap"))
+        context.startActivity(Intent.createChooser(send, context.getString(R.string.recap_share_title)))
         viewModel.consumePendingShare()
     }
 
@@ -141,7 +144,7 @@ fun YearRecapScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.recap_back))
                     }
                 },
             )
@@ -179,7 +182,7 @@ fun YearRecapScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        "No sessions in ${state.selectedYear} yet.",
+                        stringResource(R.string.recap_no_sessions_in_year, state.selectedYear),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -229,7 +232,7 @@ fun YearRecapScreen(
                 title = { Text(fb.title) },
                 text = { Text(fb.body) },
                 confirmButton = {
-                    TextButton(onClick = { viewModel.clearFeedback() }) { Text("OK") }
+                    TextButton(onClick = { viewModel.clearFeedback() }) { Text(stringResource(R.string.recap_ok)) }
                 },
             )
         }
@@ -276,24 +279,26 @@ private fun RecapHeadlineCard(state: YearRecapUi) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround,
             ) {
-                HeadlineStat("Sessions", state.sessionCount.toString())
-                HeadlineStat("Total cost", Format.money(state.totalCost, state.costCurrency))
+                HeadlineStat(stringResource(R.string.common_sessions), state.sessionCount.toString())
+                HeadlineStat(stringResource(R.string.common_total_cost), Format.money(state.totalCost, state.costCurrency))
             }
             Spacer(Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround,
             ) {
-                HeadlineStat("Energy", Format.kwh(state.totalKwh))
-                HeadlineStat("Distance", Format.distance(state.totalDistanceKm, units.useMiles))
+                HeadlineStat(stringResource(R.string.common_energy), Format.kwh(state.totalKwh))
+                HeadlineStat(stringResource(R.string.common_distance), Format.distance(state.totalDistanceKm, units.useMiles))
             }
             if (state.excludedByCurrency > 0) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Cost totals are in ${state.costCurrency}. " +
-                        "${state.excludedByCurrency} session" +
-                        (if (state.excludedByCurrency == 1) "" else "s") +
-                        " in another currency excluded.",
+                    pluralStringResource(
+                        R.plurals.recap_excluded_by_currency,
+                        state.excludedByCurrency,
+                        state.costCurrency,
+                        state.excludedByCurrency,
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
@@ -322,7 +327,7 @@ private fun RecapCard(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun RecapMonthlyCard(state: YearRecapUi) {
-    RecapCard("Monthly cost") {
+    RecapCard(stringResource(R.string.recap_monthly_cost)) {
         BarList(
             items = state.monthlyCost,
             labelWidth = 40.dp,
@@ -334,7 +339,7 @@ private fun RecapMonthlyCard(state: YearRecapUi) {
 
 @Composable
 private fun RecapBrandsCard(state: YearRecapUi) {
-    RecapCard("Top brands") {
+    RecapCard(stringResource(R.string.recap_top_brands)) {
         BarList(
             items = state.topBrands,
             labelWidth = 130.dp,
@@ -358,7 +363,7 @@ private fun RecapMapCard(state: YearRecapUi, basemap: NaBasemap?) {
         RecapMapProjection.fit(state.mapStops, state.mapTripPaths)
     } ?: return
 
-    RecapCard("Charging map") {
+    RecapCard(stringResource(R.string.recap_charging_map)) {
         // NOT outlineVariant: in this palette's dark scheme it's the very
         // same tone as the map's surfaceVariant fill (0xFF414940 for both,
         // mirroring baseline M3), which made the coastlines invisible in
@@ -457,7 +462,7 @@ private fun hexColor(hex: String): Color =
 @Composable
 private fun RecapLongestTripCard(trip: LongestTripSummary) {
     val units = LocalUserUnits.current
-    RecapCard("Longest trip") {
+    RecapCard(stringResource(R.string.recap_longest_trip)) {
         Text(trip.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
         Spacer(Modifier.height(4.dp))
         val parts = buildList {
@@ -512,9 +517,9 @@ private fun ExportButtons(
         }
         Text(
             when (format) {
-                RecapFormat.PDF -> "One-page summary — easy to print or archive."
+                RecapFormat.PDF -> stringResource(R.string.recap_format_pdf)
                 RecapFormat.HTML ->
-                    "Interactive page with the charging map — opens in any browser."
+                    stringResource(R.string.recap_format_html)
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -525,7 +530,7 @@ private fun ExportButtons(
             enabled = !busy,
         ) {
             ExportButtonContent(
-                "Save as ${format.label}…",
+                stringResource(R.string.recap_save_as, format.label),
                 busyOp == RecapOp.SAVE_PDF || busyOp == RecapOp.SAVE_HTML,
             )
         }
@@ -535,7 +540,7 @@ private fun ExportButtons(
             enabled = !busy,
         ) {
             ExportButtonContent(
-                "Share ${format.label}…",
+                stringResource(R.string.recap_share_as, format.label),
                 busyOp == RecapOp.SHARE_PDF || busyOp == RecapOp.SHARE_HTML,
             )
         }
@@ -571,9 +576,9 @@ private fun ExportButtonContent(text: String, busy: Boolean) {
 @Composable
 private fun RecapTitle(vehicleName: String?) {
     Column {
-        Text("Year recap", fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.recap_year_recap), fontWeight = FontWeight.SemiBold)
         Text(
-            vehicleName ?: "All vehicles",
+            vehicleName ?: stringResource(R.string.recap_all_vehicles),
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

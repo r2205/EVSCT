@@ -36,10 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.R
 import com.evsct.app.ui.EmptyState
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
@@ -62,7 +65,7 @@ fun TripListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { EvsctBarTitle("Trips") },
+                title = { EvsctBarTitle(stringResource(R.string.nav_trips)) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -75,20 +78,19 @@ fun TripListScreen(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
-                Icon(Icons.Default.Add, contentDescription = "New trip")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.trips_new_trip))
             }
         },
     ) { padding ->
         if (trips.isEmpty()) {
             EmptyState(
                 icon = Icons.Default.Map,
-                title = "No trips yet",
+                title = stringResource(R.string.trips_no_trips_yet),
                 // The button below replaces the old "Tap + to create one" —
                 // that sentence pointed at an unlabelled circle and asked the
                 // reader to work out which one.
-                body = "Trips group sessions for road-trip totals and " +
-                    "color-coded map pins.",
-                actionLabel = "New trip",
+                body = stringResource(R.string.trips_trips_group_sessions_for),
+                actionLabel = stringResource(R.string.trips_new_trip),
                 onAction = { dialogOpen = true },
                 modifier = Modifier.padding(padding).fillMaxSize(),
             )
@@ -127,9 +129,13 @@ fun TripListScreen(
                                 }
                                 val units = LocalUserUnits.current
                                 Text(
-                                    "${tws.sessionCount} sessions · " +
-                                        "${Money.format(tws.totalCostByCurrency)} · " +
+                                    pluralStringResource(
+                                        R.plurals.trips_summary,
+                                        tws.sessionCount,
+                                        tws.sessionCount,
+                                        Money.format(tws.totalCostByCurrency),
                                         Format.kwh(tws.totalEnergyKwh),
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                                 if (tws.totalDistanceKm > 0) {
@@ -141,7 +147,7 @@ fun TripListScreen(
                                 }
                             }
                             IconButton(onClick = { pendingDelete = tws.trip }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete trip")
+                                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.trips_delete_trip))
                             }
                         }
                     }
@@ -154,10 +160,10 @@ fun TripListScreen(
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             icon = { Icon(Icons.Default.Delete, contentDescription = null) },
-            title = { Text("Delete \"${trip.name}\"?") },
+            title = { Text(stringResource(R.string.trips_delete_confirm_title, trip.name)) },
             text = {
                 Text(
-                    "Sessions tagged with this trip will keep their data but be untagged."
+                    stringResource(R.string.trips_sessions_tagged_with_this)
                 )
             },
             confirmButton = {
@@ -165,10 +171,10 @@ fun TripListScreen(
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.delete(trip)
                     pendingDelete = null
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.trips_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.trips_cancel)) }
             },
         )
     }

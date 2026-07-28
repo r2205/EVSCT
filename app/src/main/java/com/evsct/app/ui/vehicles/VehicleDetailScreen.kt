@@ -48,11 +48,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.evsct.app.R
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.ImageZoomDialog
@@ -81,7 +84,7 @@ fun VehicleDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        state.vehicle?.name ?: "Vehicle",
+                        state.vehicle?.name ?: stringResource(R.string.vehicle_fallback_title),
                         fontWeight = FontWeight.SemiBold,
                     )
                 },
@@ -93,13 +96,13 @@ fun VehicleDetailScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.vehicle_back))
                     }
                 },
                 actions = {
                     state.vehicle?.let { v ->
                         IconButton(onClick = { onEdit(v.id) }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit vehicle")
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.vehicle_edit_vehicle))
                         }
                     }
                 },
@@ -115,7 +118,7 @@ fun VehicleDetailScreen(
                 // Only claim "not found" once the lookup has actually run —
                 // before that this is just the load in flight.
                 if (state.isLoading) CircularProgressIndicator()
-                else Text("Vehicle not found.")
+                else Text(stringResource(R.string.vehicle_vehicle_not_found))
             }
             return@Scaffold
         }
@@ -131,7 +134,7 @@ fun VehicleDetailScreen(
             val highlights = listOfNotNull(
                 state.fastestSession?.let {
                     HighlightTile(
-                        label = "Fastest charge",
+                        label = stringResource(R.string.vehicle_fastest_charge),
                         primary = Format.kw(it.value) + " avg",
                         secondary = sessionLabel(it.session),
                         icon = Icons.Default.Speed,
@@ -140,7 +143,7 @@ fun VehicleDetailScreen(
                 },
                 state.cheapestPriceSession?.let {
                     HighlightTile(
-                        label = "Cheapest $/kWh",
+                        label = stringResource(R.string.vehicle_cheapest_per_kwh),
                         primary = Format.moneyRate(it.value, "kWh"),
                         secondary = sessionLabel(it.session),
                         icon = Icons.AutoMirrored.Filled.TrendingDown,
@@ -149,7 +152,7 @@ fun VehicleDetailScreen(
                 },
                 state.mostExpensivePriceSession?.let {
                     HighlightTile(
-                        label = "Most expensive $/kWh",
+                        label = stringResource(R.string.vehicle_most_expensive_per_kwh),
                         primary = Format.moneyRate(it.value, "kWh"),
                         secondary = sessionLabel(it.session),
                         icon = Icons.AutoMirrored.Filled.TrendingUp,
@@ -158,7 +161,7 @@ fun VehicleDetailScreen(
                 },
                 state.lastChargedAt?.let {
                     HighlightTile(
-                        label = "Last charged",
+                        label = stringResource(R.string.vehicle_last_charged),
                         primary = Format.dateTime(it),
                         secondary = state.mostUsedBrand?.let { (b, n) -> "$b · $n visits" },
                         icon = Icons.Default.Today,
@@ -173,7 +176,7 @@ fun VehicleDetailScreen(
             if (state.sessions.isNotEmpty()) {
                 item {
                     Text(
-                        "Recent sessions",
+                        stringResource(R.string.vehicle_recent_sessions),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold,
@@ -215,12 +218,12 @@ private fun HeaderCard(vehicle: Vehicle) {
                     Text(vehicle.displayLabel, style = MaterialTheme.typography.bodyMedium)
                 }
                 vehicle.batteryCapacityKwh?.let {
-                    Text("$it kWh battery", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.common_battery_kwh, it), style = MaterialTheme.typography.bodySmall)
                 }
                 vehicle.nominalRangeKm?.let {
                     val units = LocalUserUnits.current
                     Text(
-                        "${Format.distance(it.toDouble(), units.useMiles)} nominal range",
+                        stringResource(R.string.vehicle_nominal_range, Format.distance(it.toDouble(), units.useMiles)),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -248,7 +251,7 @@ private fun VehicleHero(imagePath: String?) {
         if (hasImage) {
             AsyncImage(
                 model = file,
-                contentDescription = "Vehicle photo (tap to zoom)",
+                contentDescription = stringResource(R.string.vehicle_vehicle_photo_tap_to),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -265,7 +268,7 @@ private fun VehicleHero(imagePath: String?) {
     if (showZoom && file != null) {
         ImageZoomDialog(
             model = file,
-            contentDescription = "Vehicle photo (full screen)",
+            contentDescription = stringResource(R.string.vehicle_vehicle_photo_full_screen),
             onDismiss = { showZoom = false },
         )
     }
@@ -278,7 +281,7 @@ private fun LifetimeCard(state: VehicleDetailUi) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Lifetime",
+                stringResource(R.string.vehicle_lifetime),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -288,9 +291,9 @@ private fun LifetimeCard(state: VehicleDetailUi) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Stat("Sessions", state.sessionCount.toString())
-                MoneyStat("Total cost", state.totalCostByCurrency)
-                Stat("Energy", Format.kwh(state.totalEnergyKwh))
+                Stat(stringResource(R.string.common_sessions), state.sessionCount.toString())
+                MoneyStat(stringResource(R.string.common_total_cost), state.totalCostByCurrency)
+                Stat(stringResource(R.string.common_energy), Format.kwh(state.totalEnergyKwh))
             }
             Spacer(Modifier.height(12.dp))
             Row(
@@ -298,28 +301,28 @@ private fun LifetimeCard(state: VehicleDetailUi) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Stat(
-                    "Distance",
+                    stringResource(R.string.common_distance),
                     if (state.totalDistanceKm > 0)
                         Format.distance(state.totalDistanceKm, units.useMiles) else "—",
                 )
                 Stat(
-                    "Cost / $distUnit",
+                    stringResource(R.string.common_cost_per_distance, distUnit),
                     Format.moneyRatePerDistance(state.costPerKm, units.useMiles),
                 )
-                Stat("Cost / kWh", Format.moneyRate(state.avgEffPricePerKwh, "kWh"))
+                Stat(stringResource(R.string.common_cost_per_kwh), Format.moneyRate(state.avgEffPricePerKwh, "kWh"))
             }
             Spacer(Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Stat("Avg power", Format.kw(state.avgPowerKw))
+                Stat(stringResource(R.string.common_avg_power), Format.kw(state.avgPowerKw))
                 if (state.avgKmPerKwh != null) {
                     val display = Units.kmToDisplay(state.avgKmPerKwh, units.useMiles)
-                    Stat("Efficiency", "%.2f $distUnit/kWh".format(display))
+                    Stat(stringResource(R.string.vehicle_efficiency), "%.2f $distUnit/kWh".format(display))
                 }
                 state.mostUsedBrand?.let { (brand, _) ->
-                    Stat("Top brand", brand)
+                    Stat(stringResource(R.string.vehicle_top_brand), brand)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -331,13 +334,13 @@ private fun LifetimeCard(state: VehicleDetailUi) {
                 val missing = state.sessionsWithoutDuration
                 val timeText = Format.duration(state.totalChargeSeconds) +
                     if (missing > 0) "*" else ""
-                Stat("Charge time", timeText)
+                Stat(stringResource(R.string.common_charge_time), timeText)
                 if (missing > 0) {
                     val total = state.sessionCount
                     Text(
-                        text = "* $missing of $total session" +
-                            (if (total == 1) "" else "s") +
-                            " missing duration",
+                        text = pluralStringResource(
+                            R.plurals.common_missing_duration, total, missing, total,
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier
@@ -413,7 +416,7 @@ private fun RecentSessionRow(s: ChargingSession, onClick: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "${s.brand ?: "Unknown"} · ${s.locationCity ?: "—"}",
+                    "${s.brand ?: stringResource(R.string.common_unknown)} · ${s.locationCity ?: "—"}",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                 )

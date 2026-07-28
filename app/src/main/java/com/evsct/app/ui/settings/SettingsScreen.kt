@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -72,6 +73,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.BuildConfig
+import com.evsct.app.R
 import com.evsct.app.data.backup.BackupShareChosenReceiver
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.CardTimeRate
@@ -134,13 +136,16 @@ fun SettingsScreen(
     // the launch is one-shot. MIME type and chooser title are derived from
     // the file extension so the same effect handles both the full-backup zip
     // and the CSV export.
+    // Resolved in composition: the effect body is not a composable scope.
+    val shareCsvTitle = stringResource(R.string.settings_share_csv)
+    val shareBackupTitle = stringResource(R.string.settings_share_backup)
     LaunchedEffect(state.pendingShareFile) {
         val file = state.pendingShareFile ?: return@LaunchedEffect
         val authority = "${context.packageName}.fileprovider"
         val contentUri = FileProvider.getUriForFile(context, authority, file)
         val isCsv = file.name.endsWith(".csv", ignoreCase = true)
         val mimeType = if (isCsv) "text/csv" else "application/zip"
-        val chooserTitle = if (isCsv) "Share CSV" else "Share backup"
+        val chooserTitle = if (isCsv) shareCsvTitle else shareBackupTitle
         // Many share targets (Drive especially) treat EXTRA_SUBJECT/TITLE as
         // the saved filename and ignore the FileProvider's display name —
         // pass the actual filename (with extension + timestamp) on both
@@ -188,7 +193,7 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { EvsctBarTitle("Settings") },
+                title = { EvsctBarTitle(stringResource(R.string.settings_title)) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -196,7 +201,7 @@ fun SettingsScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                     }
                 },
             )
@@ -230,12 +235,12 @@ fun SettingsScreen(
                     Spacer(Modifier.size(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Vehicles",
+                            stringResource(R.string.settings_vehicles),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "Manage your EVs and choose a default for new sessions.",
+                            stringResource(R.string.settings_manage_your_evs_and),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -260,29 +265,24 @@ fun SettingsScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Full backup",
+                        stringResource(R.string.settings_full_backup),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "Save or restore everything — sessions, trips, vehicles, and " +
-                            "vehicle photos — as a single .zip. Save picks a folder on " +
-                            "this device; Share sends the file out via Drive, email, or " +
-                            "any other app you have installed. Android's automatic " +
-                            "backup doesn't include photos or receipts, so this is the " +
-                            "only complete copy.",
+                        stringResource(R.string.settings_save_or_restore_everything),
                         style = MaterialTheme.typography.bodySmall,
                     )
                     // Updates when a Save completes, a share target is
                     // picked (not on a cancelled share sheet), or a
                     // restore succeeds.
                     Text(
-                        "Last backed up: " + (state.lastBackupAt?.let {
+                        stringResource(R.string.settings_last_backed_up) + (state.lastBackupAt?.let {
                             java.text.DateFormat.getDateTimeInstance(
                                 java.text.DateFormat.MEDIUM,
                                 java.text.DateFormat.SHORT,
                             ).format(java.util.Date(it))
-                        } ?: "never"),
+                        } ?: stringResource(R.string.settings_never)),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                     )
@@ -297,14 +297,14 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {
-                        BusyButtonContent("Save backup file…", state.busyOp == SettingsOp.EXPORT_BACKUP)
+                        BusyButtonContent(stringResource(R.string.settings_save_backup), state.busyOp == SettingsOp.EXPORT_BACKUP)
                     }
                     OutlinedButton(
                         onClick = { viewModel.shareBackup() },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {
-                        BusyButtonContent("Share backup file…", state.busyOp == SettingsOp.SHARE_BACKUP)
+                        BusyButtonContent(stringResource(R.string.settings_share_backup_button), state.busyOp == SettingsOp.SHARE_BACKUP)
                     }
                     OutlinedButton(
                         onClick = {
@@ -318,7 +318,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {
-                        BusyButtonContent("Restore from backup…", state.busyOp == SettingsOp.RESTORE)
+                        BusyButtonContent(stringResource(R.string.settings_restore_backup), state.busyOp == SettingsOp.RESTORE)
                     }
                     state.preRestoreSnapshotAt?.let { snapAt ->
                         OutlinedButton(
@@ -327,13 +327,12 @@ fun SettingsScreen(
                             enabled = !state.busy,
                         ) {
                             BusyButtonContent(
-                                "Undo last restore or import…",
+                                stringResource(R.string.settings_undo_restore),
                                 state.busyOp == SettingsOp.UNDO_RESTORE,
                             )
                         }
                         Text(
-                            "Brings back the data as it was just before your last " +
-                                "restore or replace-import (snapshot taken automatically " +
+                            stringResource(R.string.settings_brings_back_the_data) +
                                 java.text.DateFormat.getDateTimeInstance(
                                     java.text.DateFormat.MEDIUM,
                                     java.text.DateFormat.SHORT,
@@ -354,11 +353,9 @@ fun SettingsScreen(
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.settings_backup), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Export every session to a CSV file you can open in Excel or Google " +
-                            "Sheets. Save picks a folder on this device; Share sends the file " +
-                            "out via Drive, email, or any other app you have installed.",
+                        stringResource(R.string.settings_export_every_session_to),
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Button(
@@ -369,23 +366,23 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {
-                        BusyButtonContent("Export to CSV…", state.busyOp == SettingsOp.EXPORT_CSV)
+                        BusyButtonContent(stringResource(R.string.settings_export_csv), state.busyOp == SettingsOp.EXPORT_CSV)
                     }
                     OutlinedButton(
                         onClick = { viewModel.shareCsv() },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {
-                        BusyButtonContent("Share CSV file…", state.busyOp == SettingsOp.SHARE_CSV)
+                        BusyButtonContent(stringResource(R.string.settings_share_csv_button), state.busyOp == SettingsOp.SHARE_CSV)
                     }
                 }
             }
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Import", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.settings_import), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Import sessions from a previously exported CSV.",
+                        stringResource(R.string.settings_import_sessions_from_a),
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -393,24 +390,23 @@ fun SettingsScreen(
                             checked = replaceOnImport,
                             onCheckedChange = { replaceOnImport = it },
                         )
-                        Text("Replace existing sessions before import")
+                        Text(stringResource(R.string.settings_replace_existing_sessions_before))
                     }
                     OutlinedButton(
                         onClick = { csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/csv")) },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {
-                        BusyButtonContent("Import CSV…", state.busyOp == SettingsOp.IMPORT_CSV)
+                        BusyButtonContent(stringResource(R.string.settings_import_csv), state.busyOp == SettingsOp.IMPORT_CSV)
                     }
                 }
             }
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("One-time XLSX import", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.settings_one_time_xlsx_import), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Import the legacy \"DC Fast Charging.xlsx\" sheet you've been keeping. " +
-                            "This is intended to be run once when first setting up the app.",
+                        stringResource(R.string.settings_import_the_legacy_dc),
                         style = MaterialTheme.typography.bodySmall,
                     )
                     OutlinedButton(
@@ -418,7 +414,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {
-                        BusyButtonContent("Import legacy XLSX…", state.busyOp == SettingsOp.IMPORT_XLSX)
+                        BusyButtonContent(stringResource(R.string.settings_import_xlsx), state.busyOp == SettingsOp.IMPORT_XLSX)
                     }
                 }
             }
@@ -430,11 +426,10 @@ fun SettingsScreen(
     if (showXlsxConfirm) {
         AlertDialog(
             onDismissRequest = { showXlsxConfirm = false },
-            title = { Text("Import legacy XLSX?") },
+            title = { Text(stringResource(R.string.settings_import_legacy_xlsx)) },
             text = {
                 Text(
-                    "This will append every row from the chosen .xlsx into your sessions. " +
-                        "Run it only once to avoid duplicates."
+                    stringResource(R.string.settings_this_will_append_every)
                 )
             },
             confirmButton = {
@@ -444,10 +439,10 @@ fun SettingsScreen(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         "application/octet-stream",
                     ))
-                }) { Text("Pick file") }
+                }) { Text(stringResource(R.string.settings_pick_file)) }
             },
             dismissButton = {
-                TextButton(onClick = { showXlsxConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showXlsxConfirm = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
         )
     }
@@ -455,14 +450,10 @@ fun SettingsScreen(
     showCsvReplaceConfirm?.let { uri ->
         AlertDialog(
             onDismissRequest = { showCsvReplaceConfirm = null },
-            title = { Text("Replace all sessions?") },
+            title = { Text(stringResource(R.string.settings_replace_all_sessions)) },
             text = {
                 Text(
-                    "\"Replace existing\" is ticked: this will erase every " +
-                        "session currently in the app and replace them with " +
-                        "the contents of the CSV. A snapshot of your current " +
-                        "data is saved automatically first, so you can undo " +
-                        "this from Settings if it's the wrong file."
+                    stringResource(R.string.settings_replace_existing_is_ticked)
                 )
             },
             confirmButton = {
@@ -470,11 +461,11 @@ fun SettingsScreen(
                     showCsvReplaceConfirm = null
                     viewModel.importCsv(uri, replaceExisting = true)
                 }) {
-                    Text("Erase and import", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.settings_erase_and_import), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCsvReplaceConfirm = null }) { Text("Cancel") }
+                TextButton(onClick = { showCsvReplaceConfirm = null }) { Text(stringResource(R.string.settings_cancel)) }
             },
         )
     }
@@ -482,13 +473,10 @@ fun SettingsScreen(
     showRestoreConfirm?.let { uri ->
         AlertDialog(
             onDismissRequest = { showRestoreConfirm = null },
-            title = { Text("Restore from backup?") },
+            title = { Text(stringResource(R.string.settings_restore_from_backup)) },
             text = {
                 Text(
-                    "This will erase every session, trip, and vehicle currently in " +
-                        "the app and replace them with the contents of the backup file. " +
-                        "A snapshot of your current data is saved automatically first, " +
-                        "so you can undo this from Settings if it's the wrong file."
+                    stringResource(R.string.settings_this_will_erase_every)
                 )
             },
             confirmButton = {
@@ -496,11 +484,11 @@ fun SettingsScreen(
                     showRestoreConfirm = null
                     viewModel.restoreBackup(uri)
                 }) {
-                    Text("Erase and restore", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.settings_erase_and_restore), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRestoreConfirm = null }) { Text("Cancel") }
+                TextButton(onClick = { showRestoreConfirm = null }) { Text(stringResource(R.string.settings_cancel)) }
             },
         )
     }
@@ -508,13 +496,10 @@ fun SettingsScreen(
     if (showUndoRestoreConfirm) {
         AlertDialog(
             onDismissRequest = { showUndoRestoreConfirm = false },
-            title = { Text("Undo last restore or import?") },
+            title = { Text(stringResource(R.string.settings_undo_last_restore_or)) },
             text = {
                 Text(
-                    "This replaces everything currently in the app with the " +
-                        "snapshot taken just before your last restore or " +
-                        "replace-import. The data you're replacing is " +
-                        "snapshotted first, so you can undo the undo."
+                    stringResource(R.string.settings_this_replaces_everything_currently)
                 )
             },
             confirmButton = {
@@ -522,11 +507,11 @@ fun SettingsScreen(
                     showUndoRestoreConfirm = false
                     viewModel.undoRestore()
                 }) {
-                    Text("Undo", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.settings_undo), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showUndoRestoreConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showUndoRestoreConfirm = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
         )
     }
@@ -547,7 +532,7 @@ fun SettingsScreen(
                 title = { Text(fb.title) },
                 text = { Text(fb.body) },
                 confirmButton = {
-                    TextButton(onClick = { viewModel.clearFeedback() }) { Text("OK") }
+                    TextButton(onClick = { viewModel.clearFeedback() }) { Text(stringResource(R.string.settings_ok)) }
                 },
             )
         }
@@ -644,12 +629,12 @@ private fun BackupReminderCard(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Backup reminder",
+                        stringResource(R.string.settings_backup_reminder),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "Nudge me when it's been a while since my last full backup.",
+                        stringResource(R.string.settings_nudge_me_when_its),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -672,12 +657,15 @@ private fun BackupReminderCard(
                         }
                     }
                 },
-                label = { Text("Remind me after (days)") },
+                label = { Text(stringResource(R.string.settings_remind_me_after_days)) },
                 supportingText = {
                     Text(
-                        "Between ${AppPreferences.MIN_THRESHOLD_DAYS} and " +
-                            "${AppPreferences.MAX_THRESHOLD_DAYS} days. Default: " +
-                            "${AppPreferences.DEFAULT_THRESHOLD_DAYS}.",
+                        stringResource(
+                            R.string.settings_threshold_range,
+                            AppPreferences.MIN_THRESHOLD_DAYS,
+                            AppPreferences.MAX_THRESHOLD_DAYS,
+                            AppPreferences.DEFAULT_THRESHOLD_DAYS,
+                        ),
                     )
                 },
                 singleLine = true,
@@ -699,12 +687,12 @@ private fun BackupReminderCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Also send Android notification",
+                        stringResource(R.string.settings_also_send_android_notification),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        "Show the reminder in the notification shade, not just inside the app.",
+                        stringResource(R.string.settings_show_the_reminder_in),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -739,33 +727,32 @@ private fun UnitsCurrencyCard(
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        "Units & currency",
+                        stringResource(R.string.settings_units_currency),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "Display preferences. Existing data is stored once and " +
-                            "shown in your chosen units.",
+                        stringResource(R.string.settings_display_preferences_existing_data),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
 
-            Text("Distance", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_distance), style = MaterialTheme.typography.labelLarge)
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 SegmentedButton(
                     selected = !useMiles,
                     onClick = { onUseMilesChange(false) },
                     shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text("Kilometres") }
+                ) { Text(stringResource(R.string.settings_kilometres)) }
                 SegmentedButton(
                     selected = useMiles,
                     onClick = { onUseMilesChange(true) },
                     shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text("Miles") }
+                ) { Text(stringResource(R.string.settings_miles)) }
             }
 
-            Text("Default currency", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_default_currency), style = MaterialTheme.typography.labelLarge)
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 AppPreferences.SUPPORTED_CURRENCIES.forEachIndexed { index, code ->
                     SegmentedButton(
@@ -779,17 +766,16 @@ private fun UnitsCurrencyCard(
                 }
             }
             Text(
-                "Each session keeps the currency it was saved with. The default " +
-                    "is used for new sessions and for totals on the dashboard.",
+                stringResource(R.string.settings_each_session_keeps_the),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Text("Time rate on cards", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_time_rate_on_cards), style = MaterialTheme.typography.labelLarge)
             val rateOptions = listOf(
-                CardTimeRate.OFF to "Off",
-                CardTimeRate.PER_MINUTE to "$/min",
-                CardTimeRate.PER_HOUR to "$/hr",
+                CardTimeRate.OFF to stringResource(R.string.settings_rate_off),
+                CardTimeRate.PER_MINUTE to stringResource(R.string.settings_rate_per_min),
+                CardTimeRate.PER_HOUR to stringResource(R.string.settings_rate_per_hr),
             )
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 rateOptions.forEachIndexed { index, (mode, label) ->
@@ -801,8 +787,7 @@ private fun UnitsCurrencyCard(
                 }
             }
             Text(
-                "Show each charge's cost per minute or hour on its card, " +
-                    "computed from cost ÷ charging time.",
+                stringResource(R.string.settings_show_each_charges_cost),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -817,9 +802,9 @@ private fun ThemeCard(
     onThemeModeChange: (String) -> Unit,
 ) {
     val options = listOf(
-        "SYSTEM" to "System",
-        "LIGHT" to "Light",
-        "DARK" to "Dark",
+        "SYSTEM" to stringResource(R.string.settings_theme_system),
+        "LIGHT" to stringResource(R.string.settings_theme_light),
+        "DARK" to stringResource(R.string.settings_theme_dark),
     )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -832,13 +817,12 @@ private fun ThemeCard(
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        "Theme",
+                        stringResource(R.string.settings_theme),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "System follows your phone's dark-mode setting; " +
-                            "Light and Dark force the corresponding palette.",
+                        stringResource(R.string.settings_system_follows_your_phones),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -871,19 +855,20 @@ private fun AboutCard(context: Context) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "About",
+                stringResource(R.string.settings_about),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "EVSCT ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                stringResource(R.string.settings_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
                 style = MaterialTheme.typography.bodyMedium,
             )
             val sha = BuildConfig.GIT_SHA
             val commitDate = formatCommitDate(BuildConfig.GIT_COMMIT_DATE)
             val canOpen = sha != "unknown" && !sha.endsWith("-dirty")
+            val commitPrefix = stringResource(R.string.settings_commit_prefix)
             val commitLine = buildString {
-                append("Commit ")
+                append(commitPrefix)
                 append(sha)
                 if (commitDate.isNotEmpty()) {
                     append(" · ")
@@ -908,7 +893,7 @@ private fun AboutCard(context: Context) {
                 )
             }
             Text(
-                "View on GitHub",
+                stringResource(R.string.settings_view_on_github),
                 modifier = Modifier.clickable {
                     val url = "https://github.com/r2205/EVSCT"
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
@@ -917,7 +902,7 @@ private fun AboutCard(context: Context) {
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                "Privacy policy",
+                stringResource(R.string.settings_privacy_policy),
                 modifier = Modifier.clickable {
                     val url = "https://r2205.github.io/EVSCT/privacy-policy.html"
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
@@ -926,10 +911,7 @@ private fun AboutCard(context: Context) {
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                "Charging network names and vehicle makes/models are trademarks " +
-                    "of their respective owners, shown only to label your own " +
-                    "sessions and vehicles. EVSCT is an independent app with no " +
-                    "affiliation to any of them.",
+                stringResource(R.string.settings_charging_network_names_and),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

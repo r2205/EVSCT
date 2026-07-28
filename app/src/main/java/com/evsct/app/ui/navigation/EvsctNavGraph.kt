@@ -1,5 +1,6 @@
 package com.evsct.app.ui.navigation
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
@@ -31,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavBackStackEntry
@@ -41,6 +43,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
+import com.evsct.app.R
 import com.evsct.app.ui.VehicleScope
 import com.evsct.app.ui.isWideWindow
 import com.evsct.app.ui.theme.EvsctTheme
@@ -141,18 +144,20 @@ private inline fun NavBackStackEntry.ifResumed(block: () -> Unit) {
     if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) block()
 }
 
-/** A destination surfaced in the bottom navigation bar. */
+/** A destination surfaced in the bottom navigation bar. [labelRes] rather
+ *  than a String because this list is a top-level val, built outside any
+ *  composable — the label resolves at render time, in the user's language. */
 private data class TopLevelDestination(
     val route: String,
-    val label: String,
+    @StringRes val labelRes: Int,
     val icon: ImageVector,
 )
 
 private val TOP_LEVEL_DESTINATIONS = listOf(
-    TopLevelDestination(Routes.SESSION_LIST, "Log", Icons.Default.Bolt),
-    TopLevelDestination(Routes.MAP, "Map", Icons.Default.Map),
-    TopLevelDestination(Routes.STATS, "Stats", Icons.Default.BarChart),
-    TopLevelDestination(Routes.TRIP_LIST, "Trips", Icons.Default.Route),
+    TopLevelDestination(Routes.SESSION_LIST, R.string.nav_log, Icons.Default.Bolt),
+    TopLevelDestination(Routes.MAP, R.string.nav_map, Icons.Default.Map),
+    TopLevelDestination(Routes.STATS, R.string.nav_stats, Icons.Default.BarChart),
+    TopLevelDestination(Routes.TRIP_LIST, R.string.nav_trips, Icons.Default.Route),
 )
 
 @Composable
@@ -482,7 +487,7 @@ private fun EvsctNavigationBar(
                 // Label text carries the name for TalkBack; the icon is
                 // decorative alongside it.
                 icon = { Icon(dest.icon, contentDescription = null) },
-                label = { Text(dest.label) },
+                label = { Text(stringResource(dest.labelRes)) },
             )
         }
     }
@@ -509,7 +514,7 @@ private fun EvsctNavigationRail(
                 selected = currentRoute == dest.route,
                 onClick = { onSelect(dest) },
                 icon = { Icon(dest.icon, contentDescription = null) },
-                label = { Text(dest.label) },
+                label = { Text(stringResource(dest.labelRes)) },
             )
         }
     }

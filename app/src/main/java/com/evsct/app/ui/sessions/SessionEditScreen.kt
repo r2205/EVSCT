@@ -2,6 +2,7 @@ package com.evsct.app.ui.sessions
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -86,6 +87,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.focus.FocusDirection
@@ -104,6 +107,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.evsct.app.R
 import com.evsct.app.ui.readableFormWidth
 import com.evsct.app.ui.theme.EvsctTheme
 import java.io.File
@@ -175,6 +179,8 @@ fun SessionEditScreen(
     // while dirty so a clean form keeps the default (unintercepted) pop.
     BackHandler(enabled = dirty) { showDiscardConfirm = true }
 
+    // Resolved in composition: the launcher callback is not a composable scope.
+    val locationDeniedMsg = stringResource(R.string.form_location_denied)
     val locationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
@@ -182,7 +188,7 @@ fun SessionEditScreen(
             viewModel.autofillFromLocation()
         } else {
             viewModel.update {
-                it.copy(transientMessage = "Location permission denied.")
+                it.copy(transientMessage = locationDeniedMsg)
             }
         }
     }
@@ -216,8 +222,8 @@ fun SessionEditScreen(
                             // Until the load lands, isNew defaults true even
                             // for an existing session — don't claim either.
                             state.isLoading -> ""
-                            state.isNew -> "New session"
-                            else -> "Edit session"
+                            state.isNew -> stringResource(R.string.form_title_new)
+                            else -> stringResource(R.string.form_title_edit)
                         },
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
@@ -230,13 +236,13 @@ fun SessionEditScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = { requestExit() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.form_back))
                     }
                 },
                 actions = {
                     if (!state.isNew) {
                         IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.form_delete))
                         }
                     }
                 },
@@ -270,7 +276,7 @@ fun SessionEditScreen(
                             enabled = !state.isLoading,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("Save session")
+                            Text(stringResource(R.string.form_save_session))
                         }
                     }
                 }
@@ -310,7 +316,7 @@ fun SessionEditScreen(
                 context = context,
             )
 
-            SectionLabel("Vehicle")
+            SectionLabel(stringResource(R.string.form_section_vehicle))
             VehiclePicker(state) { id -> viewModel.update { it.copy(vehicleId = id) } }
 
             ChargingTypeRow(state.chargingType) { type ->
@@ -325,9 +331,9 @@ fun SessionEditScreen(
                 state.hints.flatMap { it.fields }.toSet()
             }
 
-            SectionLabel("Session")
+            SectionLabel(stringResource(R.string.form_section_session))
             NumberField(
-                label = "Odometer (${com.evsct.app.util.Units.distanceUnit(state.useMiles)})",
+                label = stringResource(R.string.form_odometer_unit, com.evsct.app.util.Units.distanceUnit(state.useMiles)),
                 value = state.odometerText,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -335,12 +341,12 @@ fun SessionEditScreen(
                 isError = HintField.ODOMETER in warnedFields,
             ) { v -> viewModel.update { it.copy(odometerText = v) } }
             NumberField(
-                label = "Energy delivered (kWh)",
+                label = stringResource(R.string.form_energy_delivered_kwh),
                 value = state.energyText,
                 isError = HintField.ENERGY in warnedFields,
             ) { v -> viewModel.update { it.copy(energyText = v) } }
             NumberField(
-                label = "Total cost (${state.currency})",
+                label = stringResource(R.string.form_total_cost_currency, state.currency),
                 value = state.costText,
                 isError = HintField.COST in warnedFields,
             ) { v -> viewModel.update { it.copy(costText = v) } }
@@ -364,7 +370,7 @@ fun SessionEditScreen(
                 )
             }
 
-            SectionLabel("Station")
+            SectionLabel(stringResource(R.string.form_section_station))
             if (state.recentStops.isNotEmpty()) {
                 RecentStopsButton(
                     stops = state.recentStops,
@@ -376,7 +382,7 @@ fun SessionEditScreen(
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextFieldPlain(
-                    label = "City",
+                    label = stringResource(R.string.form_city),
                     value = state.city,
                     modifier = Modifier.weight(2f),
                     onValue = { v -> viewModel.update { it.copy(city = v) } },
@@ -398,7 +404,7 @@ fun SessionEditScreen(
             val enteringCharge = state.isNew || state.isTracking
 
             CollapsibleSection(
-                title = "Battery & wait",
+                title = stringResource(R.string.form_battery_wait),
                 startExpanded = enteringCharge,
                 filledCount = listOf(
                     state.waitTimeText,
@@ -409,7 +415,7 @@ fun SessionEditScreen(
                     HintField.BATTERY_END in warnedFields,
             ) {
                 NumberField(
-                    label = "Wait time (min, optional)",
+                    label = stringResource(R.string.form_wait_time_min_optional),
                     value = state.waitTimeText,
                     onValue = { v -> viewModel.update { it.copy(waitTimeText = v) } },
                 )
@@ -418,14 +424,14 @@ fun SessionEditScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     NumberField(
-                        label = "Battery start %",
+                        label = stringResource(R.string.form_battery_start),
                         value = state.batteryStartText,
                         modifier = Modifier.weight(1f),
                         isError = HintField.BATTERY_START in warnedFields,
                         onValue = { v -> viewModel.update { it.copy(batteryStartText = v) } },
                     )
                     NumberField(
-                        label = "Battery end %",
+                        label = stringResource(R.string.form_battery_end),
                         value = state.batteryEndText,
                         modifier = Modifier.weight(1f),
                         isError = HintField.BATTERY_END in warnedFields,
@@ -435,7 +441,7 @@ fun SessionEditScreen(
             }
 
             CollapsibleSection(
-                title = "Posted rates",
+                title = stringResource(R.string.form_posted_rates),
                 startExpanded = enteringCharge,
                 filledCount = listOf(
                     state.postedEnergyPriceText,
@@ -447,7 +453,7 @@ fun SessionEditScreen(
                     HintField.POSTED_MAX_POWER in warnedFields,
             ) {
                 NumberField(
-                    label = "Posted energy price ($/kWh)",
+                    label = stringResource(R.string.form_posted_energy_price),
                     value = state.postedEnergyPriceText,
                     isError = HintField.POSTED_ENERGY_PRICE in warnedFields,
                 ) { v -> viewModel.update { it.copy(postedEnergyPriceText = v) } }
@@ -459,7 +465,7 @@ fun SessionEditScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     NumberField(
-                        label = "Posted time-based rate ($/${state.postedTimeRateUnit.suffix})",
+                        label = stringResource(R.string.form_posted_time_rate, state.postedTimeRateUnit.suffix),
                         value = state.postedTimeRateText,
                         modifier = Modifier.weight(1f),
                         isError = HintField.POSTED_TIME_RATE in warnedFields,
@@ -478,7 +484,7 @@ fun SessionEditScreen(
                     }
                 }
                 NumberField(
-                    label = "Posted max power (kW)",
+                    label = stringResource(R.string.form_posted_max_power_kw),
                     value = state.postedMaxPowerText,
                     isError = HintField.POSTED_MAX_POWER in warnedFields,
                 ) { v ->
@@ -487,7 +493,7 @@ fun SessionEditScreen(
             }
 
             CollapsibleSection(
-                title = "More station detail",
+                title = stringResource(R.string.form_more_station_detail),
                 startExpanded = enteringCharge,
                 // Coordinates count as a filled field even though no text
                 // input shows them: a location picked on the map is exactly
@@ -519,16 +525,16 @@ fun SessionEditScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                TextFieldPlain("Address", state.address) { v ->
+                TextFieldPlain(stringResource(R.string.form_address), state.address) { v ->
                     viewModel.update { it.copy(address = v) }
                 }
-                TextFieldPlain("Station / stall name / stall number", state.stationName) { v ->
+                TextFieldPlain(stringResource(R.string.form_station_name), state.stationName) { v ->
                     viewModel.update { it.copy(stationName = v) }
                 }
             }
 
             CollapsibleSection(
-                title = "Trip",
+                title = stringResource(R.string.form_trip),
                 startExpanded = enteringCharge,
                 filledCount = listOf(
                     state.tripId != null,
@@ -543,7 +549,7 @@ fun SessionEditScreen(
             }
 
             CollapsibleSection(
-                title = "Receipts",
+                title = stringResource(R.string.form_receipts),
                 startExpanded = enteringCharge,
                 filledCount = state.receipts.size,
             ) {
@@ -563,7 +569,7 @@ fun SessionEditScreen(
             }
 
             CollapsibleSection(
-                title = "Tags",
+                title = stringResource(R.string.form_tags),
                 startExpanded = enteringCharge,
                 // The uncommitted draft counts: save() folds it into the tag
                 // list, so a tag typed but not entered is real data.
@@ -585,7 +591,7 @@ fun SessionEditScreen(
             }
 
             CollapsibleSection(
-                title = "Notes",
+                title = stringResource(R.string.form_notes),
                 startExpanded = enteringCharge,
                 filledCount = if (state.notes.isBlank()) 0 else 1,
             ) {
@@ -593,7 +599,7 @@ fun SessionEditScreen(
                     value = state.notes,
                     onValueChange = { v -> viewModel.update { it.copy(notes = v) } },
                     modifier = Modifier.fillMaxWidth().height(120.dp),
-                    label = { Text("Notes") },
+                    label = { Text(stringResource(R.string.form_notes)) },
                 )
             }
 
@@ -641,18 +647,17 @@ fun SessionEditScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showOdometerWarning = false },
             icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-            title = { Text("Save without odometer?") },
+            title = { Text(stringResource(R.string.form_save_without_odometer)) },
             text = {
                 Text(
-                    "The odometer reading helps with trip distance and efficiency stats. " +
-                        "You can still save without it."
+                    stringResource(R.string.form_the_odometer_reading_helps)
                 )
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     showOdometerWarning = false
                     viewModel.save(onDone)
-                }) { Text("Save anyway") }
+                }) { Text(stringResource(R.string.form_save_anyway)) }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = {
@@ -663,7 +668,7 @@ fun SessionEditScreen(
                     // they were on this long form.
                     odometerFocusRequester.requestFocus()
                 }) {
-                    Text("Add odometer")
+                    Text(stringResource(R.string.form_add_odometer))
                 }
             },
         )
@@ -672,8 +677,8 @@ fun SessionEditScreen(
     if (showDiscardConfirm) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDiscardConfirm = false },
-            title = { Text("Discard changes?") },
-            text = { Text("This session has unsaved edits. Leaving now throws them away.") },
+            title = { Text(stringResource(R.string.form_discard_changes)) },
+            text = { Text(stringResource(R.string.form_this_session_has_unsaved)) },
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
@@ -681,12 +686,12 @@ fun SessionEditScreen(
                         onDone()
                     },
                 ) {
-                    Text("Discard", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.form_discard), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showDiscardConfirm = false }) {
-                    Text("Keep editing")
+                    Text(stringResource(R.string.form_keep_editing))
                 }
             },
         )
@@ -696,8 +701,8 @@ fun SessionEditScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             icon = { Icon(Icons.Default.Delete, contentDescription = null) },
-            title = { Text("Delete this session?") },
-            text = { Text("This will permanently remove this charging session from your log.") },
+            title = { Text(stringResource(R.string.form_delete_this_session)) },
+            text = { Text(stringResource(R.string.form_this_will_permanently_remove)) },
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
@@ -707,14 +712,14 @@ fun SessionEditScreen(
                     },
                 ) {
                     Text(
-                        "Delete",
+                        stringResource(R.string.form_delete),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.form_cancel))
                 }
             },
         )
@@ -806,6 +811,9 @@ internal fun CollapsibleSection(
         targetValue = if (expanded) 180f else 0f,
         label = "sectionChevron",
     )
+    // Resolved here: the semantics block below is not a composable scope.
+    val expandedDesc = stringResource(R.string.form_section_expanded)
+    val collapsedDesc = stringResource(R.string.form_section_collapsed)
     Column(modifier = Modifier.fillMaxWidth()) {
         HorizontalDivider()
         Row(
@@ -825,7 +833,7 @@ internal fun CollapsibleSection(
                 // form's seven sections are on screen together.
                 .testTag("sectionHeader:$title")
                 .semantics(mergeDescendants = true) {
-                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                    stateDescription = if (expanded) expandedDesc else collapsedDesc
                 }
                 // 14dp against a line of titleSmall lands on the 48dp touch
                 // target without pinning a height.
@@ -869,7 +877,7 @@ private fun FilledCountBadge(count: Int) {
             .padding(horizontal = 8.dp, vertical = 2.dp),
     ) {
         Text(
-            "$count set",
+            pluralStringResource(R.plurals.form_filled_count, count, count),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
@@ -889,7 +897,7 @@ private fun DateTimeRow(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
-                Text("Date / time", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.form_date_time), style = MaterialTheme.typography.labelSmall)
                 Text(Format.dateTime(epoch), style = MaterialTheme.typography.titleMedium)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -906,7 +914,7 @@ private fun DateTimeRow(
                             cal.get(Calendar.DAY_OF_MONTH),
                         ).show()
                     },
-                    label = { Text("Date") },
+                    label = { Text(stringResource(R.string.form_date)) },
                 )
                 AssistChip(
                     onClick = {
@@ -923,7 +931,7 @@ private fun DateTimeRow(
                             true,
                         ).show()
                     },
-                    label = { Text("Time") },
+                    label = { Text(stringResource(R.string.form_time)) },
                 )
             }
         }
@@ -944,7 +952,7 @@ private fun ChargingTypeRow(current: ChargingType, onPick: (ChargingType) -> Uni
             FilterChip(
                 selected = t == current,
                 onClick = { onPick(t) },
-                label = { Text(t.displayName()) },
+                label = { Text(stringResource(t.labelRes())) },
                 leadingIcon = selectedCheck(t == current),
             )
         }
@@ -965,25 +973,27 @@ private fun PricingModelRow(current: PricingModel, onPick: (PricingModel) -> Uni
             FilterChip(
                 selected = p == current,
                 onClick = { onPick(p) },
-                label = { Text(p.displayName()) },
+                label = { Text(stringResource(p.labelRes())) },
                 leadingIcon = selectedCheck(p == current),
             )
         }
     }
 }
 
-private fun ChargingType.displayName(): String = when (this) {
-    ChargingType.DC_FAST -> "DC Fast"
-    ChargingType.AC_L2 -> "AC L2"
-    ChargingType.AC_L1 -> "AC L1"
+@StringRes
+private fun ChargingType.labelRes(): Int = when (this) {
+    ChargingType.DC_FAST -> R.string.form_type_dc_fast
+    ChargingType.AC_L2 -> R.string.form_type_ac_l2
+    ChargingType.AC_L1 -> R.string.form_type_ac_l1
 }
 
-private fun PricingModel.displayName(): String = when (this) {
-    PricingModel.PER_KWH -> "$/kWh"
-    PricingModel.PER_MINUTE -> "$/min"
-    PricingModel.FLAT -> "Flat"
-    PricingModel.FREE -> "Free"
-    PricingModel.HYBRID -> "Hybrid"
+@StringRes
+private fun PricingModel.labelRes(): Int = when (this) {
+    PricingModel.PER_KWH -> R.string.form_pricing_per_kwh
+    PricingModel.PER_MINUTE -> R.string.form_pricing_per_minute
+    PricingModel.FLAT -> R.string.form_pricing_flat
+    PricingModel.FREE -> R.string.form_pricing_free
+    PricingModel.HYBRID -> R.string.form_pricing_hybrid
 }
 
 @Composable
@@ -1020,8 +1030,8 @@ private fun BrandPicker(
         OutlinedTextField(
             value = value,
             onValueChange = {},
-            label = { Text("Station brand") },
-            placeholder = { Text("Tap to choose…") },
+            label = { Text(stringResource(R.string.form_station_brand)) },
+            placeholder = { Text(stringResource(R.string.form_tap_to_choose)) },
             readOnly = true,
             enabled = false,
             singleLine = true,
@@ -1029,7 +1039,7 @@ private fun BrandPicker(
             trailingIcon = {
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Open brand picker",
+                    contentDescription = stringResource(R.string.form_open_brand_picker),
                 )
             },
             colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
@@ -1083,14 +1093,14 @@ private fun BrandPickerSheet(
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
-                "Choose a brand",
+                stringResource(R.string.form_choose_a_brand),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
             )
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search or type a custom brand…") },
+                placeholder = { Text(stringResource(R.string.form_search_or_type_a)) },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1098,7 +1108,7 @@ private fun BrandPickerSheet(
                 trailingIcon = if (query.isNotEmpty()) {
                     {
                         IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.form_clear))
                         }
                     }
                 } else null,
@@ -1112,7 +1122,7 @@ private fun BrandPickerSheet(
                 if (showCustomOption) {
                     item {
                         BrandRow(
-                            label = "Use \"$q\"",
+                            label = stringResource(R.string.form_use_brand, q),
                             isCurrent = false,
                             onClick = { onPick(q) },
                         )
@@ -1120,7 +1130,7 @@ private fun BrandPickerSheet(
                     item { androidx.compose.material3.HorizontalDivider() }
                 }
                 if (filteredHistory.isNotEmpty()) {
-                    item { BrandSectionHeader("Used in your sessions") }
+                    item { BrandSectionHeader(stringResource(R.string.form_brands_used)) }
                     items(filteredHistory) { brand ->
                         BrandRow(
                             label = brand,
@@ -1130,7 +1140,7 @@ private fun BrandPickerSheet(
                     }
                 }
                 if (filteredCurated.isNotEmpty()) {
-                    item { BrandSectionHeader("All networks") }
+                    item { BrandSectionHeader(stringResource(R.string.form_brands_all)) }
                     items(filteredCurated) { brand ->
                         BrandRow(
                             label = brand,
@@ -1142,7 +1152,7 @@ private fun BrandPickerSheet(
                 if (filteredHistory.isEmpty() && filteredCurated.isEmpty() && !showCustomOption) {
                     item {
                         Text(
-                            "No matches.",
+                            stringResource(R.string.form_no_matches),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(24.dp),
                         )
@@ -1183,7 +1193,7 @@ private fun BrandRow(label: String, isCurrent: Boolean, onClick: () -> Unit) {
         if (isCurrent) {
             Icon(
                 imageVector = Icons.Default.Check,
-                contentDescription = "Currently selected",
+                contentDescription = stringResource(R.string.form_currently_selected),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
@@ -1206,7 +1216,7 @@ private fun TripPicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
         FilterChip(
             selected = state.tripId == null,
             onClick = { onPick(null) },
-            label = { Text("None") },
+            label = { Text(stringResource(R.string.form_none)) },
             leadingIcon = selectedCheck(state.tripId == null),
         )
         state.trips.forEach { trip ->
@@ -1232,10 +1242,9 @@ private fun ContinuesPreviousToggle(checked: Boolean, onCheckedChange: (Boolean)
         Checkbox(checked = checked, onCheckedChange = onCheckedChange)
         Spacer(Modifier.width(4.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("Continues from previous session", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.form_continues_from_previous_session), style = MaterialTheme.typography.bodyMedium)
             Text(
-                "Tick if no untracked charging happened since your last logged session " +
-                    "(extends km/kWh stats across trips).",
+                stringResource(R.string.form_tick_if_no_untracked),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1248,7 +1257,7 @@ private fun ContinuesPreviousToggle(checked: Boolean, onCheckedChange: (Boolean)
 private fun VehiclePicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
     if (state.vehicles.isEmpty()) {
         Text(
-            "Add a vehicle from Settings to tag sessions by car.",
+            stringResource(R.string.form_add_a_vehicle_from),
             style = MaterialTheme.typography.bodySmall,
         )
         return
@@ -1264,7 +1273,7 @@ private fun VehiclePicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
         FilterChip(
             selected = state.vehicleId == null,
             onClick = { onPick(null) },
-            label = { Text("Unassigned") },
+            label = { Text(stringResource(R.string.form_unassigned)) },
             leadingIcon = selectedCheck(state.vehicleId == null),
         )
         state.vehicles.forEach { vehicle ->
@@ -1289,8 +1298,8 @@ private fun RegionField(
     OutlinedTextField(
         value = value,
         onValueChange = onValue,
-        label = { Text("Prov / State") },
-        placeholder = { Text("e.g. SK") },
+        label = { Text(stringResource(R.string.form_prov_state)) },
+        placeholder = { Text(stringResource(R.string.form_e_g_sk)) },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         keyboardActions = KeyboardActions(
             onNext = { focusManager.moveFocus(FocusDirection.Next) },
@@ -1323,7 +1332,7 @@ private fun RecentStopsButton(
             contentDescription = null,
         )
         Spacer(Modifier.width(8.dp))
-        Text("Use a recent stop…")
+        Text(stringResource(R.string.form_use_a_recent_stop))
     }
     if (showSheet) {
         RecentStopsSheet(
@@ -1358,7 +1367,7 @@ private fun RecentStopsSheet(
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
-                "Recent stops",
+                stringResource(R.string.form_recent_stops),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
@@ -1366,7 +1375,7 @@ private fun RecentStopsSheet(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search brand, city, address…") },
+                placeholder = { Text(stringResource(R.string.form_search_brand_city_address)) },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1374,7 +1383,7 @@ private fun RecentStopsSheet(
                 trailingIcon = if (query.isNotEmpty()) {
                     {
                         IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.form_clear))
                         }
                     }
                 } else null,
@@ -1388,7 +1397,7 @@ private fun RecentStopsSheet(
                 if (filtered.isEmpty()) {
                     item {
                         Text(
-                            "No matches.",
+                            stringResource(R.string.form_no_matches),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(24.dp),
@@ -1469,12 +1478,12 @@ private fun LocationAutofillCard(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (isLoading) "Finding…" else "Use GPS",
+                    if (isLoading) stringResource(R.string.form_gps_finding) else stringResource(R.string.form_gps_use),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 )
                 Text(
-                    "Auto-fill from your location",
+                    stringResource(R.string.form_auto_fill_from_your),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -1508,12 +1517,12 @@ private fun PickLocationCard(
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Pick on map",
+                    stringResource(R.string.form_pick_on_map),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 )
                 Text(
-                    "Drop a pin manually",
+                    stringResource(R.string.form_drop_a_pin_manually),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -1547,8 +1556,8 @@ private fun DurationField(
             fieldValue = fv
             if (fv.text != value) onValue(fv.text)
         },
-        label = { Text("Charging duration") },
-        placeholder = { Text("e.g. 25  ·  1:25  ·  0:11:00") },
+        label = { Text(stringResource(R.string.form_charging_duration)) },
+        placeholder = { Text(stringResource(R.string.form_e_g_25_1)) },
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Phone,
             imeAction = ImeAction.Next,
@@ -1574,7 +1583,7 @@ private fun DurationField(
                     onValue(newText)
                 }) {
                     Text(
-                        ":",
+                        stringResource(R.string.form_),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
@@ -1638,7 +1647,7 @@ private fun TagsField(
                         trailingIcon = {
                             Icon(
                                 Icons.Default.Close,
-                                contentDescription = "Remove $tag",
+                                contentDescription = stringResource(R.string.form_remove_tag, tag),
                                 modifier = Modifier.size(16.dp),
                             )
                         },
@@ -1660,8 +1669,8 @@ private fun TagsField(
                     onDraftChange(v)
                 }
             },
-            label = { Text("Add tag…") },
-            placeholder = { Text("e.g. work charge") },
+            label = { Text(stringResource(R.string.form_add_tag)) },
+            placeholder = { Text(stringResource(R.string.form_e_g_work_charge)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { commit() }),
@@ -1752,12 +1761,12 @@ private fun ReceiptsCard(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Attach receipts",
+                            stringResource(R.string.form_attach_receipts),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                         )
                         Text(
-                            "Photo or PDF — add as many as you need.",
+                            stringResource(R.string.form_photo_or_pdf_add),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1778,7 +1787,7 @@ private fun ReceiptsCard(
                 OutlinedButton(onClick = onAdd) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Add another")
+                    Text(stringResource(R.string.form_add_another))
                 }
             }
         }
@@ -1810,7 +1819,7 @@ private fun ReceiptTile(
             } else {
                 AsyncImage(
                     model = file,
-                    contentDescription = "Receipt photo",
+                    contentDescription = stringResource(R.string.form_receipt_photo),
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxWidth().height(180.dp),
                 )
@@ -1824,10 +1833,10 @@ private fun ReceiptTile(
             // Rename is only useful on PDFs — photos don't show a filename
             // anywhere in the UI, so the action would be invisible.
             if (isPdf) {
-                androidx.compose.material3.TextButton(onClick = onRename) { Text("Rename") }
+                androidx.compose.material3.TextButton(onClick = onRename) { Text(stringResource(R.string.form_rename)) }
                 Spacer(Modifier.width(4.dp))
             }
-            androidx.compose.material3.TextButton(onClick = onRemove) { Text("Remove") }
+            androidx.compose.material3.TextButton(onClick = onRemove) { Text(stringResource(R.string.form_remove)) }
         }
     }
 }
@@ -1866,7 +1875,7 @@ private fun PdfThumbnail(originalFileName: String? = null) {
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
             Text(
-                "Tap to open in your PDF viewer.",
+                stringResource(R.string.form_tap_to_open_in),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1889,12 +1898,12 @@ private fun RenameReceiptDialog(
     var draft by remember(initial) { mutableStateOf(initial) }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename receipt") },
+        title = { Text(stringResource(R.string.form_rename_receipt)) },
         text = {
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it },
-                label = { Text("File name") },
+                label = { Text(stringResource(R.string.form_file_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1902,10 +1911,10 @@ private fun RenameReceiptDialog(
         confirmButton = {
             androidx.compose.material3.TextButton(
                 onClick = { onConfirm(draft.trim().takeIf { it.isNotEmpty() }) },
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.form_save)) }
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.form_cancel)) }
         },
     )
 }
@@ -1924,21 +1933,21 @@ private fun ReceiptKindChooser(
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             Text(
-                "Attach receipt as…",
+                stringResource(R.string.form_attach_receipt_as),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
             ChooserRow(
                 icon = Icons.Default.Image,
-                title = "Photo",
-                subtitle = "Pick from your gallery or camera roll.",
+                title = stringResource(R.string.form_photo),
+                subtitle = stringResource(R.string.form_pick_from_your_gallery),
                 onClick = onPickPhoto,
             )
             ChooserRow(
                 icon = Icons.Default.PictureAsPdf,
-                title = "PDF",
-                subtitle = "Pick a PDF file from your device.",
+                title = stringResource(R.string.form_pdf),
+                subtitle = stringResource(R.string.form_pick_a_pdf_file),
                 onClick = onPickPdf,
             )
         }
@@ -1985,7 +1994,7 @@ private fun openReceiptExternally(context: android.content.Context, relativePath
         setDataAndType(uri, ReceiptImageStore.mimeType(relativePath))
         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    val chooser = android.content.Intent.createChooser(intent, "Open receipt")
+    val chooser = android.content.Intent.createChooser(intent, context.getString(R.string.form_open_receipt))
     runCatching { context.startActivity(chooser) }
 }
 
@@ -1998,7 +2007,7 @@ private fun ReceiptPreviewDialog(
     val file = File(ctx.filesDir, relativePath)
     com.evsct.app.ui.ImageZoomDialog(
         model = file,
-        contentDescription = "Receipt photo (full screen)",
+        contentDescription = stringResource(R.string.form_receipt_photo_full_screen),
         onDismiss = onDismiss,
     )
 }
@@ -2021,7 +2030,7 @@ private fun ValidationHintsCard(hints: List<ValidationHint>) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (hints.size == 1) "Heads-up" else "${hints.size} things to double-check",
+                    pluralStringResource(R.plurals.form_hints_title, hints.size, hints.size),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 )
@@ -2062,7 +2071,7 @@ private fun LiveElapsedChip(sessionStart: Long, onUse: (Long) -> Unit) {
         }
     }
     val elapsedSec = ((nowMs - sessionStart).coerceAtLeast(0L)) / 1000L
-    val label = "Use elapsed: ${DurationFormat.editable(elapsedSec)}"
+    val label = stringResource(R.string.form_use_elapsed, DurationFormat.editable(elapsedSec))
     AssistChip(
         onClick = { onUse(elapsedSec) },
         label = { Text(label) },

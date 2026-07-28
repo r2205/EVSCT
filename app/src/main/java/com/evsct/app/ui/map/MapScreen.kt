@@ -64,11 +64,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.evsct.app.R
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.VehicleScope
@@ -144,6 +147,10 @@ fun MapScreen(
     val scope = rememberCoroutineScope()
     var hasLocationPermission by remember { mutableStateOf(viewModel.hasLocationPermission()) }
     var locating by remember { mutableStateOf(false) }
+    // Resolved in composition: coroutine and callback bodies below are not composable scopes.
+    val fixFailedMsg = stringResource(R.string.map_fix_failed)
+    val permissionOffMsg = stringResource(R.string.map_permission_off)
+    val res = LocalContext.current.resources
     fun jumpToMyLocation() {
         if (locating) return
         scope.launch {
@@ -155,9 +162,7 @@ fun MapScreen(
                     CameraUpdateFactory.newLatLngZoom(LatLng(fix.first, fix.second), 14f),
                 )
             } else {
-                snackbarHostState.showSnackbar(
-                    "Couldn't get a location fix. Check that location is turned on.",
-                )
+                snackbarHostState.showSnackbar(fixFailedMsg)
             }
         }
     }
@@ -169,9 +174,7 @@ fun MapScreen(
             jumpToMyLocation()
         } else {
             scope.launch {
-                snackbarHostState.showSnackbar(
-                    "Location permission is off — the map can't jump to where you are.",
-                )
+                snackbarHostState.showSnackbar(permissionOffMsg)
             }
         }
     }
@@ -218,10 +221,7 @@ fun MapScreen(
         if (state.backfillCompleted && state.backfillFailed > 0) {
             val n = state.backfillFailed
             snackbarHostState.showSnackbar(
-                message = (if (n == 1) "1 address couldn't be located"
-                else "$n addresses couldn't be located") +
-                    " — those stops stay off the map. Check the address, or open the " +
-                    "session and use Pick on map.",
+                message = res.getQuantityString(R.plurals.map_backfill_failed, n, n),
                 duration = SnackbarDuration.Long,
             )
         }
@@ -236,7 +236,7 @@ fun MapScreen(
                     // lockup plus the long form overflows ahead of this bar's
                     // two actions on 360dp-wide phones, and the subtitle
                     // below already says what the map shows.
-                    EvsctBarTitle("Map", subtitle = subtitleFor(state))
+                    EvsctBarTitle(stringResource(R.string.nav_map), subtitle = subtitleFor(state))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -246,7 +246,7 @@ fun MapScreen(
                 actions = {
                     Box {
                         IconButton(onClick = { showLayersMenu = true }) {
-                            Icon(Icons.Default.Layers, contentDescription = "Map type")
+                            Icon(Icons.Default.Layers, contentDescription = stringResource(R.string.map_map_type))
                         }
                         MapTypeMenu(
                             expanded = showLayersMenu,
@@ -287,7 +287,7 @@ fun MapScreen(
                                 }
                             },
                         ) {
-                            Icon(Icons.Default.FilterList, contentDescription = "Filter")
+                            Icon(Icons.Default.FilterList, contentDescription = stringResource(R.string.map_filter))
                         }
                     }
                 },
@@ -428,13 +428,13 @@ fun MapScreen(
                 renderer?.clusteringEnabled = state.clusteringEnabled
                 mgr.clearItems()
                 if (!state.heatmapEnabled) {
-                    mgr.addItems(state.stops.map { ChargingStopClusterItem(it) })
+                    mgr.addItems(state.stops.map { ChargingStopClusterItem(it, chargingStopLabel) })
                 }
                 mgr.cluster()
             }
 
             if (state.backfillRunning) {
-                BackfillBanner(text = "Locating ${state.unlocatedDistinct} stops…")
+                BackfillBanner(text = stringResource(R.string.map_locating_stops, state.unlocatedDistinct))
             }
             // isLoading: before the first emission every log looks empty —
             // let the basemap show alone rather than flash "No locations".
@@ -442,11 +442,11 @@ fun MapScreen(
                 EmptyState(
                     message = when {
                         state.totalDistinct == 0 ->
-                            "No locations to map yet. Add a session with GPS autofill or a real address."
+                            stringResource(R.string.map_empty_none)
                         state.anyFilterActive ->
-                            "Every stop is hidden by your current filter."
+                            stringResource(R.string.map_empty_filtered)
                         else ->
-                            "Could not locate any stops. Check that addresses are filled in."
+                            stringResource(R.string.map_empty_unlocated)
                     },
                 )
             }
@@ -455,6 +455,7 @@ fun MapScreen(
             // colors are actually in play (colorByTrip on, pins visible, at
             // least one visible trip); tapping it opens the filter sheet
             // where the same trips can be toggled.
+            val chargingStopLabel = stringResource(R.string.map_charging_stop)
             val legendEntries = legendEntriesFor(state)
             if (state.colorByTrip && !state.heatmapEnabled && legendEntries.isNotEmpty()) {
                 TripLegendOverlay(
@@ -488,7 +489,7 @@ fun MapScreen(
                 if (locating) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Default.MyLocation, contentDescription = "My location")
+                    Icon(Icons.Default.MyLocation, contentDescription = stringResource(R.string.map_my_location))
                 }
             }
         }
@@ -545,6 +546,7 @@ private fun frameCameraOn(
  *  the untripped bucket, then the shared-stop gray when any pin uses it.
  *  Empty when no visible trip is contributing pins — a legend that only
  *  says "Untripped" would be noise. */
+@Composable
 private fun legendEntriesFor(ui: MapUi): List<Pair<String, Color>> {
     if (ui.stops.isEmpty()) return emptyList()
     val visibleTrips = ui.tripOptions.filter { it.visible }
@@ -553,8 +555,8 @@ private fun legendEntriesFor(ui: MapUi): List<Pair<String, Color>> {
         visibleTrips.forEach { option ->
             add(option.name to (TripPinColor.fromKey(option.pinColorKey)?.swatch ?: SHARED_PIN_COLOR))
         }
-        if (ui.showUntrippedOption && ui.untrippedVisible) add("Untripped" to UNTRIPPED_PIN_COLOR)
-        if (ui.stops.any { it.pinKind == PinKind.Shared }) add("Multiple trips" to SHARED_PIN_COLOR)
+        if (ui.showUntrippedOption && ui.untrippedVisible) add(stringResource(R.string.map_untripped) to UNTRIPPED_PIN_COLOR)
+        if (ui.stops.any { it.pinKind == PinKind.Shared }) add(stringResource(R.string.map_multiple_trips) to SHARED_PIN_COLOR)
     }
 }
 
@@ -596,7 +598,7 @@ private fun TripLegendOverlay(
             }
             if (entries.size > MAX_LEGEND_ROWS) {
                 Text(
-                    "+${entries.size - MAX_LEGEND_ROWS} more…",
+                    stringResource(R.string.map_legend_more, entries.size - MAX_LEGEND_ROWS),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -694,11 +696,13 @@ private fun EmptyState(message: String) {
 
 /** Adapter so the underlying ClusterManager can read position / title /
  *  snippet from a [MapStop]. */
-private class ChargingStopClusterItem(val stop: MapStop) : ClusterItem {
+/** [untitledLabel] injected at construction: this adapter lives outside the
+ *  composition, so it can't resolve resources itself. */
+private class ChargingStopClusterItem(val stop: MapStop, private val untitledLabel: String) : ClusterItem {
     override fun getPosition(): LatLng = LatLng(stop.latitude, stop.longitude)
     override fun getTitle(): String? = stop.brand?.takeIf { it.isNotBlank() }
         ?: stop.stationName?.takeIf { it.isNotBlank() }
-        ?: "Charging stop"
+        ?: untitledLabel
     override fun getSnippet(): String? = snippetFor(stop)
     override fun getZIndex(): Float? = null
 }
@@ -804,13 +808,13 @@ private fun FilterSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Filter map",
+                    stringResource(R.string.map_filter_map),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
                 if (ui.anyFilterActive) {
-                    TextButton(onClick = onResetAll) { Text("Reset") }
+                    TextButton(onClick = onResetAll) { Text(stringResource(R.string.map_reset)) }
                 }
             }
             // NOTE: display-mode toggles (trip colors, clustering, heatmap,
@@ -821,7 +825,7 @@ private fun FilterSheet(
             //     from, since the chips would be a no-op). ---
             if (needsVehiclePicker(ui.vehicles.size, ui.hasUnassignedSessions)) {
                 Text(
-                    "Show pins for vehicle",
+                    stringResource(R.string.map_show_pins_for_vehicle),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 24.dp),
@@ -836,7 +840,7 @@ private fun FilterSheet(
                     FilterChip(
                         selected = ui.vehicleScope == VehicleScope.All,
                         onClick = { onSetVehicleScope(VehicleScope.All) },
-                        label = { Text("All vehicles") },
+                        label = { Text(stringResource(R.string.map_all_vehicles)) },
                     )
                     ui.vehicles.forEach { vehicle ->
                         FilterChip(
@@ -851,7 +855,7 @@ private fun FilterSheet(
                         FilterChip(
                             selected = ui.vehicleScope == VehicleScope.Unassigned,
                             onClick = { onSetVehicleScope(VehicleScope.Unassigned) },
-                            label = { Text("Unassigned") },
+                            label = { Text(stringResource(R.string.map_unassigned)) },
                         )
                     }
                 }
@@ -865,7 +869,7 @@ private fun FilterSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Show pins from",
+                    stringResource(R.string.map_show_pins_from),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f),
@@ -875,16 +879,16 @@ private fun FilterSheet(
                 val anyVisible = ui.tripOptions.any { it.visible } ||
                     (ui.showUntrippedOption && ui.untrippedVisible)
                 if (anyHidden) {
-                    TextButton(onClick = onShowAllTrips) { Text("Show all") }
+                    TextButton(onClick = onShowAllTrips) { Text(stringResource(R.string.map_show_all)) }
                 }
                 if (anyVisible && (ui.tripOptions.isNotEmpty() || ui.showUntrippedOption)) {
-                    TextButton(onClick = onHideAllTrips) { Text("Hide all") }
+                    TextButton(onClick = onHideAllTrips) { Text(stringResource(R.string.map_hide_all)) }
                 }
             }
 
             if (ui.tripOptions.isEmpty() && !ui.showUntrippedOption) {
                 Text(
-                    "No trips to filter.",
+                    stringResource(R.string.map_no_trips_to_filter),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
@@ -900,7 +904,7 @@ private fun FilterSheet(
                 }
                 if (ui.showUntrippedOption) {
                     TripFilterRow(
-                        label = "Untripped sessions",
+                        label = stringResource(R.string.map_untripped_sessions),
                         swatch = null,  // Renders as the default-red dot.
                         checked = ui.untrippedVisible,
                         onToggle = { onToggleTrip(null) },
@@ -941,7 +945,7 @@ private fun StopSessionsSheet(
                 Text(
                     stop.brand?.takeIf { it.isNotBlank() }
                         ?: stop.stationName?.takeIf { it.isNotBlank() }
-                        ?: "Charging stop",
+                        ?: stringResource(R.string.map_charging_stop),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -959,9 +963,10 @@ private fun StopSessionsSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                val plural = if (sessions.size == 1) "" else "s"
                 Text(
-                    "${sessions.size} session$plural — tap to open",
+                    pluralStringResource(
+                        R.plurals.map_stop_sessions, sessions.size, sessions.size,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1043,7 +1048,7 @@ private fun StopTripBadge(tripName: String?) {
             .padding(horizontal = 8.dp, vertical = 2.dp),
     ) {
         Text(
-            tripName ?: "Untripped",
+            tripName ?: stringResource(R.string.map_untripped),
             style = MaterialTheme.typography.labelSmall,
             color = onContainer,
         )

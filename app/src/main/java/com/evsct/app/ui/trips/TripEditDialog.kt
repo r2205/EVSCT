@@ -36,12 +36,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.evsct.app.R
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.map.TripPinColor
@@ -124,7 +126,7 @@ fun TripEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (trip == null) "New trip" else "Edit trip") },
+        title = { Text(if (trip == null) stringResource(R.string.tripedit_title_new) else stringResource(R.string.tripedit_title_edit)) },
         text = {
             Column(
                 // Scrollable: seven controls plus helper/error rows exceed
@@ -136,12 +138,12 @@ fun TripEditDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.tripedit_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "Optional: dates label the trip and sort the list (newest first).",
+                    stringResource(R.string.tripedit_optional_dates_label_the),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -151,7 +153,7 @@ fun TripEditDialog(
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(
-                            startDate?.let { Format.date(it) } ?: "Start date…",
+                            startDate?.let { Format.date(it) } ?: stringResource(R.string.tripedit_start_date),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -161,7 +163,7 @@ fun TripEditDialog(
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(
-                            endDate?.let { Format.date(it) } ?: "End date…",
+                            endDate?.let { Format.date(it) } ?: stringResource(R.string.tripedit_end_date),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -169,7 +171,7 @@ fun TripEditDialog(
                 }
                 if (dateError) {
                     Text(
-                        "Start date cannot be after end date.",
+                        stringResource(R.string.tripedit_start_date_cannot_be),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -180,10 +182,10 @@ fun TripEditDialog(
                             startDateMillis = NO_TRIP_DATE
                             endDateMillis = NO_TRIP_DATE
                         },
-                    ) { Text("Clear dates") }
+                    ) { Text(stringResource(R.string.tripedit_clear_dates)) }
                 }
                 Text(
-                    "Optional: distance is computed as End − Start when both are filled.",
+                    stringResource(R.string.tripedit_optional_distance_is_computed),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -191,7 +193,7 @@ fun TripEditDialog(
                     OutlinedTextField(
                         value = startText,
                         onValueChange = { startText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
-                        label = { Text("Start $unitLabel") },
+                        label = { Text(stringResource(R.string.tripedit_start_odometer, unitLabel)) },
                         singleLine = true,
                         isError = odometerError,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -200,7 +202,7 @@ fun TripEditDialog(
                     OutlinedTextField(
                         value = endText,
                         onValueChange = { endText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
-                        label = { Text("End $unitLabel") },
+                        label = { Text(stringResource(R.string.tripedit_end_odometer, unitLabel)) },
                         singleLine = true,
                         isError = odometerError,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -209,15 +211,13 @@ fun TripEditDialog(
                 }
                 if (odometerError) {
                     Text(
-                        "Start $unitLabel cannot be more than End $unitLabel.",
+                        stringResource(R.string.tripedit_odometer_order_error, unitLabel, unitLabel),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
                 Text(
-                    "Optional: battery % when the trip began and ended. With the " +
-                        "odometer readings these measure the drives to the first " +
-                        "charge and home from the last one.",
+                    stringResource(R.string.tripedit_optional_battery_when_the),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -225,7 +225,7 @@ fun TripEditDialog(
                     OutlinedTextField(
                         value = startBattText,
                         onValueChange = { startBattText = it.filter(Char::isDigit).take(3) },
-                        label = { Text("Start battery %") },
+                        label = { Text(stringResource(R.string.tripedit_start_battery)) },
                         singleLine = true,
                         isError = startBatt != null && startBatt !in 0..100,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -234,7 +234,7 @@ fun TripEditDialog(
                     OutlinedTextField(
                         value = endBattText,
                         onValueChange = { endBattText = it.filter(Char::isDigit).take(3) },
-                        label = { Text("End battery %") },
+                        label = { Text(stringResource(R.string.tripedit_end_battery)) },
                         singleLine = true,
                         isError = endBatt != null && endBatt !in 0..100,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -243,7 +243,7 @@ fun TripEditDialog(
                 }
                 if (batteryError) {
                     Text(
-                        "Battery % must be between 0 and 100.",
+                        stringResource(R.string.tripedit_battery_must_be_between),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -251,7 +251,7 @@ fun TripEditDialog(
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Notes (optional)") },
+                    label = { Text(stringResource(R.string.tripedit_notes_optional)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -265,7 +265,10 @@ fun TripEditDialog(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Map pin color: ${resolvedColor?.displayName ?: "Auto"}",
+                        stringResource(
+                            R.string.tripedit_map_pin_color_value,
+                            resolvedColor?.let { stringResource(it.labelRes) } ?: stringResource(R.string.tripedit_pin_color_auto),
+                        ),
                     )
                 }
             }
@@ -287,10 +290,10 @@ fun TripEditDialog(
                     )
                     onSave(merged)
                 },
-            ) { Text(if (trip == null) "Create" else "Save") }
+            ) { Text(if (trip == null) stringResource(R.string.tripedit_create) else stringResource(R.string.common_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.tripedit_cancel)) }
         },
     )
 
@@ -345,10 +348,10 @@ private fun TripDatePickerDialog(
                 onClick = {
                     pickerState.selectedDateMillis?.let { onPick(pickerUtcToLocalMidnight(it)) }
                 },
-            ) { Text("OK") }
+            ) { Text(stringResource(R.string.tripedit_ok)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.tripedit_cancel)) }
         },
     ) {
         DatePicker(state = pickerState)
@@ -390,7 +393,7 @@ private fun TripPinColorPicker(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Map pin color") },
+        title = { Text(stringResource(R.string.tripedit_map_pin_color)) },
         text = {
             // Two rows of five swatches.
             val rows = TripPinColor.entries.chunked(5)
@@ -419,7 +422,7 @@ private fun TripPinColorPicker(
                                     // for TalkBack, which otherwise announces
                                     // ten identical unlabeled buttons.
                                     .semantics {
-                                        contentDescription = c.displayName
+                                        contentDescription = stringResource(c.labelRes)
                                         this.selected = selected
                                     },
                                 contentAlignment = Alignment.Center,
@@ -428,17 +431,17 @@ private fun TripPinColorPicker(
                     }
                 }
                 TextButton(onClick = { onPick(null) }) {
-                    Text("Auto — let the app pick the least-used color")
+                    Text(stringResource(R.string.tripedit_auto_let_the_app))
                 }
                 Text(
-                    "Pins for this trip will use this color on the map.",
+                    stringResource(R.string.tripedit_pins_for_this_trip),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.tripedit_close)) }
         },
     )
 }
