@@ -485,7 +485,7 @@ private fun TimeOfDayHeatmap(
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
             )
-            peakLabel(grid)?.let { peak ->
+            peakLabel(grid, dayLabels)?.let { peak ->
                 Text(
                     stringResource(R.string.stats_peak, peak),
                     style = labelStyle,
