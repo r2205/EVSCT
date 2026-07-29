@@ -52,10 +52,6 @@ object DurationFormat {
         return t.toLongOrNull()?.let { it * 60 }
     }
 
-    /** Wait time is stored in whole minutes: round parsed seconds to the
-     *  nearest minute (32:14 -> 32, 32:44 -> 33). */
-    fun roundedMinutes(seconds: Long): Int = ((seconds + 30) / 60).toInt()
-
     fun pretty(seconds: Long?): String {
         if (seconds == null || seconds <= 0) return ""
         val h = seconds / 3600

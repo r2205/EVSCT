@@ -418,9 +418,6 @@ fun SessionEditScreen(
                 DurationField(
                     value = state.waitTimeText,
                     label = stringResource(R.string.form_wait_time_optional),
-                    // Storage is whole minutes — snap the preview and the
-                    // focus-swap text to what will actually be saved.
-                    normalize = { DurationFormat.roundedMinutes(it) * 60L },
                     onValue = { v -> viewModel.update { it.copy(waitTimeText = v) } },
                 )
                 Row(
@@ -1535,17 +1532,15 @@ private fun PickLocationCard(
 }
 
 /**
- * Duration entry shared by charging duration and wait time. [normalize]
- * maps parsed seconds to what save() will actually store (wait time
- * rounds to whole minutes), so the preview and the focus-driven
- * pretty/editable swaps never show precision that would be dropped.
+ * Duration entry shared by charging duration and wait time: free text
+ * with a live preview of how the entry is read, swapping between the
+ * pretty and editable forms on focus change.
  */
 @Composable
 private fun DurationField(
     value: String,
     label: String,
     isError: Boolean = false,
-    normalize: (Long) -> Long = { it },
     onValue: (String) -> Unit,
 ) {
     var hasFocus by remember { mutableStateOf(false) }
@@ -1569,7 +1564,6 @@ private fun DurationField(
     // doesn't jump on every keystroke.
     val preview = if (hasFocus) {
         DurationFormat.parse(fieldValue.text)
-            ?.let(normalize)
             ?.takeIf { it > 0 }
             ?.let { stringResource(R.string.form_duration_preview, DurationFormat.pretty(it)) }
             ?: ""
@@ -1627,11 +1621,11 @@ private fun DurationField(
                 val nowFocused = focusState.isFocused
                 if (hasFocus && !nowFocused) {
                     DurationFormat.parse(fieldValue.text)?.let {
-                        onValue(DurationFormat.pretty(normalize(it)))
+                        onValue(DurationFormat.pretty(it))
                     }
                 } else if (!hasFocus && nowFocused) {
                     DurationFormat.parse(fieldValue.text)?.let {
-                        onValue(DurationFormat.editable(normalize(it)))
+                        onValue(DurationFormat.editable(it))
                     }
                 }
                 hasFocus = nowFocused

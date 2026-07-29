@@ -131,8 +131,8 @@ data class SessionEditUi(
     val sessionStart: Long = System.currentTimeMillis(),
     val durationText: String = "",
     /** Optional wait-before-charging entry, same free-text duration formats
-     *  as [durationText]; rounds to whole minutes on save. Empty when unset;
-     *  never affects kWh/cost computations. */
+     *  as [durationText]. Empty when unset; never affects kWh/cost
+     *  computations. */
     val waitTimeText: String = "",
     val odometerText: String = "",
     val energyText: String = "",
@@ -498,7 +498,7 @@ class SessionEditViewModel @Inject constructor(
                 isNew = false,
                 sessionStart = s.sessionStart,
                 durationText = durationText,
-                waitTimeText = s.waitTimeMinutes?.let { DurationFormat.pretty(it * 60L) }.orEmpty(),
+                waitTimeText = DurationFormat.pretty(s.waitTimeSeconds),
                 isTracking = tracking,
                 odometerText = odoText,
                 useMiles = units.useMiles,
@@ -871,8 +871,7 @@ class SessionEditViewModel @Inject constructor(
                 id = committedSessionId ?: if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
                 durationSeconds = durationSeconds,
-                waitTimeMinutes = DurationFormat.parse(s.waitTimeText)
-                    ?.let(DurationFormat::roundedMinutes)
+                waitTimeSeconds = DurationFormat.parse(s.waitTimeText)
                     // The parser is digits-only, but absurdly long digit runs
                     // can wrap Long arithmetic negative — keep negatives out
                     // of the DB regardless.

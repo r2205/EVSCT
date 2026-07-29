@@ -468,7 +468,7 @@ class BackupIo @Inject constructor(
                         latitude = raw.latitude,
                         longitude = raw.longitude,
                         continuesPrevious = raw.continuesPrevious,
-                        waitTimeMinutes = raw.waitTimeMinutes,
+                        waitTimeSeconds = raw.waitTimeSeconds,
                         createdAt = raw.createdAt,
                         updatedAt = raw.updatedAt,
                     )
@@ -599,7 +599,10 @@ class BackupIo @Inject constructor(
         put("id", id)
         put("sessionStart", sessionStart)
         putOptLong("durationSeconds", durationSeconds)
-        putOptLong("waitTimeMinutes", waitTimeMinutes?.toLong())
+        putOptLong("waitTimeSeconds", waitTimeSeconds)
+        // Legacy key so a backup restored on a pre-v13 build still lands
+        // the wait in its whole-minutes column, rounded.
+        putOptLong("waitTimeMinutes", waitTimeSeconds?.let { (it + 30) / 60 })
         putOptDouble("odometerKm", odometerKm)
         putOptDouble("energyKwh", energyKwh)
         putOptDouble("totalCost", totalCost)
@@ -712,7 +715,10 @@ class BackupIo @Inject constructor(
                     id = s.getLong("id"),
                     sessionStart = s.getLong("sessionStart"),
                     durationSeconds = s.optLongOrNull("durationSeconds"),
-                    waitTimeMinutes = s.optLongOrNull("waitTimeMinutes")?.toInt(),
+                    // Backups from before wait time gained seconds precision
+                    // only carry whole minutes — convert those on the way in.
+                    waitTimeSeconds = s.optLongOrNull("waitTimeSeconds")
+                        ?: s.optLongOrNull("waitTimeMinutes")?.times(60),
                     odometerKm = s.optDoubleOrNull("odometerKm"),
                     energyKwh = s.optDoubleOrNull("energyKwh"),
                     totalCost = s.optDoubleOrNull("totalCost"),
@@ -865,7 +871,7 @@ private data class RawSession(
     val id: Long,
     val sessionStart: Long,
     val durationSeconds: Long?,
-    val waitTimeMinutes: Int?,
+    val waitTimeSeconds: Long?,
     val odometerKm: Double?,
     val energyKwh: Double?,
     val totalCost: Double?,

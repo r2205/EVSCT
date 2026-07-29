@@ -36,10 +36,11 @@ data class ChargingSession(
     /** Total session duration in seconds (null when not recorded). */
     val durationSeconds: Long? = null,
 
-    /** Optional minutes spent queued/waiting at the station before the
-     *  charge actually started. Doesn't enter kWh or cost calculations —
-     *  used only to surface a "stop time" stat distinct from charge time. */
-    val waitTimeMinutes: Int? = null,
+    /** Optional time spent queued/waiting at the station before the charge
+     *  actually started, in seconds (whole minutes before DB v13). Doesn't
+     *  enter kWh or cost calculations — used only to surface a "stop time"
+     *  stat distinct from charge time. */
+    val waitTimeSeconds: Long? = null,
 
     val odometerKm: Double? = null,
     val energyKwh: Double? = null,

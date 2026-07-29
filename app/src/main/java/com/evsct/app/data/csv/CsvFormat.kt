@@ -16,7 +16,7 @@ object CsvFormat {
         "date",
         "time",
         "duration_seconds",
-        "wait_minutes",
+        "wait_seconds",
         "odometer_km",
         "energy_kwh",
         "total_cost",
@@ -70,7 +70,7 @@ object CsvFormat {
             isoDate.format(date),
             isoTime.format(date),
             session.durationSeconds?.toString(),
-            session.waitTimeMinutes?.toString(),
+            session.waitTimeSeconds?.toString(),
             session.odometerKm?.toString(),
             session.energyKwh?.toString(),
             session.totalCost?.toString(),
@@ -129,8 +129,11 @@ object CsvFormat {
             sessionStart = epoch,
             durationSeconds = get("duration_seconds")?.toLongOrNull(),
             // Columns absent from older exports simply read null here, so
-            // pre-wait/tags CSVs import unchanged.
-            waitTimeMinutes = get("wait_minutes")?.toIntOrNull(),
+            // pre-wait/tags CSVs import unchanged. Exports made before wait
+            // time gained seconds precision carried whole minutes under
+            // wait_minutes — convert those on the way in.
+            waitTimeSeconds = get("wait_seconds")?.toLongOrNull()
+                ?: get("wait_minutes")?.toLongOrNull()?.times(60),
             odometerKm = get("odometer_km")?.toDoubleOrNull(),
             energyKwh = get("energy_kwh")?.toDoubleOrNull(),
             totalCost = get("total_cost")?.toDoubleOrNull(),

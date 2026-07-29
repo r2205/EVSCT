@@ -12,7 +12,7 @@ import com.evsct.app.data.entity.Vehicle
 
 @Database(
     entities = [ChargingSession::class, SessionReceipt::class, Trip::class, Vehicle::class],
-    version = 12,
+    version = 13,
     // Schema JSONs land in app/schemas/ (see room.schemaLocation in
     // build.gradle.kts) and are committed, so future schema changes diff
     // visibly in review and MigrationTestHelper can verify the chain.
@@ -238,6 +238,99 @@ abstract class EvsctDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `trips` ADD COLUMN `startBatteryPct` INTEGER")
                 db.execSQL("ALTER TABLE `trips` ADD COLUMN `endBatteryPct` INTEGER")
+            }
+        }
+
+        /** Wait time gains seconds precision: `waitTimeMinutes` becomes
+         *  `waitTimeSeconds` (old values × 60 — lossless). minSdk 30's
+         *  SQLite predates DROP COLUMN, so this is the standard rebuild:
+         *  create-copy-drop-rename, then recreate the table's indices.
+         *  Migrations run before Room turns foreign key enforcement on,
+         *  so dropping the old table can't cascade into session_receipts. */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `charging_sessions_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `sessionStart` INTEGER NOT NULL,
+                        `durationSeconds` INTEGER,
+                        `waitTimeSeconds` INTEGER,
+                        `odometerKm` REAL,
+                        `energyKwh` REAL,
+                        `totalCost` REAL,
+                        `currency` TEXT NOT NULL,
+                        `postedEnergyPricePerKwh` REAL,
+                        `postedTimeRatePerMin` REAL,
+                        `postedMaxPowerKw` REAL,
+                        `batteryStartPct` INTEGER,
+                        `batteryEndPct` INTEGER,
+                        `chargingType` TEXT NOT NULL,
+                        `pricingModel` TEXT NOT NULL,
+                        `brand` TEXT,
+                        `locationCity` TEXT,
+                        `locationProvince` TEXT,
+                        `locationAddress` TEXT,
+                        `stationName` TEXT,
+                        `stallName` TEXT,
+                        `latitude` REAL,
+                        `longitude` REAL,
+                        `tripId` INTEGER,
+                        `vehicleId` INTEGER,
+                        `notes` TEXT,
+                        `tags` TEXT,
+                        `receiptImagePath` TEXT,
+                        `continuesPrevious` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`tripId`) REFERENCES `trips`(`id`)
+                            ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`vehicleId`) REFERENCES `vehicles`(`id`)
+                            ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `charging_sessions_new` (
+                        id, sessionStart, durationSeconds, waitTimeSeconds,
+                        odometerKm, energyKwh, totalCost, currency,
+                        postedEnergyPricePerKwh, postedTimeRatePerMin,
+                        postedMaxPowerKw, batteryStartPct, batteryEndPct,
+                        chargingType, pricingModel, brand, locationCity,
+                        locationProvince, locationAddress, stationName,
+                        stallName, latitude, longitude, tripId, vehicleId,
+                        notes, tags, receiptImagePath, continuesPrevious,
+                        createdAt, updatedAt)
+                    SELECT
+                        id, sessionStart, durationSeconds, waitTimeMinutes * 60,
+                        odometerKm, energyKwh, totalCost, currency,
+                        postedEnergyPricePerKwh, postedTimeRatePerMin,
+                        postedMaxPowerKw, batteryStartPct, batteryEndPct,
+                        chargingType, pricingModel, brand, locationCity,
+                        locationProvince, locationAddress, stationName,
+                        stallName, latitude, longitude, tripId, vehicleId,
+                        notes, tags, receiptImagePath, continuesPrevious,
+                        createdAt, updatedAt
+                    FROM `charging_sessions`
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE `charging_sessions`")
+                db.execSQL(
+                    "ALTER TABLE `charging_sessions_new` RENAME TO `charging_sessions`"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_charging_sessions_tripId` " +
+                        "ON `charging_sessions` (`tripId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_charging_sessions_vehicleId` " +
+                        "ON `charging_sessions` (`vehicleId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_charging_sessions_sessionStart` " +
+                        "ON `charging_sessions` (`sessionStart`)"
+                )
             }
         }
     }

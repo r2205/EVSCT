@@ -20,7 +20,7 @@ class SessionRowDescriptionTest {
     private fun session(
         durationSeconds: Long? = 1_800L,
         energyKwh: Double? = 42.5,
-        waitTimeMinutes: Int? = null,
+        waitTimeSeconds: Long? = null,
         chargingType: ChargingType = ChargingType.DC_FAST,
         brand: String? = "Petro-Canada",
         locationCity: String? = "Kingston",
@@ -28,7 +28,7 @@ class SessionRowDescriptionTest {
         sessionStart = 1_752_000_000_000L,
         durationSeconds = durationSeconds,
         energyKwh = energyKwh,
-        waitTimeMinutes = waitTimeMinutes,
+        waitTimeSeconds = waitTimeSeconds,
         totalCost = 24.50,
         chargingType = chargingType,
         brand = brand,
@@ -67,7 +67,7 @@ class SessionRowDescriptionTest {
 
     @Test
     fun `optional parts are omitted when absent`() {
-        val bare = describe(session(waitTimeMinutes = null))
+        val bare = describe(session(waitTimeSeconds = null))
         assertFalse("wait" in bare, bare)
         assertFalse("trip" in bare, bare)
         assertFalse("receipt" in bare, bare)
@@ -77,7 +77,7 @@ class SessionRowDescriptionTest {
     @Test
     fun `optional parts are included when present`() {
         val full = describe(
-            session(waitTimeMinutes = 7),
+            session(waitTimeSeconds = 7 * 60L),
             tripName = "Gaspé loop",
             vehicleName = "Ioniq 5",
             hasReceipt = true,
@@ -92,11 +92,17 @@ class SessionRowDescriptionTest {
 
     @Test
     fun `single tag and single wait minute are not pluralized`() {
-        val text = describe(session(waitTimeMinutes = 1), tags = listOf("home"))
+        val text = describe(session(waitTimeSeconds = 60L), tags = listOf("home"))
         assertTrue("1 minute wait" in text, text)
         assertFalse("1 minutes wait" in text, text)
         assertTrue("tag home" in text, text)
         assertFalse("tags home" in text, text)
+    }
+
+    @Test
+    fun `sub-minute wait reads as less than a minute`() {
+        val text = describe(session(waitTimeSeconds = 45L))
+        assertTrue("less than a minute wait" in text, text)
     }
 
     @Test

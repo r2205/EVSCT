@@ -154,11 +154,10 @@ in review.
 - **Wait time field**: optional "Wait time (optional)" duration field
   placed under the duration block. Captures queue time before charging
   started; shares `DurationField` with charging duration (same parser,
-  live preview, `:` button). Stored as `waitTimeMinutes: Int?` — parsed
-  seconds round to the nearest whole minute
-  (`DurationFormat.roundedMinutes`), and the preview/focus swaps show
-  the rounded value so dropped seconds are visible at entry time. The
-  digits-only parser keeps negatives out of the DB.
+  live preview, `:` button) and stores exact seconds as
+  `waitTimeSeconds: Long?` (migration 12→13 rebuilt the table from the
+  old whole-minutes column, values × 60 — lossless). The digits-only
+  parser plus a `>= 0` save guard keep negatives out of the DB.
 - **Tags field**: a "Tags" section above Notes. Existing tags render
   as `InputChip`s with an X to remove; an "Add tag…" `OutlinedTextField`
   commits on Enter or on typing a comma — the comma path lets the
@@ -764,9 +763,9 @@ of years where they have data) and recomputes the recap on each pick.
 - **CSV export/import** (kept for spreadsheet analysis use case):
   flat session table with columns including `trip_name`,
   `vehicle_name`, `latitude`, `longitude`, `continues_previous`,
-  `wait_minutes`, and `tags` (the last two added in the third-pass
-  sweep — they were silently dropped before; older exports without
-  them still import unchanged). Round-trips via `CsvIo`. Trips and
+  `wait_seconds`, and `tags` (older exports carried `wait_minutes`;
+  import accepts both, converting minutes × 60; exports without either
+  still import unchanged). Round-trips via `CsvIo`. Trips and
   vehicles are recreated by name on import. The multi-line parser
   (`Csv.parseAll`) tracks quoted state with lookahead escaped-quote
   handling — the earlier trailing-quote parity heuristic merged rows
