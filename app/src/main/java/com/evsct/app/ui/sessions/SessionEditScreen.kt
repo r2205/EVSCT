@@ -1550,7 +1550,7 @@ private fun DurationField(
     }
 
     val focusManager = LocalFocusManager.current
-    // Live readout of how the current text will be read ("= 32h 14m 0s" for
+    // Live readout of how the current text will be read ("= 0h 32m 14s" for
     // "32:14"), shown only while editing — the resting field already
     // displays the pretty form. The supporting slot stays reserved (blank
     // when there's nothing to preview) for the whole focus span so the form
@@ -1570,7 +1570,7 @@ private fun DurationField(
             if (fv.text != value) onValue(fv.text)
         },
         label = { Text(stringResource(R.string.form_charging_duration)) },
-        placeholder = { Text(stringResource(R.string.form_e_g_25_1)) },
+        placeholder = { Text(stringResource(R.string.form_e_g_duration)) },
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Phone,
             imeAction = ImeAction.Next,

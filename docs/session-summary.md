@@ -101,11 +101,13 @@ in review.
 - **Order**: Vehicle chips at top (under date/time), then Odometer,
   Energy, Cost, Currency chips, Duration, Battery start/end. Posted
   rates section below.
-- **Smart duration entry**: `25` → `0h 25m 0s`; `1:25` → `1h 25m 0s`
-  (h:m, not m:s — more natural for charging); `0:11:00` exact. Phone-pad
-  keyboard with an inline `:` button that inserts at cursor (uses
-  `TextFieldValue` for proper caret control). Format swaps between
-  pretty and editable on focus change.
+- **Smart duration entry**: `25` → `0h 25m 0s`; `32:14` → `0h 32m 14s`
+  (two-part is m:s, the stopwatch reading — sub-hour charges dominate);
+  `1:25:00` exact. While focused, supporting text previews the
+  interpretation live (`= 0h 32m 14s`). Phone-pad keyboard with an
+  inline `:` button that inserts at cursor (uses `TextFieldValue` for
+  proper caret control). Format swaps between pretty and editable on
+  focus change.
 - **Brand picker**: tap-to-open bottom sheet with curated NA networks
   + history-sorted brands; search filters both; "Use \"...\"" custom
   entry option appears for unrecognized typed text. DAO query groups by

@@ -105,9 +105,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   also stores the coordinates so the session shows up on the map.
 - **Province / state normalization** — typing `Saskatchewan` or `Quebec`
   lands as `SK` / `QC`; covers all CA provinces and US states.
-- **Smart duration entry** — `25` becomes `0h 25m 0s`, `1:25` becomes
-  `1h 25m 0s`, `0:11:00` stays exact. Phone-pad keyboard with an inline `:`
-  insert button.
+- **Smart duration entry** — `25` becomes `0h 25m 0s`, `32:14` becomes
+  `0h 32m 14s`, `1:25:00` stays exact, and a live `= …` preview under the
+  field shows how the entry is read while you type. Phone-pad keyboard
+  with an inline `:` insert button.
 - **Data-validation hints** — gentle amber card at the top of the form when
   something looks off (odometer went backward, effective price wildly
   differs from posted, battery decreased during charge, etc.). Affected

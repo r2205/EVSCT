@@ -3,14 +3,16 @@ package com.evsct.app.util
 /**
  * Charging-duration parsing and formatting. Two display forms are used:
  *   - "pretty"  — "1h 25m 0s", shown when the field is not focused.
- *   - "editable" — "1:25:00", shown while the user is editing so they can
- *                  retype digits without working around the h/m/s letters.
+ *   - "editable" — "1:25:00", or "32:14" under an hour, shown while the
+ *                  user is editing so they can retype digits without
+ *                  working around the h/m/s letters.
  *
  * Inputs accepted (case-insensitive):
  *   "11"          -> 11 minutes
- *   "1:25"        -> 1h 25m  (two-part is hours:minutes, the natural
- *                              charging-session reading)
- *   "0:11:00"     -> 0h 11m 0s
+ *   "32:14"       -> 32m 14s  (two-part is minutes:seconds, the stopwatch
+ *                              reading — sub-hour charges are the common
+ *                              case; hours take all three parts)
+ *   "1:25:00"     -> 1h 25m 0s
  *   "1h 25m 30s"  -> exact
  *   "1h 25m" / "25m" / "30s" -> partial pretty
  */
@@ -30,7 +32,7 @@ object DurationFormat {
                 (s.toLongOrNull() ?: 0L)
         }
 
-        // Colon-separated: h:m:s or h:m. Parts must be pure digits —
+        // Colon-separated: h:m:s or m:s. Parts must be pure digits —
         // checking the parsed values for negativity isn't enough because
         // toLongOrNull drops the sign of "-0", letting "-0:11:00" through.
         // (The pretty regex above is digits-only by construction.)
@@ -40,7 +42,7 @@ object DurationFormat {
             val nums = parts.map { it.toLongOrNull() ?: return null }
             return when (nums.size) {
                 3 -> nums[0] * 3600 + nums[1] * 60 + nums[2]
-                2 -> nums[0] * 3600 + nums[1] * 60
+                2 -> nums[0] * 60 + nums[1]
                 else -> null
             }
         }
@@ -63,6 +65,8 @@ object DurationFormat {
         val h = seconds / 3600
         val m = (seconds % 3600) / 60
         val s = seconds % 60
-        return "%d:%02d:%02d".format(h, m, s)
+        // Sub-hour drops the hours part so the text matches how it would
+        // be typed (m:ss round-trips through parse).
+        return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
     }
 }
