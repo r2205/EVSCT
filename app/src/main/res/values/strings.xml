@@ -247,7 +247,7 @@
     <string name="form_use_a_recent_stop">Use a recent stop…</string>
     <string name="form_use_brand">Use \"%1$s\"</string>
     <string name="form_use_elapsed">Use elapsed: %1$s</string>
-    <string name="form_wait_time_min_optional">Wait time (min, optional)</string>
+    <string name="form_wait_time_optional">Wait time (optional)</string>
     <plurals name="form_filled_count">
         <item quantity="one">%1$d set</item>
         <item quantity="other">%1$d set</item>

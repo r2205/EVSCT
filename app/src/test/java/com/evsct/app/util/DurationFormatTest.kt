@@ -31,6 +31,15 @@ class DurationFormatTest {
     }
 
     @Test
+    fun `roundedMinutes rounds to the nearest whole minute`() {
+        assertEquals(32, DurationFormat.roundedMinutes(32 * 60L + 14))
+        assertEquals(33, DurationFormat.roundedMinutes(32 * 60L + 44))
+        assertEquals(1, DurationFormat.roundedMinutes(30))
+        assertEquals(0, DurationFormat.roundedMinutes(29))
+        assertEquals(75, DurationFormat.roundedMinutes(75 * 60L))
+    }
+
+    @Test
     fun `editable output round-trips through parse`() {
         for (sec in listOf(45L, 32 * 60L + 14, 3600L, 1 * 3600L + 25 * 60L + 30)) {
             assertEquals(sec, DurationFormat.parse(DurationFormat.editable(sec)))

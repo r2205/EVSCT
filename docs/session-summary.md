@@ -151,11 +151,14 @@ in review.
   drive after this session" that the driving-efficiency calculator
   uses to pair adjacent sessions. Prevents counting "we sat at the
   charger overnight" gaps as a leg.
-- **Wait time field**: optional "Wait time (min, optional)" integer
-  field placed under the duration block. Captures queue time before
-  charging started; stored as `waitTimeMinutes: Int?` and parsed
-  through `toIntOrNull()?.takeIf { it >= 0 }` so negatives never land
-  in the DB.
+- **Wait time field**: optional "Wait time (optional)" duration field
+  placed under the duration block. Captures queue time before charging
+  started; shares `DurationField` with charging duration (same parser,
+  live preview, `:` button). Stored as `waitTimeMinutes: Int?` — parsed
+  seconds round to the nearest whole minute
+  (`DurationFormat.roundedMinutes`), and the preview/focus swaps show
+  the rounded value so dropped seconds are visible at entry time. The
+  digits-only parser keeps negatives out of the DB.
 - **Tags field**: a "Tags" section above Notes. Existing tags render
   as `InputChip`s with an X to remove; an "Add tag…" `OutlinedTextField`
   commits on Enter or on typing a comma — the comma path lets the

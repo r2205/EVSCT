@@ -130,8 +130,9 @@ data class SessionEditUi(
     val isNew: Boolean = true,
     val sessionStart: Long = System.currentTimeMillis(),
     val durationText: String = "",
-    /** Optional integer-minutes-as-string for the wait-before-charging field.
-     *  Empty when unset; never affects kWh/cost computations. */
+    /** Optional wait-before-charging entry, same free-text duration formats
+     *  as [durationText]; rounds to whole minutes on save. Empty when unset;
+     *  never affects kWh/cost computations. */
     val waitTimeText: String = "",
     val odometerText: String = "",
     val energyText: String = "",
@@ -497,7 +498,7 @@ class SessionEditViewModel @Inject constructor(
                 isNew = false,
                 sessionStart = s.sessionStart,
                 durationText = durationText,
-                waitTimeText = s.waitTimeMinutes?.toString().orEmpty(),
+                waitTimeText = s.waitTimeMinutes?.let { DurationFormat.pretty(it * 60L) }.orEmpty(),
                 isTracking = tracking,
                 odometerText = odoText,
                 useMiles = units.useMiles,
@@ -573,10 +574,10 @@ class SessionEditViewModel @Inject constructor(
     fun isDirty(current: SessionEditUi): Boolean =
         dirtyBaseline?.let { formOnly(current) != formOnly(it) } ?: false
 
-    /** Whole-number fields (battery %, wait minutes) offer a Decimal
-     *  keyboard, so fractional input like "82.5" — or "82,5" on a
-     *  comma-decimal device — must round rather than silently save as
-     *  null the way a bare toIntOrNull did. */
+    /** Battery % fields offer a Decimal keyboard, so fractional input
+     *  like "82.5" — or "82,5" on a comma-decimal device — must round
+     *  rather than silently save as null the way a bare toIntOrNull
+     *  did. */
     private fun parseWholeNumber(text: String): Int? =
         Format.parseDecimal(text)?.roundToInt()
 
@@ -870,7 +871,8 @@ class SessionEditViewModel @Inject constructor(
                 id = committedSessionId ?: if (s.isNew) 0 else sessionId,
                 sessionStart = s.sessionStart,
                 durationSeconds = durationSeconds,
-                waitTimeMinutes = parseWholeNumber(s.waitTimeText)?.takeIf { it >= 0 },
+                waitTimeMinutes = DurationFormat.parse(s.waitTimeText)
+                    ?.let(DurationFormat::roundedMinutes),
                 odometerKm = odometerKm,
                 energyKwh = Format.parseDecimal(s.energyText),
                 totalCost = Format.parseDecimal(s.costText),

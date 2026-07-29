@@ -71,9 +71,11 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   it — nothing expires or deletes automatically.
 - Odometer, energy delivered (kWh), total cost, charging duration, battery
   start/end %.
-- Optional **wait time** — minutes you spent queueing before the cable
-  plugged in. Doesn't affect kWh / cost; just lets the row show "1h 23m
-  +10m wait" so total stop time stays distinct from charge time.
+- Optional **wait time** — how long you queued before the cable plugged
+  in, entered the same way as charging duration (stored in whole minutes,
+  seconds round to the nearest). Doesn't affect kWh / cost; just lets the
+  row show "1h 23m +10m wait" so total stop time stays distinct from
+  charge time.
 - Per-session **currency chip** (CAD / USD) — defaults to your preferred
   currency, but a US road-trip session can be tagged USD even when your
   default is CAD.

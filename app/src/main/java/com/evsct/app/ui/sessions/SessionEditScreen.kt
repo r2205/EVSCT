@@ -356,6 +356,7 @@ fun SessionEditScreen(
             )
             DurationField(
                 value = state.durationText,
+                label = stringResource(R.string.form_charging_duration),
                 isError = HintField.DURATION in warnedFields,
                 onValue = { v -> viewModel.update { it.copy(durationText = v) } },
             )
@@ -414,9 +415,12 @@ fun SessionEditScreen(
                 demandsAttention = HintField.BATTERY_START in warnedFields ||
                     HintField.BATTERY_END in warnedFields,
             ) {
-                NumberField(
-                    label = stringResource(R.string.form_wait_time_min_optional),
+                DurationField(
                     value = state.waitTimeText,
+                    label = stringResource(R.string.form_wait_time_optional),
+                    // Storage is whole minutes — snap the preview and the
+                    // focus-swap text to what will actually be saved.
+                    normalize = { DurationFormat.roundedMinutes(it) * 60L },
                     onValue = { v -> viewModel.update { it.copy(waitTimeText = v) } },
                 )
                 Row(
@@ -1530,10 +1534,18 @@ private fun PickLocationCard(
     }
 }
 
+/**
+ * Duration entry shared by charging duration and wait time. [normalize]
+ * maps parsed seconds to what save() will actually store (wait time
+ * rounds to whole minutes), so the preview and the focus-driven
+ * pretty/editable swaps never show precision that would be dropped.
+ */
 @Composable
 private fun DurationField(
     value: String,
+    label: String,
     isError: Boolean = false,
+    normalize: (Long) -> Long = { it },
     onValue: (String) -> Unit,
 ) {
     var hasFocus by remember { mutableStateOf(false) }
@@ -1557,6 +1569,7 @@ private fun DurationField(
     // doesn't jump on every keystroke.
     val preview = if (hasFocus) {
         DurationFormat.parse(fieldValue.text)
+            ?.let(normalize)
             ?.takeIf { it > 0 }
             ?.let { stringResource(R.string.form_duration_preview, DurationFormat.pretty(it)) }
             ?: ""
@@ -1569,7 +1582,7 @@ private fun DurationField(
             fieldValue = fv
             if (fv.text != value) onValue(fv.text)
         },
-        label = { Text(stringResource(R.string.form_charging_duration)) },
+        label = { Text(label) },
         placeholder = { Text(stringResource(R.string.form_e_g_duration)) },
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Phone,
@@ -1614,11 +1627,11 @@ private fun DurationField(
                 val nowFocused = focusState.isFocused
                 if (hasFocus && !nowFocused) {
                     DurationFormat.parse(fieldValue.text)?.let {
-                        onValue(DurationFormat.pretty(it))
+                        onValue(DurationFormat.pretty(normalize(it)))
                     }
                 } else if (!hasFocus && nowFocused) {
                     DurationFormat.parse(fieldValue.text)?.let {
-                        onValue(DurationFormat.editable(it))
+                        onValue(DurationFormat.editable(normalize(it)))
                     }
                 }
                 hasFocus = nowFocused
