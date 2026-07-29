@@ -1550,6 +1550,19 @@ private fun DurationField(
     }
 
     val focusManager = LocalFocusManager.current
+    // Live readout of how the current text will be read ("= 32h 14m 0s" for
+    // "32:14"), shown only while editing — the resting field already
+    // displays the pretty form. The supporting slot stays reserved (blank
+    // when there's nothing to preview) for the whole focus span so the form
+    // doesn't jump on every keystroke.
+    val preview = if (hasFocus) {
+        DurationFormat.parse(fieldValue.text)
+            ?.takeIf { it > 0 }
+            ?.let { stringResource(R.string.form_duration_preview, DurationFormat.pretty(it)) }
+            ?: ""
+    } else {
+        null
+    }
     OutlinedTextField(
         value = fieldValue,
         onValueChange = { fv ->
@@ -1567,6 +1580,11 @@ private fun DurationField(
         ),
         singleLine = true,
         isError = isError,
+        supportingText = if (preview != null) {
+            { Text(preview) }
+        } else {
+            null
+        },
         trailingIcon = {
             // The phone keypad has no `:`, so insert one at the cursor position
             // when the user taps this button. Visible only while the field is
