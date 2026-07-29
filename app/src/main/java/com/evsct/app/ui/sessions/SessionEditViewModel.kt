@@ -872,7 +872,11 @@ class SessionEditViewModel @Inject constructor(
                 sessionStart = s.sessionStart,
                 durationSeconds = durationSeconds,
                 waitTimeMinutes = DurationFormat.parse(s.waitTimeText)
-                    ?.let(DurationFormat::roundedMinutes),
+                    ?.let(DurationFormat::roundedMinutes)
+                    // The parser is digits-only, but absurdly long digit runs
+                    // can wrap Long arithmetic negative — keep negatives out
+                    // of the DB regardless.
+                    ?.takeIf { it >= 0 },
                 odometerKm = odometerKm,
                 energyKwh = Format.parseDecimal(s.energyText),
                 totalCost = Format.parseDecimal(s.costText),
