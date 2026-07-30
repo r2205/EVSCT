@@ -16,7 +16,9 @@ hiltNavCompose = "1.2.0"
 coreKtx = "1.15.0"
 lifecycle = "2.8.7"
 activityCompose = "1.9.3"
-composeBom = "2024.12.01"
+# Compose 1.11.4 / Material3 1.4.0. Stays below Compose 1.12, which is the
+# release that starts requiring compileSdk 37.
+composeBom = "2026.06.01"
 navigationCompose = "2.8.5"
 room = "2.8.4"
 coroutines = "1.9.0"
@@ -42,6 +44,11 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# Still resolved by the BOM, but frozen: androidx stopped publishing the icons
+# libraries after 1.7.8 in favour of Material Symbols vector drawables, and
+# Material3 1.4.0 dropped its transitive dependency on material-icons-core.
+# Declaring -extended explicitly is what still pulls core in. The icons keep
+# working; they just don't gain new ones as the BOM moves.
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 
