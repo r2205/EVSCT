@@ -465,7 +465,9 @@ PDFs) all come across.
 - Apache POI for the legacy XLSX importer (one-shot only)
 - DataStore Preferences for cross-screen settings (units, currency,
   backup reminder, map prefs, last-backup timestamp)
-- AGP 9.3.0, Gradle 9.6.1, minSdk 30, targetSdk 36
+- AGP 9.3.0, Gradle 9.6.1, minSdk 30, targetSdk 36. Build on JDK 21 — the
+  Robolectric tests simulate SDK 36 and need a 21 runtime, though the app
+  itself is still compiled to Java 17 bytecode.
 
 ## License
 
