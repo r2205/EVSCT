@@ -465,7 +465,7 @@ PDFs) all come across.
 - Apache POI for the legacy XLSX importer (one-shot only)
 - DataStore Preferences for cross-screen settings (units, currency,
   backup reminder, map prefs, last-backup timestamp)
-- AGP 9.2.1, Gradle 9.4.1, minSdk 30, targetSdk 35
+- AGP 9.3.0, Gradle 9.6.1, minSdk 30, targetSdk 36
 
 ## License
 

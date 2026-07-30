@@ -73,12 +73,21 @@ val resolvedVersionCode: Int =
 
 android {
     namespace = "com.evsct.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.evsct.app"
         minSdk = 30
-        targetSdk = 35
+        // Android 16. Play requires API 36 for app updates from 2026-08-31.
+        // The API 36 behaviour changes that bite are all already handled:
+        // enableEdgeToEdge() is called and nothing sets
+        // windowOptOutEdgeToEdgeEnforcement (which 36 disables); back
+        // navigation goes through Compose BackHandler with
+        // enableOnBackInvokedCallback=true, so predictive back becoming the
+        // default costs us nothing; and the manifest pins no orientation,
+        // resizability or aspect ratio, which 36 stops honouring on displays
+        // >= 600dp anyway.
+        targetSdk = 36
         versionCode = resolvedVersionCode
         versionName = "0.1.0"
 
