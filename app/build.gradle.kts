@@ -4,7 +4,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
@@ -174,8 +173,10 @@ android {
     }
 }
 
-// AGP-9's BaseAppModuleExtension.kotlinOptions is deprecated; configure
-// Kotlin via the Kotlin plugin's own compilerOptions DSL instead. The
+// kotlin.compilerOptions is the supported way to configure the compiler under
+// AGP 9's built-in Kotlin (android.kotlinOptions is gone). jvmTarget would
+// default to compileOptions.targetCompatibility, but it is set explicitly so the
+// Java and Kotlin targets stay pinned together. The
 // -Xannotation-default-target flag opts the project into Kotlin 2.x's
 // upcoming behaviour where constructor-parameter annotations also land on
 // the backing property, so Hilt @Inject sites don't each need @param:
@@ -234,7 +235,7 @@ dependencies {
     implementation(libs.maps.compose.utils)
 
     testImplementation(libs.junit)
-    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlin.test)
 
     // JVM-side Compose UI tests (see testOptions above). ui-test-manifest is
     // debugImplementation because testDebugUnitTest runs against the debug

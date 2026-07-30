@@ -1,8 +1,16 @@
 [versions]
 agp = "9.3.0"
-kotlin = "2.2.10"
-ksp = "2.3.2"
-hilt = "2.59.2"
+# Drives the Compose compiler plugin, which pulls kotlin-gradle-plugin of the
+# same version onto the buildscript classpath. That is the compiler AGP's
+# built-in Kotlin then uses, so this one ref keeps the Compose compiler and the
+# Kotlin compiler in lockstep — they have to match exactly.
+kotlin = "2.3.21"
+# 2.3.3 moved off the deprecated KGP compilerOptions API and 2.3.10 fixed
+# R-class resolution under AGP 9 built-in Kotlin; both are required here.
+ksp = "2.3.10"
+# 2.59 added AGP 9 support to the Hilt Gradle plugin; 2.60 rebuilt Hilt on
+# Kotlin 2.3.21, matching the compiler that now processes its generated code.
+hilt = "2.60.1"
 androidxHilt = "1.2.0"
 hiltNavCompose = "1.2.0"
 coreKtx = "1.15.0"
@@ -62,6 +70,10 @@ maps-compose = { group = "com.google.maps.android", name = "maps-compose", versi
 maps-compose-utils = { group = "com.google.maps.android", name = "maps-compose-utils", version.ref = "mapsCompose" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+# Spelled out rather than via the kotlin("test") DSL helper: that helper produces
+# a versionless "org.jetbrains.kotlin:kotlin-test", relying on the kotlin-android
+# plugin to constrain it, and nothing applies that plugin any more.
+kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
 
 # JVM-side Compose UI tests: ui-test-junit4 drives composables, Robolectric
 # stands in for the device, ui-test-manifest registers the host activity.
@@ -73,7 +85,8 @@ androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# No kotlin-android entry: AGP 9's built-in Kotlin compiles our sources, and
+# Kotlin 2.3 makes applying org.jetbrains.kotlin.android alongside AGP 9 an error.
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

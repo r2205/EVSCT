@@ -17,9 +17,9 @@ context is in the repo even if the conversation is summarized later.
 
 ## Stack
 
-- Kotlin 2.2.10, Jetpack Compose, Material 3, Navigation Compose
+- Kotlin 2.3.21, Jetpack Compose, Material 3, Navigation Compose
 - Room 2.8.4 (SQLite) with hand-rolled migrations
-- Hilt 2.59.2 for DI; AndroidX Hilt 1.2.0 (`hilt-work`,
+- Hilt 2.60.1 for DI; AndroidX Hilt 1.2.0 (`hilt-work`,
   `hilt-navigation-compose`)
 - WorkManager 2.10.0 for the background backup-reminder check
 - Coil 2.7 for image loading
@@ -29,7 +29,8 @@ context is in the repo even if the conversation is summarized later.
   (for clustering, BitmapDescriptor pins, and `HeatmapTileProvider`)
 - `android.graphics.pdf.PdfDocument` for the year-recap PDF export
   (no third-party PDF library)
-- minSdk 30, targetSdk 35, AGP 9.2.1, Gradle 9.4.1, KSP 2.3.2
+- minSdk 30, targetSdk 35, AGP 9.3.0, Gradle 9.6.1, KSP 2.3.10
+  (Kotlin is compiled by AGP's built-in Kotlin — no `kotlin-android` plugin)
   (upgraded mid-project from AGP 8.13.2 / Gradle 8.13 / Kotlin 2.1)
 
 ## Data model
