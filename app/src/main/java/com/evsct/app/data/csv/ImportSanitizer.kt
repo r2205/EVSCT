@@ -17,7 +17,7 @@ object ImportSanitizer {
 
     fun sanitize(session: ChargingSession): ChargingSession = session.copy(
         durationSeconds = session.durationSeconds?.takeIf { it >= 0 },
-        waitTimeMinutes = session.waitTimeMinutes?.takeIf { it >= 0 },
+        waitTimeSeconds = session.waitTimeSeconds?.takeIf { it >= 0 },
         odometerKm = session.odometerKm?.takeIf { it.isFinite() && it >= 0 },
         energyKwh = session.energyKwh?.takeIf { it.isFinite() && it >= 0 },
         totalCost = session.totalCost?.takeIf { it.isFinite() },

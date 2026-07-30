@@ -101,11 +101,13 @@ in review.
 - **Order**: Vehicle chips at top (under date/time), then Odometer,
   Energy, Cost, Currency chips, Duration, Battery start/end. Posted
   rates section below.
-- **Smart duration entry**: `25` → `0h 25m 0s`; `1:25` → `1h 25m 0s`
-  (h:m, not m:s — more natural for charging); `0:11:00` exact. Phone-pad
-  keyboard with an inline `:` button that inserts at cursor (uses
-  `TextFieldValue` for proper caret control). Format swaps between
-  pretty and editable on focus change.
+- **Smart duration entry**: `25` → `0h 25m 0s`; `32:14` → `0h 32m 14s`
+  (two-part is m:s, the stopwatch reading — sub-hour charges dominate);
+  `1:25:00` exact. While focused, supporting text previews the
+  interpretation live (`= 0h 32m 14s`). Phone-pad keyboard with an
+  inline `:` button that inserts at cursor (uses `TextFieldValue` for
+  proper caret control). Format swaps between pretty and editable on
+  focus change.
 - **Brand picker**: tap-to-open bottom sheet with curated NA networks
   + history-sorted brands; search filters both; "Use \"...\"" custom
   entry option appears for unrecognized typed text. DAO query groups by
@@ -149,11 +151,13 @@ in review.
   drive after this session" that the driving-efficiency calculator
   uses to pair adjacent sessions. Prevents counting "we sat at the
   charger overnight" gaps as a leg.
-- **Wait time field**: optional "Wait time (min, optional)" integer
-  field placed under the duration block. Captures queue time before
-  charging started; stored as `waitTimeMinutes: Int?` and parsed
-  through `toIntOrNull()?.takeIf { it >= 0 }` so negatives never land
-  in the DB.
+- **Wait time field**: optional "Wait time (optional)" duration field
+  placed under the duration block. Captures queue time before charging
+  started; shares `DurationField` with charging duration (same parser,
+  live preview, `:` button) and stores exact seconds as
+  `waitTimeSeconds: Long?` (migration 12→13 rebuilt the table from the
+  old whole-minutes column, values × 60 — lossless). The digits-only
+  parser plus a `>= 0` save guard keep negatives out of the DB.
 - **Tags field**: a "Tags" section above Notes. Existing tags render
   as `InputChip`s with an X to remove; an "Add tag…" `OutlinedTextField`
   commits on Enter or on typing a comma — the comma path lets the
@@ -759,9 +763,9 @@ of years where they have data) and recomputes the recap on each pick.
 - **CSV export/import** (kept for spreadsheet analysis use case):
   flat session table with columns including `trip_name`,
   `vehicle_name`, `latitude`, `longitude`, `continues_previous`,
-  `wait_minutes`, and `tags` (the last two added in the third-pass
-  sweep — they were silently dropped before; older exports without
-  them still import unchanged). Round-trips via `CsvIo`. Trips and
+  `wait_seconds`, and `tags` (older exports carried `wait_minutes`;
+  import accepts both, converting minutes × 60; exports without either
+  still import unchanged). Round-trips via `CsvIo`. Trips and
   vehicles are recreated by name on import. The multi-line parser
   (`Csv.parseAll`) tracks quoted state with lookahead escaped-quote
   handling — the earlier trailing-quote parity heuristic merged rows

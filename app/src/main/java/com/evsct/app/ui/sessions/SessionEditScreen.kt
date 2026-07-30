@@ -356,6 +356,7 @@ fun SessionEditScreen(
             )
             DurationField(
                 value = state.durationText,
+                label = stringResource(R.string.form_charging_duration),
                 isError = HintField.DURATION in warnedFields,
                 onValue = { v -> viewModel.update { it.copy(durationText = v) } },
             )
@@ -414,9 +415,9 @@ fun SessionEditScreen(
                 demandsAttention = HintField.BATTERY_START in warnedFields ||
                     HintField.BATTERY_END in warnedFields,
             ) {
-                NumberField(
-                    label = stringResource(R.string.form_wait_time_min_optional),
+                DurationField(
                     value = state.waitTimeText,
+                    label = stringResource(R.string.form_wait_time_optional),
                     onValue = { v -> viewModel.update { it.copy(waitTimeText = v) } },
                 )
                 Row(
@@ -1530,9 +1531,15 @@ private fun PickLocationCard(
     }
 }
 
+/**
+ * Duration entry shared by charging duration and wait time: free text
+ * with a live preview of how the entry is read, swapping between the
+ * pretty and editable forms on focus change.
+ */
 @Composable
 private fun DurationField(
     value: String,
+    label: String,
     isError: Boolean = false,
     onValue: (String) -> Unit,
 ) {
@@ -1550,14 +1557,27 @@ private fun DurationField(
     }
 
     val focusManager = LocalFocusManager.current
+    // Live readout of how the current text will be read ("= 0h 32m 14s" for
+    // "32:14"), shown only while editing — the resting field already
+    // displays the pretty form. The supporting slot stays reserved (blank
+    // when there's nothing to preview) for the whole focus span so the form
+    // doesn't jump on every keystroke.
+    val preview = if (hasFocus) {
+        DurationFormat.parse(fieldValue.text)
+            ?.takeIf { it > 0 }
+            ?.let { stringResource(R.string.form_duration_preview, DurationFormat.pretty(it)) }
+            ?: ""
+    } else {
+        null
+    }
     OutlinedTextField(
         value = fieldValue,
         onValueChange = { fv ->
             fieldValue = fv
             if (fv.text != value) onValue(fv.text)
         },
-        label = { Text(stringResource(R.string.form_charging_duration)) },
-        placeholder = { Text(stringResource(R.string.form_e_g_25_1)) },
+        label = { Text(label) },
+        placeholder = { Text(stringResource(R.string.form_e_g_duration)) },
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Phone,
             imeAction = ImeAction.Next,
@@ -1567,6 +1587,11 @@ private fun DurationField(
         ),
         singleLine = true,
         isError = isError,
+        supportingText = if (preview != null) {
+            { Text(preview) }
+        } else {
+            null
+        },
         trailingIcon = {
             // The phone keypad has no `:`, so insert one at the cursor position
             // when the user taps this button. Visible only while the field is

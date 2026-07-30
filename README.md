@@ -71,9 +71,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   it — nothing expires or deletes automatically.
 - Odometer, energy delivered (kWh), total cost, charging duration, battery
   start/end %.
-- Optional **wait time** — minutes you spent queueing before the cable
-  plugged in. Doesn't affect kWh / cost; just lets the row show "1h 23m
-  +10m wait" so total stop time stays distinct from charge time.
+- Optional **wait time** — how long you queued before the cable plugged
+  in, entered the same way as charging duration and kept to the second.
+  Doesn't affect kWh / cost; just lets the row show "1h 23m +10m 00s
+  wait" so total stop time stays distinct from charge time.
 - Per-session **currency chip** (CAD / USD) — defaults to your preferred
   currency, but a US road-trip session can be tagged USD even when your
   default is CAD.
@@ -105,9 +106,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   also stores the coordinates so the session shows up on the map.
 - **Province / state normalization** — typing `Saskatchewan` or `Quebec`
   lands as `SK` / `QC`; covers all CA provinces and US states.
-- **Smart duration entry** — `25` becomes `0h 25m 0s`, `1:25` becomes
-  `1h 25m 0s`, `0:11:00` stays exact. Phone-pad keyboard with an inline `:`
-  insert button.
+- **Smart duration entry** — `25` becomes `0h 25m 0s`, `32:14` becomes
+  `0h 32m 14s`, `1:25:00` stays exact, and a live `= …` preview under the
+  field shows how the entry is read while you type. Phone-pad keyboard
+  with an inline `:` insert button.
 - **Data-validation hints** — gentle amber card at the top of the form when
   something looks off (odometer went backward, effective price wildly
   differs from posted, battery decreased during charge, etc.). Affected

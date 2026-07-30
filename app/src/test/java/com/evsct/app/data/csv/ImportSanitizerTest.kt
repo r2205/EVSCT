@@ -33,13 +33,13 @@ class ImportSanitizerTest {
         val s = ImportSanitizer.sanitize(
             base.copy(
                 durationSeconds = -100,
-                waitTimeMinutes = -5,
+                waitTimeSeconds = -5,
                 odometerKm = -1.0,
                 energyKwh = -20.0,
             ),
         )
         assertNull(s.durationSeconds)
-        assertNull(s.waitTimeMinutes)
+        assertNull(s.waitTimeSeconds)
         assertNull(s.odometerKm)
         assertNull(s.energyKwh)
     }
@@ -95,7 +95,7 @@ class ImportSanitizerTest {
     fun `an ordinary valid session passes through unchanged`() {
         val full = base.copy(
             durationSeconds = 1800,
-            waitTimeMinutes = 10,
+            waitTimeSeconds = 600,
             odometerKm = 42_500.0,
             energyKwh = 48.2,
             totalCost = 21.50,

@@ -12,13 +12,29 @@ class DurationFormatTest {
     }
 
     @Test
-    fun `two-part colon is hours and minutes`() {
-        assertEquals(1 * 3600L + 25 * 60L, DurationFormat.parse("1:25"))
+    fun `two-part colon is minutes and seconds`() {
+        assertEquals(32 * 60L + 14, DurationFormat.parse("32:14"))
+        assertEquals(1 * 60L + 25, DurationFormat.parse("1:25"))
     }
 
     @Test
     fun `three-part colon is exact`() {
         assertEquals(11 * 60L, DurationFormat.parse("0:11:00"))
+        assertEquals(1 * 3600L + 25 * 60L, DurationFormat.parse("1:25:00"))
+    }
+
+    @Test
+    fun `editable drops the hours part under an hour`() {
+        assertEquals("32:14", DurationFormat.editable(32 * 60L + 14))
+        assertEquals("0:45", DurationFormat.editable(45))
+        assertEquals("1:25:00", DurationFormat.editable(1 * 3600L + 25 * 60L))
+    }
+
+    @Test
+    fun `editable output round-trips through parse`() {
+        for (sec in listOf(45L, 32 * 60L + 14, 3600L, 1 * 3600L + 25 * 60L + 30)) {
+            assertEquals(sec, DurationFormat.parse(DurationFormat.editable(sec)))
+        }
     }
 
     @Test

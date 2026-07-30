@@ -1028,9 +1028,9 @@ private fun SessionRow(
                 ) {
                     TypeBadge(session.chargingType)
                     Text(Format.kwh(session.energyKwh), style = MaterialTheme.typography.bodySmall)
-                    val waitNote = session.waitTimeMinutes
+                    val waitNote = session.waitTimeSeconds
                         ?.takeIf { it > 0 }
-                        ?.let { " +${it}m wait" }
+                        ?.let { " +${Format.duration(it)} wait" }
                         .orEmpty()
                     Text(
                         Format.duration(session.durationSeconds) + waitNote,
@@ -1284,9 +1284,7 @@ internal fun sessionRowDescription(
     parts += session.chargingType.spokenLabel()
     spokenKwh(session.energyKwh)?.let { parts += it }
     spokenDuration(session.durationSeconds)?.let { parts += it }
-    session.waitTimeMinutes?.takeIf { it > 0 }?.let {
-        parts += if (it == 1) "1 minute wait" else "$it minutes wait"
-    }
+    spokenDuration(session.waitTimeSeconds)?.let { parts += "$it wait" }
     spokenKw(Derived.effectiveAvgPowerKw(session))?.let { parts += "$it average" }
     // Both rates are passed in rather than derived here, so the sentence can't
     // announce a rate the card isn't showing. "effective" repeats on each, as
@@ -1855,7 +1853,7 @@ private fun previewSession(
     brand: String? = "Petro-Canada",
     locationCity: String? = "Kingston",
     durationSeconds: Long? = 1_800L,
-    waitTimeMinutes: Int? = null,
+    waitTimeSeconds: Long? = null,
     energyKwh: Double? = 42.5,
     totalCost: Double? = 24.50,
     chargingType: ChargingType = ChargingType.DC_FAST,
@@ -1864,7 +1862,7 @@ private fun previewSession(
     id = 1L,
     sessionStart = 1_752_000_000_000L,
     durationSeconds = durationSeconds,
-    waitTimeMinutes = waitTimeMinutes,
+    waitTimeSeconds = waitTimeSeconds,
     energyKwh = energyKwh,
     totalCost = totalCost,
     chargingType = chargingType,
@@ -1909,7 +1907,7 @@ private fun PreviewRowEverything() = PreviewRow(
     previewSession(
         brand = "Electrify Canada",
         locationCity = "Saint-Jean-sur-Richelieu",
-        waitTimeMinutes = 7,
+        waitTimeSeconds = 7 * 60L,
         tags = "roadtrip,reimbursed,winter",
     ),
     tripName = "Gaspé loop",
@@ -1922,7 +1920,7 @@ private fun PreviewRowEverything() = PreviewRow(
 @Preview(name = "Row — 2x font", showBackground = true, widthDp = 400, fontScale = 2f)
 @Composable
 private fun PreviewRowLargeFont() = PreviewRow(
-    previewSession(waitTimeMinutes = 7, tags = "roadtrip"),
+    previewSession(waitTimeSeconds = 7 * 60L, tags = "roadtrip"),
     tripName = "Gaspé loop",
     vehicleName = "Ioniq 5",
     hasReceipt = true,
