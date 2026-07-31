@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -43,6 +45,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.evsct.app.R
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.ui.LocalUserUnits
@@ -126,6 +129,19 @@ fun TripEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        // A dialog is its own window, so the activity's adjustResize does
+        // not reach it — left alone, the keyboard can cover the
+        // Save/Create row (or pan the dialog) exactly like it covered the
+        // forms' save buttons. decorFitsSystemWindows=false hands the
+        // keyboard inset to this window's Compose tree (the same
+        // edge-to-edge contract the activity uses), and the padding then
+        // holds the whole dialog — button row included — between the
+        // status bar and the keyboard, with the field column scrolling
+        // inside whatever height is left.
+        modifier = Modifier
+            .systemBarsPadding()
+            .imePadding(),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         title = { Text(if (trip == null) stringResource(R.string.tripedit_title_new) else stringResource(R.string.tripedit_title_edit)) },
         text = {
             Column(
