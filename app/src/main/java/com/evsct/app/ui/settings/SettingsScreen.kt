@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -210,6 +212,13 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
+                // Shrink the scroll viewport by the keyboard height so the
+                // backup-reminder threshold field scrolls clear of the IME
+                // when focused low on the screen. consumeWindowInsets first
+                // so imePadding only adds what the Scaffold padding didn't
+                // already cover.
+                .consumeWindowInsets(padding)
+                .imePadding()
                 .fillMaxHeight()
                 // Capped and centred in wide windows; identical to the old
                 // fillMaxSize on a portrait phone. See ui/AdaptiveLayout.kt.
