@@ -3,6 +3,7 @@ package com.evsct.app.data.backup
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
+import com.evsct.app.BuildConfig
 import com.evsct.app.data.db.EvsctDatabase
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.entity.ChargingSession
@@ -12,6 +13,7 @@ import com.evsct.app.data.entity.SessionReceipt
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.util.BackupReminderScheduler
+import com.evsct.app.util.ExportNaming
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -151,16 +153,16 @@ class BackupIo @Inject constructor(
      * picked — cancelling no longer silences the reminder for another
      * full threshold period.
      */
-    suspend fun prepareShareFile(filenamePrefix: String = "evsct-backup"): PrepareShareResult =
+    suspend fun prepareShareFile(
+        filenamePrefix: String = ExportNaming.BACKUP_PREFIX,
+    ): PrepareShareResult =
         withContext(Dispatchers.IO) {
             try {
                 val shareDir = File(context.cacheDir, SHARE_DIR_IN_CACHE).apply {
                     mkdirs()
                     listFiles()?.forEach { it.delete() }
                 }
-                val ts = java.text.SimpleDateFormat("yyyy-MM-dd-HHmm", java.util.Locale.US)
-                    .format(java.util.Date())
-                val target = File(shareDir, "$filenamePrefix-$ts.zip")
+                val target = File(shareDir, ExportNaming.fileName(filenamePrefix, "zip"))
                 val counts = target.outputStream().use { writeBackupZip(it) }
                 PrepareShareResult.Success(
                     PreparedShareBackup(
@@ -547,6 +549,7 @@ class BackupIo @Inject constructor(
     ): JSONObject = JSONObject().apply {
         put("schemaVersion", SCHEMA_VERSION)
         put("exportedAt", System.currentTimeMillis())
+        putBuildProvenance()
         put("settings", JSONObject())  // reserved for future preferences
 
         put("vehicles", JSONArray().also { arr -> vehicles.forEach { arr.put(it.toJson()) } })
@@ -902,6 +905,35 @@ private data class RawSession(
     val createdAt: Long,
     val updatedAt: Long,
 )
+
+/**
+ * Stamp the build that wrote this backup onto its JSON root.
+ *
+ * `schemaVersion` has deliberately stayed 5 across many releases (see the
+ * legacy `receiptFile` key, the `waitTimeMinutes` → `waitTimeSeconds`
+ * migration, and the three historical receipt shapes [parsePayload] still
+ * accepts), so it says nothing about *which* build produced a given file —
+ * which is the first thing worth knowing when a restore misbehaves. The
+ * filename carries the same tokens, but only as a hint: users rename files,
+ * share targets rewrite them, and Android de-dupes collisions. These keys
+ * ride inside the zip and survive all of it.
+ *
+ * Additive and unread on the way back in: [parsePayload] ignores keys it
+ * doesn't know and so do older builds, which is exactly why the schema
+ * version stays 5 here — the same call already made for the trip battery
+ * anchors. Values are recorded verbatim, including a GIT_SHA of "unknown"
+ * (a build made outside a git checkout), because an explicit "unknown" is
+ * distinguishable from a pre-provenance backup that omits the key entirely.
+ */
+internal fun JSONObject.putBuildProvenance(
+    versionName: String = BuildConfig.VERSION_NAME,
+    versionCode: Int = BuildConfig.VERSION_CODE,
+    gitSha: String = BuildConfig.GIT_SHA,
+): JSONObject = apply {
+    put("appVersionName", versionName)
+    put("appVersionCode", versionCode)
+    put("gitSha", gitSha)
+}
 
 private fun JSONObject.putOptString(key: String, value: String?) {
     if (value == null) put(key, JSONObject.NULL) else put(key, value)

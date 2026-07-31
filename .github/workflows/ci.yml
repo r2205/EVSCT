@@ -21,8 +21,17 @@ jobs:
     name: Build & test
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 for the full history, because app/build.gradle.kts
+      # derives versionCode from `git rev-list --count HEAD`. The action's
+      # default shallow clone (depth 1) makes that count 1, so every CI build
+      # reports versionCode 1 — which now also shows up in the export
+      # filenames ExportNaming builds from it (b1-<sha> instead of
+      # b<count>-<sha>). The commit sha still identifies the build either way;
+      # this just stops CI artifacts from disagreeing with local ones.
       - name: Check out the code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # JDK 21 rather than 17 because Robolectric needs a 21 runtime to simulate
       # SDK 36, which is what app/src/test/resources/robolectric.properties asks

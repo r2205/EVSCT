@@ -460,8 +460,15 @@ the sheet to CSV from Google Sheets and use **Import CSV…** instead.
 
 1. On the old phone, **Settings → Full backup**. Either:
    - **Save backup file…** to a folder on the device, or
-   - **Share backup file…** to send the same `evsct-backup-<timestamp>.zip`
-     straight to Drive, email, Messages, or any other share target.
+   - **Share backup file…** to send the same
+     `evsct-backup-<timestamp>-<build>.zip` straight to Drive, email,
+     Messages, or any other share target.
+
+   The `<build>` tag is the app version that wrote the file (`b<versionCode>`
+   plus the short commit sha, e.g. `b247-a1b2c3d`) — handy when you are
+   holding several backups and want to know which build produced which. The
+   same details are recorded inside `backup.json`, so they survive renaming
+   the file. CSV exports carry the same tag.
 2. On the new phone: install the app, open it once so the database is
    initialized, then **Settings → Full backup → Restore from backup…** and
    pick the zip. Confirm the destructive restore.
