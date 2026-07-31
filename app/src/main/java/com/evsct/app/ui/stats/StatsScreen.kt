@@ -147,13 +147,20 @@ fun StatsScreen(
                 )
             }
 
+            if (state.hasAnySessions) {
+                ChartWindowSelector(
+                    selected = state.chartWindow,
+                    onSelect = viewModel::setChartWindow,
+                )
+            }
+
             HeadlineCard(state)
 
             if (state.thisMonthHasDriving) {
                 GasSavingsCard(state)
             }
 
-            if (state.sessionCount == 0) {
+            if (!state.hasAnySessions) {
                 com.evsct.app.ui.EmptyState(
                     icon = Icons.Default.QueryStats,
                     title = stringResource(R.string.stats_no_sessions_yet),
@@ -163,14 +170,23 @@ fun StatsScreen(
                 return@Column
             }
 
-            ChartWindowSelector(
-                selected = state.chartWindow,
-                onSelect = viewModel::setChartWindow,
-            )
+            if (state.sessionCount == 0) {
+                // The scope has data, just none inside the 12-month window
+                // (the only window that can be empty while data exists).
+                // The zeroed headline above is honest; the chart cards
+                // below would all be empty shells.
+                com.evsct.app.ui.EmptyState(
+                    icon = Icons.Default.QueryStats,
+                    title = stringResource(R.string.stats_no_sessions_in_window),
+                    body = stringResource(R.string.stats_switch_to_all_time),
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                )
+                return@Column
+            }
 
             val bucketNoun = when (state.chartWindow) {
                 StatsChartWindow.LAST_12_MONTHS -> stringResource(R.string.stats_bucket_month)
-                StatsChartWindow.ALL_YEARS -> stringResource(R.string.stats_bucket_year)
+                StatsChartWindow.ALL_TIME -> stringResource(R.string.stats_bucket_year)
             }
             ChartCard(stringResource(R.string.stats_cost_by, bucketNoun)) {
                 BarList(
@@ -285,8 +301,10 @@ private fun HeadlineCard(state: StatsUi) {
     }
 }
 
-/** Two-way window toggle for the cost/energy trend charts directly below
- *  it — also serves as the honest label for what those charts cover. */
+/** Page-level window toggle: sits under the vehicle tabs and scopes the
+ *  headline numbers and every chart below it. The this-month "vs gas"
+ *  card is the one deliberate exception — its own title pins it to the
+ *  current calendar month. */
 @Composable
 private fun ChartWindowSelector(
     selected: StatsChartWindow,

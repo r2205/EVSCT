@@ -250,14 +250,18 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   explaining how to tag sessions to it.
 
 ### Stats
+- A **Last 12 months / All time** segmented selector at the top of the
+  page scopes every stat on it — headline numbers, trend charts, top
+  brands, type split, and heatmaps. (The "vs gas this month" card is the
+  one exception: it's pinned to the current calendar month.)
 - Headline card: sessions, total cost (one line per currency you've paid
   in), total energy, average effective $/kWh, average power.
 - **vs gas this month** card — compares this month's charging cost to
   what an equivalent distance of driving would have cost in gas. Shows a
   big "Saved $X" headline with the underlying numbers below.
-- Cost and energy trend charts with a **Last 12 months / All years**
-  segmented selector above them; the charts and their titles ("Cost by
-  month" vs "Cost by year") follow the window you choose.
+- Cost and energy trend charts; the charts and their titles ("Cost by
+  month" vs "Cost by year") follow the window you choose — monthly
+  buckets for the 12-month window, yearly buckets for all time.
 - Top brands by total spend — **tap a brand row to jump to the Charging
   log, pre-filtered to that brand.**
 - Charging-type split (DC Fast / AC L2 / AC L1) with percentages.

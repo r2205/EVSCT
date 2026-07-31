@@ -586,8 +586,23 @@ vehicle on the same trip.
 
 ### Stats screen (`StatsScreen`)
 
+- **Page-level "Last 12 months / All time" window** — the segmented
+  selector (`ChartWindowSelector`, backed by `StatsChartWindow`) sits
+  directly under the vehicle tabs and scopes *every* stat on the page:
+  headline numbers, trend charts, top brands, type split, and both
+  heatmaps. Originally it governed only the two trend charts, but its
+  position implied page scope — cards below it silently ignored it — so
+  its actual scope was widened to match. The "vs gas this month" card is
+  the one deliberate exception (pinned to the current calendar month; its
+  title says so). The 12-month filter cuts at the first day of the month
+  11 months back — exactly the oldest bucket the monthly charts render —
+  so the filter and charts always agree. Empty-state gating stays on the
+  *unwindowed* vehicle-scoped count (`hasAnySessions`), so a scope whose
+  data is all older than 12 months shows zeroed stats plus a "No sessions
+  in the last 12 months / Switch to All time" notice, not "No sessions
+  yet"; the selector itself hides when the scope has no data at all.
 - Headline card: sessions, total cost, total energy, avg eff. $/kWh,
-  avg power.
+  avg power — all within the selected window.
 - **"vs gas this month" card** — slotted right under the headline.
   Big "Saved $X" line with sub-text "$cost charging vs ~$gas on gas"
   and an "Assumes $2.15/L · 12 L/100 km" caption. Distance preference:
@@ -597,12 +612,10 @@ vehicle on the same trip.
   Constants are hardcoded for now (BC pump-price defaults), earmarked
   for a Settings page later. Card hides entirely when there's no
   driving data this month.
-- Cost and Energy trend — a segmented **"Last 12 months / All years"**
-  window selector (`ChartWindowSelector`, backed by `StatsChartWindow`)
-  sits above the two horizontal bar charts and drives both what they
-  cover and their titles: "Cost by month" / "Energy by month" for the
-  rolling 12-month window, "Cost by year" / "Energy by year" for the
-  all-years window (year buckets zero-filled from the first data year,
+- Cost and Energy trend — two horizontal bar charts whose bucketing and
+  titles follow the page window: "Cost by month" / "Energy by month" for
+  the rolling 12-month window, "Cost by year" / "Energy by year" for the
+  all-time window (year buckets zero-filled from the first data year,
   capped at 20). Bars are normalized to the largest bucket and animate
   into place, re-flowing when you flip months ↔ years. Cost uses the
   default-currency series; energy spans every currency.

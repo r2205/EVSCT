@@ -270,6 +270,7 @@
     <string name="stats_gas_assumptions">Assumes $2.15/L · 12 L/100 km</string>
     <string name="stats_less">Less</string>
     <string name="stats_more">More</string>
+    <string name="stats_no_sessions_in_window">No sessions in the last 12 months</string>
     <string name="stats_no_sessions_yet">No sessions yet</string>
     <string name="stats_paid_more">Paid %1$s more than gas</string>
     <string name="stats_peak">Peak: %1$s</string>
@@ -277,6 +278,7 @@
     <string name="stats_rows_are_days_columns">Rows are days, columns are hours — tap a square for its count</string>
     <string name="stats_saved">Saved %1$s</string>
     <string name="stats_stats_appear_here_once">Stats appear here once you\'ve logged at least one charging session.</string>
+    <string name="stats_switch_to_all_time">Switch to All time to see your full history.</string>
     <string name="stats_tap_a_brand_to">Tap a brand to see its sessions in the Log</string>
     <string name="stats_top_brands">Top brands by spend</string>
     <string name="stats_vs_gas_this_month">vs gas this month</string>
