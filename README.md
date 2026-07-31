@@ -6,7 +6,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![minSdk](https://img.shields.io/badge/minSdk-30-green.svg)](#)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg?logo=kotlin&logoColor=white)](#)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.3-7F52FF.svg?logo=kotlin&logoColor=white)](#)
 
 Personal Android app for logging EV charging sessions (DC fast on road trips,
 AC at home/hotels). Stores everything locally; nothing leaves the phone unless
@@ -92,10 +92,12 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   another"; useful when a station gives you a transaction receipt
   and the car's app shows a separate kWh / session summary. PDFs
   display their original filename on the tile (e.g.
-  `expense-aug-2025.pdf`); a per-tile **Rename** button lets you
-  fix that label for any receipt — handy for older attachments that
-  never captured a name. Removing a tile is deferred until you save,
-  so a wrong tap is recoverable by tapping Back.
+  `expense-aug-2025.pdf`), and a photo you've named shows its label
+  as a caption under the image; a per-tile **Rename** button lets
+  you set or fix that label on any receipt — handy for older
+  attachments that never captured a name. Removing a tile is
+  deferred until you save, so a wrong tap is recoverable by tapping
+  Back.
 
 ### Smart entry helpers
 - **Brand picker** — curated North-American networks (Tesla, Electrify
@@ -125,6 +127,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   fields turn red so the offender is obvious.
 - **Empty odometer warning** — confirmation prompt before saving without an
   odometer reading.
+- **Keyboard-aware forms** — the Save button rides above the soft
+  keyboard instead of hiding behind it, and fields low on a form
+  scroll clear of the keyboard while you type. Applies across the
+  session and vehicle forms, the trip dialog, and Settings.
 
 ### The Charging log
 - Cards per session with a colored leading bar (amber DC fast, blue AC L2,
@@ -362,8 +368,8 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 1. Open Android Studio (a recent version that supports AGP 9.x —
    Narwhal/2025.x or newer).
 2. **File → Open…** → pick the `EVSCT` folder.
-3. Wait for the initial Gradle sync (AGP 9.2.1, Gradle 9.4.1, Kotlin
-   2.2, Compose, the Android SDK pieces it needs). Studio will fetch
+3. Wait for the initial Gradle sync (AGP 9.3.0, Gradle 9.6.1, Kotlin
+   2.3, Compose, the Android SDK pieces it needs). Studio will fetch
    anything missing on first open.
 4. Plug in your Pixel via USB with USB debugging enabled, select it as the
    target device, and hit **Run**.
@@ -465,7 +471,7 @@ PDFs) all come across.
 
 ## Stack
 
-- Kotlin 2.2, Jetpack Compose, Material 3
+- Kotlin 2.3, Jetpack Compose, Material 3
 - Room (SQLite) with hand-rolled migrations
 - Hilt for DI, Navigation Compose for screens
 - WorkManager for the background backup-reminder check
