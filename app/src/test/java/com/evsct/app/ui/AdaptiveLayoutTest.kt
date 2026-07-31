@@ -3,7 +3,7 @@ package com.evsct.app.ui
 import android.content.res.Configuration
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -23,7 +23,12 @@ class AdaptiveLayoutTest {
     val compose = createComposeRule()
 
     /** One call per test: setContent is once-per-rule, which is also why the
-     *  boundary check below is two tests rather than one asserting both sides. */
+     *  boundary check below is two tests rather than one asserting both sides.
+     *
+     *  The write to [result] happens during composition; the v2 test rule runs
+     *  coroutines on a StandardTestDispatcher, which queues work instead of
+     *  running it eagerly, so the read is fenced behind runOnIdle rather than
+     *  assuming composition finished the moment setContent returned. */
     private fun wideAt(widthDp: Int, heightDp: Int): Boolean {
         var result = false
         compose.setContent {
@@ -35,7 +40,7 @@ class AdaptiveLayoutTest {
                 result = isWideWindow()
             }
         }
-        return result
+        return compose.runOnIdle { result }
     }
 
     @Test
