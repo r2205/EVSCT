@@ -27,6 +27,7 @@ import com.evsct.app.util.Format
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.LocationAutofill
 import com.evsct.app.util.ReceiptImageStore
+import com.evsct.app.util.TagSuggestions
 import com.evsct.app.util.Tags
 import com.evsct.app.util.Units
 import java.util.Locale
@@ -179,6 +180,11 @@ data class SessionEditUi(
     val longitude: Double? = null,
     val brandSuggestions: List<String> = emptyList(),
     val citySuggestions: List<String> = emptyList(),
+    /** Every tag used on any session, most recently used first. The tags
+     *  field filters this against what is being typed and offers the hits
+     *  as one-tap chips, so a tag is re-used rather than re-typed (and
+     *  re-typed slightly differently). */
+    val tagHistory: List<String> = emptyList(),
     val recentStops: List<RecentStop> = emptyList(),
     val trips: List<Trip> = emptyList(),
     val vehicles: List<Vehicle> = emptyList(),
@@ -337,8 +343,10 @@ class SessionEditViewModel @Inject constructor(
             sessionRepository.observeAll().collect { sessions ->
                 allSessionsCache = sessions
                 _state.update {
-                    it.copy(recentStops = computeRecentStops(sessions))
-                        .let(::withHints)
+                    it.copy(
+                        recentStops = computeRecentStops(sessions),
+                        tagHistory = TagSuggestions.history(sessions),
+                    ).let(::withHints)
                 }
             }
         }
@@ -559,6 +567,7 @@ class SessionEditViewModel @Inject constructor(
         useMiles = false,
         brandSuggestions = emptyList(),
         citySuggestions = emptyList(),
+        tagHistory = emptyList(),
         recentStops = emptyList(),
         trips = emptyList(),
         vehicles = emptyList(),
@@ -903,11 +912,13 @@ class SessionEditViewModel @Inject constructor(
                 notes = s.notes.takeIf { it.isNotBlank() },
                 // Fold in a tag still sitting uncommitted in the "Add tag…"
                 // field — typing "roadtrip" and hitting Save without
-                // Enter/comma should keep the tag, not drop it.
+                // Enter/comma should keep the tag, not drop it. Re-cased
+                // against the tag history like the chip path does, so the
+                // shortcut doesn't quietly spawn a casing variant.
                 tags = Tags.serialize(
                     s.tagDraft.trim()
                         .takeIf { it.isNotEmpty() }
-                        ?.let { Tags.add(s.tags, it) }
+                        ?.let { Tags.add(s.tags, TagSuggestions.canonical(it, s.tagHistory)) }
                         ?: s.tags,
                 ),
                 // Always null: receipts live in their own table now. The

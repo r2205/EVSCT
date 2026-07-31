@@ -83,8 +83,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   a **$/min ⇄ $/hr toggle** — enter whichever unit the station
   advertises and flipping the toggle converts the value in place.
 - **Free-form tags** — type "work charge", "winter test", "kid's hockey
-  trip"; press Enter or comma to commit. Tags appear as `#pill` chips on
-  the row and become a filter chip in the log's Filter sheet.
+  trip"; press Enter or comma to commit, or tap one of the suggestions
+  under the field (see below). Tags appear as `#pill` chips on the row
+  and become a filter chip in the log's Filter sheet.
 - Notes and **multiple receipts** — any mix of photos (with tap-to-
   fullscreen + pinch-to-zoom) and PDFs (open in your system PDF
   viewer). A small "Photo / PDF" chooser appears when you tap "Add
@@ -102,6 +103,14 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   etc.) plus free-text entry. Sorted by your own usage history.
 - **Use a recent stop…** — pre-fills brand, city, prov/state, address, and
   station name from a previous visit.
+- **Tag suggestions** — a row of one-tap chips under the "Add tag…" field.
+  With the field empty they're your most recently used tags; as you type
+  they narrow to what matches. Matching ignores case, spaces and
+  punctuation (`roadtr` finds `road-trip`), catches a word anywhere in the
+  tag (`trip` finds `road trip`), and tolerates a typo (`wnter` finds
+  `winter test`). Tapping a chip — or typing a tag you've used before —
+  reuses that tag's existing spelling, so the log doesn't fill up with
+  `Work` / `work` near-duplicates.
 - **GPS autofill** — one-tap reverse-geocoding for city/prov/address,
   also stores the coordinates so the session shows up on the map.
 - **Province / state normalization** — typing `Saskatchewan` or `Quebec`
