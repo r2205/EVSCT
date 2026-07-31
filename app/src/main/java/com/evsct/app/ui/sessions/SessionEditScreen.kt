@@ -1855,17 +1855,27 @@ private fun ReceiptTile(
                 )
             }
         }
+        // PDFs carry their name inside the thumbnail; photos show theirs
+        // as a caption here — without it a photo rename would be invisible.
+        // No caption while unnamed: the photo speaks for itself until the
+        // user gives it a label via Rename.
+        if (!isPdf && !originalFileName.isNullOrBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                originalFileName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
         Spacer(Modifier.height(8.dp))
         Row(
             horizontalArrangement = Arrangement.End,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            // Rename is only useful on PDFs — photos don't show a filename
-            // anywhere in the UI, so the action would be invisible.
-            if (isPdf) {
-                androidx.compose.material3.TextButton(onClick = onRename) { Text(stringResource(R.string.form_rename)) }
-                Spacer(Modifier.width(4.dp))
-            }
+            androidx.compose.material3.TextButton(onClick = onRename) { Text(stringResource(R.string.form_rename)) }
+            Spacer(Modifier.width(4.dp))
             androidx.compose.material3.TextButton(onClick = onRemove) { Text(stringResource(R.string.form_remove)) }
         }
     }
@@ -1914,10 +1924,11 @@ private fun PdfThumbnail(originalFileName: String? = null) {
 }
 
 /**
- * Lets the user backfill (or correct) the display name of an existing PDF
- * receipt. The on-disk file stays UUID-named; only the [SessionReceipt.
- * originalFileName] label is rewritten. Leaving the field blank clears the
- * label and the tile falls back to the generic "PDF receipt" caption.
+ * Lets the user backfill (or correct) the display name of an existing
+ * receipt, photo or PDF. The on-disk file stays UUID-named; only the
+ * [SessionReceipt.originalFileName] label is rewritten. Leaving the field
+ * blank clears the label — a PDF tile falls back to the generic
+ * "PDF receipt" caption, a photo tile simply drops its caption.
  */
 @Composable
 private fun RenameReceiptDialog(
