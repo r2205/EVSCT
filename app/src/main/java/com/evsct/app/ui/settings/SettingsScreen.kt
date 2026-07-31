@@ -81,6 +81,7 @@ import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.CardTimeRate
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.readableFormWidth
+import com.evsct.app.util.ExportNaming
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -296,13 +297,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Medium,
                     )
                     Button(
-                        onClick = {
-                            val ts = java.text.SimpleDateFormat(
-                                "yyyy-MM-dd-HHmm",
-                                java.util.Locale.US,
-                            ).format(java.util.Date())
-                            backupExportLauncher.launch("evsct-backup-$ts.zip")
-                        },
+                        onClick = { backupExportLauncher.launch(ExportNaming.backupFileName()) },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {
@@ -368,10 +363,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Button(
-                        onClick = {
-                            val name = "evsct-export-${System.currentTimeMillis()}.csv"
-                            exportLauncher.launch(name)
-                        },
+                        onClick = { exportLauncher.launch(ExportNaming.csvFileName()) },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
                     ) {

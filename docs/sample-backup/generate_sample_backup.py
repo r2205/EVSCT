@@ -42,6 +42,13 @@ from datetime import datetime, timedelta, timezone
 from PIL import Image, ImageDraw, ImageFont
 
 SCHEMA_VERSION = 5
+
+# Stand-ins for the BuildConfig values a real export records. The app writes
+# its versionName, its versionCode (the git commit count) and the short commit
+# sha; these mark the file as generator-made instead.
+SAMPLE_VERSION_NAME = "0.1.0"
+SAMPLE_VERSION_CODE = 0
+SAMPLE_GIT_SHA = "sample"
 SEED = 20260628
 EASTERN = timezone(timedelta(hours=-4))  # EDT; close enough for sample timestamps
 OUT_ZIP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evsct-sample-backup.zip")
@@ -351,6 +358,13 @@ class Builder:
         return {
             "schemaVersion": SCHEMA_VERSION,
             "exportedAt": millis(datetime(2026, 6, 28, 9, 15)),
+            # Build provenance, matching what BackupIo now stamps on every
+            # export. Deliberately synthetic rather than a plausible-looking
+            # sha: anyone debugging a restore should be able to tell at a
+            # glance that this file came from the generator, not a device.
+            "appVersionName": SAMPLE_VERSION_NAME,
+            "appVersionCode": SAMPLE_VERSION_CODE,
+            "gitSha": SAMPLE_GIT_SHA,
             "settings": {},
             "vehicles": self.vehicles,
             "trips": self.trips,

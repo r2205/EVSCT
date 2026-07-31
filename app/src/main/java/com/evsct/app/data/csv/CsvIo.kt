@@ -11,6 +11,7 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.map.TripPinColor
+import com.evsct.app.util.ExportNaming
 import com.evsct.app.util.ReceiptImageStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedReader
@@ -230,16 +231,16 @@ class CsvIo @Inject constructor(
      * it to an Android share-sheet via FileProvider. Older share files are
      * cleared first so the cache doesn't accumulate after repeated shares.
      */
-    suspend fun prepareShareFile(filenamePrefix: String = "evsct-export"): PrepareCsvShareResult =
+    suspend fun prepareShareFile(
+        filenamePrefix: String = ExportNaming.CSV_PREFIX,
+    ): PrepareCsvShareResult =
         withContext(Dispatchers.IO) {
             try {
                 val shareDir = File(context.cacheDir, CSV_SHARE_DIR_IN_CACHE).apply {
                     mkdirs()
                     listFiles()?.forEach { it.delete() }
                 }
-                val ts = java.text.SimpleDateFormat("yyyy-MM-dd-HHmm", java.util.Locale.US)
-                    .format(java.util.Date())
-                val target = File(shareDir, "$filenamePrefix-$ts.csv")
+                val target = File(shareDir, ExportNaming.fileName(filenamePrefix, "csv"))
                 val count = target.outputStream().use { os ->
                     OutputStreamWriter(os, Charsets.UTF_8).use { w -> writeCsvTo(w) }
                 }

@@ -784,7 +784,17 @@ of years where they have data) and recomputes the recap on each pick.
   with FileProvider and fires `ACTION_SEND` through `Intent.createChooser`
   for Drive / email / Messages / etc. Both paths go through the same
   private `writeBackupZip(out: OutputStream)` helper so they can't
-  drift. Filenames are `evsct-backup-yyyy-MM-dd-HHmm.zip`; the share
+  drift. Filenames are
+  `evsct-backup-yyyy-MM-dd-HHmm-b<versionCode>[-<sha>].zip`, built by
+  `util/ExportNaming.kt` — the single owner of all four export names
+  (both SAF pickers, both share paths), which had already drifted
+  apart before it existed (the CSV picker was emitting raw epoch
+  millis). The timestamp stays directly after the prefix so name-sorting
+  a folder still sorts chronologically; the build tag trails it. It uses
+  `versionCode` (the git commit count) and `GIT_SHA` rather than
+  `versionName`, which is pinned at `0.1.0` and would be noise. A
+  `-dirty` sha suffix is kept deliberately; a sha of `unknown` (built
+  outside a checkout) collapses to the versionCode alone. The share
   intent passes the same name in `EXTRA_SUBJECT` *and* `EXTRA_TITLE`
   because Drive ignores the FileProvider's display name and uses one
   of those as the saved filename instead.
@@ -1694,9 +1704,11 @@ fixed and built (newest first):
   when top-brands or trips overflow.
 - ~~Bump backup `SCHEMA_VERSION` past 5~~ — **decided against**
   (2026-07 sweep): we touched `BackupIo.kt` repeatedly (findings #4,
-  #5, #10, #14, #23, trip battery anchors, pre-restore snapshot) and
-  deliberately kept `schemaVersion = 5` each time. All post-v5 fields
-  are additive and optional; bumping would make older installs refuse
+  #5, #10, #14, #23, trip battery anchors, pre-restore snapshot, build
+  provenance) and deliberately kept `schemaVersion = 5` each time. All
+  post-v5 fields are additive and optional — the newest,
+  `appVersionName` / `appVersionCode` / `gitSha`, are write-only and
+  never read back on restore. Bumping would make older installs refuse
   newer backups outright, which costs real users (restore-on-old-build
   after a bad update) and buys only a version-marker convention.
   Revisit only if a future format change is genuinely breaking.
