@@ -25,10 +25,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
-/** Time window for the cost/energy trend charts. */
+/** Page-level time window: scopes every stat on the screen except the
+ *  this-month "vs gas" card, which is pinned to the current calendar
+ *  month by definition. Doubles as the trend charts' bucketing choice —
+ *  monthly buckets for the 12-month window, yearly buckets for all time. */
 enum class StatsChartWindow(val label: String) {
     LAST_12_MONTHS("Last 12 months"),
-    ALL_YEARS("All years"),
+    ALL_TIME("All time"),
 }
 
 data class StatsUi(
@@ -39,6 +42,12 @@ data class StatsUi(
      *  unfiltered set so selecting a vehicle can't make the Unassigned
      *  tab disappear from under the user. */
     val hasUnassignedSessions: Boolean = false,
+    /** True when the vehicle scope has any sessions at all, ignoring
+     *  [chartWindow]. Gates the empty state: a scope whose data is all
+     *  older than the selected window should show zeroed stats, not
+     *  "No sessions yet". */
+    val hasAnySessions: Boolean = false,
+    /** Sessions inside [chartWindow] — like every count/total below. */
     val sessionCount: Int = 0,
     /** Chart cost aggregates are filtered to the user's default currency,
      *  since adding CAD + USD into one chart bar produces a meaningless
@@ -56,7 +65,8 @@ data class StatsUi(
     val totalEnergyKwh: Double = 0.0,
     val avgEffPricePerKwh: Double? = null,
     val avgPowerKw: Double? = null,
-    /** Which window [costSeries]/[energySeries] cover. */
+    /** Which window every stat above and below covers (the "vs gas" card
+     *  excepted), and how the trend series are bucketed. */
     val chartWindow: StatsChartWindow = StatsChartWindow.LAST_12_MONTHS,
     /** Cost trend, oldest bucket first; (label, $ in [costCurrency]). One
      *  bucket per month or per year, per [chartWindow]. */
@@ -103,7 +113,7 @@ private const val GAS_PRICE_PER_L = 2.15
 private const val GAS_CONSUMPTION_L_PER_100KM = 12.0
 private const val EV_EFFICIENCY_KM_PER_KWH = 4.0
 
-/** Most year buckets the "All years" chart window will render. */
+/** Most year buckets the "All time" chart window will render. */
 private const val MAX_YEAR_BUCKETS = 20
 
 @HiltViewModel
@@ -125,10 +135,22 @@ class StatsViewModel @Inject constructor(
     ) { allSessions, vehicles, filter, window, units ->
         val hasUnassigned = allSessions.any { it.vehicleId == null }
         val effectiveScope = filter.orAllIfEmpty(vehicles, hasUnassigned)
-        val sessions = allSessions.filter { effectiveScope.matches(it) }
+        val scoped = allSessions.filter { effectiveScope.matches(it) }
+
+        // Page-level window: every aggregate below sees only the windowed
+        // sessions. The one exception is the this-month gas card at the
+        // bottom, which gets the unwindowed [scoped] lists — its window is
+        // the current calendar month regardless of the toggle.
+        val sessions = when (window) {
+            StatsChartWindow.LAST_12_MONTHS -> {
+                val start = last12MonthsStart()
+                scoped.filter { it.sessionStart >= start }
+            }
+            StatsChartWindow.ALL_TIME -> scoped
+        }
 
         // Cost aggregates only see sessions in the user's default currency.
-        // Energy/duration/count aggregates stay across all sessions.
+        // Energy/duration/count aggregates stay across all currencies.
         val costCurrency = units.defaultCurrency
         val costSessions = sessions.filter { it.currency == costCurrency }
         val excluded = sessions.count { (it.totalCost ?: 0.0) != 0.0 && it.currency != costCurrency }
@@ -138,6 +160,7 @@ class StatsViewModel @Inject constructor(
             vehicles = vehicles,
             vehicleScope = effectiveScope,
             hasUnassignedSessions = hasUnassigned,
+            hasAnySessions = scoped.isNotEmpty(),
             sessionCount = sessions.size,
             costCurrency = costCurrency,
             totalCostByCurrency = CurrencyTotals.from(sessions),
@@ -148,11 +171,11 @@ class StatsViewModel @Inject constructor(
             chartWindow = window,
             costSeries = when (window) {
                 StatsChartWindow.LAST_12_MONTHS -> monthlySeries(costSessions) { it.totalCost ?: 0.0 }
-                StatsChartWindow.ALL_YEARS -> yearlySeries(costSessions) { it.totalCost ?: 0.0 }
+                StatsChartWindow.ALL_TIME -> yearlySeries(costSessions) { it.totalCost ?: 0.0 }
             },
             energySeries = when (window) {
                 StatsChartWindow.LAST_12_MONTHS -> monthlySeries(sessions) { it.energyKwh ?: 0.0 }
-                StatsChartWindow.ALL_YEARS -> yearlySeries(sessions) { it.energyKwh ?: 0.0 }
+                StatsChartWindow.ALL_TIME -> yearlySeries(sessions) { it.energyKwh ?: 0.0 }
             },
             byBrandCost = BrandSpend.top(costSessions),
             byType = sessions.groupingBy { it.chargingType }.eachCount(),
@@ -160,7 +183,7 @@ class StatsViewModel @Inject constructor(
             acByDayHour = dayHourGrid(sessions.filter {
                 it.chargingType == ChargingType.AC_L2 || it.chargingType == ChargingType.AC_L1
             }),
-        ).withGasComparison(sessions, costSessions)
+        ).withGasComparison(scoped, scoped.filter { it.currency == costCurrency })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())
 
     fun setVehicleScope(scope: VehicleScope) { vehicleScopeFlow.value = scope }
@@ -177,6 +200,20 @@ class StatsViewModel @Inject constructor(
         val totalKwh = sessions.sumOf { it.energyKwh ?: 0.0 }
         val totalHours = sessions.sumOf { (it.durationSeconds ?: 0L) / 3600.0 }
         return if (totalHours > 0) totalKwh / totalHours else null
+    }
+
+    /** Epoch millis of the first day of the month 11 months back — the
+     *  oldest bucket [monthlySeries] renders, so the page-level filter and
+     *  the monthly chart cover exactly the same sessions. */
+    private fun last12MonthsStart(): Long {
+        return Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            add(Calendar.MONTH, -11)
+        }.timeInMillis
     }
 
     private fun monthlySeries(
@@ -210,10 +247,10 @@ class StatsViewModel @Inject constructor(
         }
     }
 
-    /** One bucket per calendar year, first data year through the current
-     *  year, zero-filled and oldest first. Capped at [MAX_YEAR_BUCKETS]
-     *  most recent years so a single typo'd 1970 session can't explode the
-     *  chart into decades of empty rows. */
+    /** One bucket per calendar year for the "All time" window, first data
+     *  year through the current year, zero-filled and oldest first. Capped
+     *  at [MAX_YEAR_BUCKETS] most recent years so a single typo'd 1970
+     *  session can't explode the chart into decades of empty rows. */
     private fun yearlySeries(
         sessions: List<ChargingSession>,
         valueOf: (ChargingSession) -> Double,
@@ -233,6 +270,10 @@ class StatsViewModel @Inject constructor(
     /**
      * Compute the gas-equivalent comparison for the current calendar month
      * and return a copy of [this] with the matching fields populated.
+     *
+     * Both lists arrive vehicle-scoped but NOT windowed by [chartWindow]:
+     * this card is pinned to the current calendar month by definition, so
+     * it must not move with the page-level window toggle.
      *
      * Distance preference:
      *   1. [OdometerDistance.inWindow] over ALL of the vehicle-scoped
