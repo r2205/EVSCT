@@ -24,11 +24,16 @@ jobs:
       - name: Check out the code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      # JDK 21 rather than 17 because Robolectric needs a 21 runtime to simulate
+      # SDK 36, which is what app/src/test/resources/robolectric.properties asks
+      # for. This only changes the JDK the build runs on: the app is still
+      # compiled to Java 17 bytecode via compileOptions and jvmTarget in
+      # app/build.gradle.kts, so the release artifact is unchanged.
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v4
