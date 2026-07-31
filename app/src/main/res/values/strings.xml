@@ -150,6 +150,7 @@
     <string name="form_add_another">Add another</string>
     <string name="form_add_odometer">Add odometer</string>
     <string name="form_add_tag">Add tag…</string>
+    <string name="form_add_tag_named">Add tag %1$s</string>
     <string name="form_address">Address</string>
     <string name="form_attach_receipt_as">Attach receipt as…</string>
     <string name="form_attach_receipts">Attach receipts</string>
@@ -229,6 +230,8 @@
     <string name="form_station_brand">Station brand</string>
     <string name="form_station_name">Station / stall name / stall number</string>
     <string name="form_tags">Tags</string>
+    <string name="form_tags_matching">Matching tags</string>
+    <string name="form_tags_recently_used">Recently used</string>
     <string name="form_tap_to_choose">Tap to choose…</string>
     <string name="form_tap_to_open_in">Tap to open in your PDF viewer.</string>
     <string name="form_the_odometer_reading_helps">The odometer reading helps with trip distance and efficiency stats. You can still save without it.</string>

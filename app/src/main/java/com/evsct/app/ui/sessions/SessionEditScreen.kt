@@ -91,6 +91,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.focus.FocusDirection
@@ -122,6 +123,7 @@ import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.util.Brands
 import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.ReceiptImageStore
+import com.evsct.app.util.TagSuggestions
 import com.evsct.app.util.Tags
 import com.evsct.app.util.Format
 import java.util.Calendar
@@ -583,12 +585,23 @@ fun SessionEditScreen(
             ) {
                 TagsField(
                     tags = state.tags,
+                    history = state.tagHistory,
                     draft = state.tagDraft,
                     onDraftChange = { v ->
                         viewModel.update { it.copy(tagDraft = v) }
                     },
                     onAdd = { tag ->
-                        viewModel.update { it.copy(tags = Tags.add(it.tags, tag)) }
+                        // Re-cased against the history: a tag typed as
+                        // "work" joins the existing "Work" instead of
+                        // becoming a second spelling of it.
+                        viewModel.update {
+                            it.copy(
+                                tags = Tags.add(
+                                    it.tags,
+                                    TagSuggestions.canonical(tag, it.tagHistory),
+                                ),
+                            )
+                        }
                     },
                     onRemove = { tag ->
                         viewModel.update { it.copy(tags = Tags.remove(it.tags, tag)) }
@@ -1644,11 +1657,19 @@ private fun DurationField(
  * typing a comma commits the chip and clears the field — the comma path
  * lets users keep typing through "work, winter, fast" without reaching
  * for the Done key.
+ *
+ * Under the field sits a row of one-tap suggestions drawn from tags
+ * already used elsewhere in the log: the most recent ones before a key is
+ * pressed, narrowing to what is being typed after. Tapping beats typing
+ * for the common case (the same handful of tags, over and over) and keeps
+ * the tag set from fragmenting into near-duplicate spellings.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagsField(
     tags: List<String>,
+    // Every tag used anywhere in the log, most recently used first.
+    history: List<String>,
     // Draft lives in the ViewModel (not local remember) so the top-bar
     // Save can fold an uncommitted tag into the session instead of
     // silently dropping it.
@@ -1706,6 +1727,45 @@ private fun TagsField(
             keyboardActions = KeyboardActions(onDone = { commit() }),
             modifier = Modifier.fillMaxWidth(),
         )
+        val suggestions = remember(history, tags, draft) {
+            TagSuggestions.match(history, draft, exclude = tags)
+        }
+        if (suggestions.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(
+                    if (draft.isBlank()) R.string.form_tags_recently_used
+                    else R.string.form_tags_matching,
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            // Scrolls rather than wraps: a FlowRow of matches would shove
+            // the field it belongs to up the screen by a line or two on
+            // every keystroke.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                suggestions.forEach { suggestion ->
+                    // The label alone reads as just a word to TalkBack —
+                    // spell out that tapping adds it, the way the applied
+                    // chips spell out that tapping removes them.
+                    val addLabel = stringResource(R.string.form_add_tag_named, suggestion)
+                    AssistChip(
+                        onClick = {
+                            onAdd(suggestion)
+                            onDraftChange("")
+                        },
+                        label = { Text(suggestion) },
+                        modifier = Modifier.semantics { contentDescription = addLabel },
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -165,6 +165,22 @@ in review.
   user type "work, winter, fast" without reaching for Done. Dedupes
   case-insensitively via `Tags.add` so "Work" and "work" don't end
   up as two chips.
+- **Tag suggestions**: a horizontally scrolling row of `AssistChip`s
+  under the "Add tag…" field, from `util/TagSuggestions.kt`. Empty
+  field → the most recently used tags ("Recently used"); typing →
+  the matches ("Matching tags"), ranked whole-tag prefix > word
+  prefix > substring > typo. Matching normalizes away case, spaces
+  and punctuation, so `roadtr` finds `road-trip`; the typo tier is a
+  bounded Levenshtein (tolerance 1 up to 5 chars, else 2) that also
+  runs per word, and stays off below 4 characters where it would
+  match nearly everything. The ViewModel keeps the ranked history in
+  `SessionEditUi.tagHistory` (fed by the existing `observeAll()`
+  collector, neutralized in `formOnly` so a DB emission can't read as
+  a user edit). Both commit paths — the chip tap and the draft folded
+  in by `save()` — run the typed text through
+  `TagSuggestions.canonical`, which re-cases it to the spelling
+  already in the log; otherwise reusing a tag by typing it would
+  still fragment the tag set the filter sheet aggregates.
 - **Receipt attachments** (multiple per session as of DB v10): photos
   and PDFs in any mix, picked from a small "Photo / PDF" bottom-sheet
   chooser. Photos use the Photo Picker; PDFs use `OpenDocument`
@@ -964,6 +980,12 @@ the unit pref as a parameter; aggregates pass the default-currency to
   column. `parse` / `serialize` / `add` / `remove` / `sanitize` handle
   case-insensitive dedupe and strip the delimiter from user input so
   it can't break round-trip storage.
+- **`util/TagSuggestions.kt`** — tag reuse for the session form.
+  `history` ranks every tag ever used (most recent first, then most
+  used, then A–Z; merged case-insensitively and labeled with the
+  most frequent casing, the same rule `BrandSpend` uses for brands),
+  `match` filters that history against a half-typed draft, and
+  `canonical` re-cases a typed tag to the spelling already in use.
 
 ## Unit tests
 
@@ -1000,6 +1022,12 @@ the unit pref as a parameter; aggregates pass the default-currency to
   per-vehicle walks.
 - **`util/BrandSpendTest.kt`** (sweep #18) — case-insensitive brand
   merging, most-frequent-casing labels, non-positive-cost exclusion.
+- **`util/TagSuggestionsTest.kt`** — history ranking (recency, then
+  usage count, then A–Z; case-insensitive merge with most-frequent
+  casing), the match tiers and their order, punctuation/space
+  normalization, the typo tolerance and its short-draft cutoff,
+  exclusion of tags already on the session, limits, and the
+  canonical re-casing.
 - **`data/csv/ImportSanitizerTest.kt`** (sweep #8/#16) — the import
   range gate (impossible battery/negative values nulled, refunds kept),
   the XLSX percent heuristic, and the time-of-day / duration cell
