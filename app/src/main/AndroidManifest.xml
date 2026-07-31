@@ -22,10 +22,18 @@
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${MAPS_API_KEY}" />
+        <!-- adjustResize, not the adjustUnspecified default: some OEM
+             builds resolve unspecified to adjustPan for Compose windows
+             (no View-level scroll containers to resize), which pans the
+             whole window — top bar included — off-screen while typing.
+             With edge-to-edge the window never actually resizes; this
+             only pins it in place so WindowInsets.ime handling in the
+             screens does the moving. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.EVSCT">
+            android:theme="@style/Theme.EVSCT"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

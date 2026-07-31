@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.horizontalScroll
@@ -263,9 +265,12 @@ fun SessionEditScreen(
                         // honors what the nav graph's Scaffold already
                         // consumed, so the button clears the gesture pill on
                         // this sub-screen without double-padding if that ever
-                        // changes.
+                        // changes. Unioned with the IME so the bar rides above
+                        // the keyboard instead of being covered by it — union
+                        // takes the larger inset per side, so the gesture-pill
+                        // padding isn't stacked on top of the keyboard's.
                         modifier = Modifier
-                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                     ) {
                         // Saving before the load lands would insert a blank
@@ -1850,17 +1855,27 @@ private fun ReceiptTile(
                 )
             }
         }
+        // PDFs carry their name inside the thumbnail; photos show theirs
+        // as a caption here — without it a photo rename would be invisible.
+        // No caption while unnamed: the photo speaks for itself until the
+        // user gives it a label via Rename.
+        if (!isPdf && !originalFileName.isNullOrBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                originalFileName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
         Spacer(Modifier.height(8.dp))
         Row(
             horizontalArrangement = Arrangement.End,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            // Rename is only useful on PDFs — photos don't show a filename
-            // anywhere in the UI, so the action would be invisible.
-            if (isPdf) {
-                androidx.compose.material3.TextButton(onClick = onRename) { Text(stringResource(R.string.form_rename)) }
-                Spacer(Modifier.width(4.dp))
-            }
+            androidx.compose.material3.TextButton(onClick = onRename) { Text(stringResource(R.string.form_rename)) }
+            Spacer(Modifier.width(4.dp))
             androidx.compose.material3.TextButton(onClick = onRemove) { Text(stringResource(R.string.form_remove)) }
         }
     }
@@ -1909,10 +1924,11 @@ private fun PdfThumbnail(originalFileName: String? = null) {
 }
 
 /**
- * Lets the user backfill (or correct) the display name of an existing PDF
- * receipt. The on-disk file stays UUID-named; only the [SessionReceipt.
- * originalFileName] label is rewritten. Leaving the field blank clears the
- * label and the tile falls back to the generic "PDF receipt" caption.
+ * Lets the user backfill (or correct) the display name of an existing
+ * receipt, photo or PDF. The on-disk file stays UUID-named; only the
+ * [SessionReceipt.originalFileName] label is rewritten. Leaving the field
+ * blank clears the label — a PDF tile falls back to the generic
+ * "PDF receipt" caption, a photo tile simply drops its caption.
  */
 @Composable
 private fun RenameReceiptDialog(

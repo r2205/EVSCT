@@ -12,11 +12,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -25,12 +30,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -147,14 +154,44 @@ fun VehicleEditScreen(
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.vehicleedit_delete))
                         }
                     }
-                    // Saving before the load lands would insert a blank NEW
-                    // row (isNew still defaults true), not update the one
-                    // being opened.
-                    IconButton(onClick = { viewModel.save(onDone) }, enabled = !state.isLoading) {
-                        Icon(Icons.Default.Check, contentDescription = stringResource(R.string.vehicleedit_save))
-                    }
                 },
             )
+        },
+        bottomBar = {
+            // Same treatment as the session form's Save bar: the top-bar
+            // check was unreachable behind (or panned away with) the
+            // keyboard, so Save lives at the foot of the form and the ime
+            // union keeps it riding above the keyboard. Deliberately the
+            // ONLY save; delete stays in the top bar, away from the button
+            // thumbs land on.
+            Surface(tonalElevation = 3.dp) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    HorizontalDivider()
+                    Box(
+                        // windowInsetsPadding, not navigationBarsPadding: it
+                        // honors what the nav graph's Scaffold already
+                        // consumed, so the button clears the gesture pill
+                        // without double-padding. Unioned with the IME so the
+                        // bar rides above the keyboard — union takes the
+                        // larger inset per side, so the gesture-pill padding
+                        // isn't stacked on top of the keyboard's.
+                        modifier = Modifier
+                            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    ) {
+                        // Saving before the load lands would insert a blank
+                        // NEW row (isNew still defaults true), not update the
+                        // one being opened.
+                        Button(
+                            onClick = { viewModel.save(onDone) },
+                            enabled = !state.isLoading,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.vehicleedit_save))
+                        }
+                    }
+                }
+            }
         },
     ) { padding ->
         if (state.isLoading) {
@@ -170,6 +207,10 @@ fun VehicleEditScreen(
         }
         Column(
             modifier = Modifier
+                // Scaffold's padding already tracks the Save bar, which
+                // grows by the keyboard height (ime union above) — so the
+                // scroll viewport clears the keyboard with no imePadding of
+                // its own.
                 .padding(padding)
                 .fillMaxHeight()
                 // Capped and centred in wide windows; identical to the old
