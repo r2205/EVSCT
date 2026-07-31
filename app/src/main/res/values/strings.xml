@@ -495,7 +495,7 @@
     <string name="vehicleedit_pre_selected_when_logging">Pre-selected when logging new sessions.</string>
     <string name="vehicleedit_range_unit">Range (%1$s)</string>
     <string name="vehicleedit_remove">Remove</string>
-    <string name="vehicleedit_save">Save</string>
+    <string name="vehicleedit_save">Save vehicle</string>
     <string name="vehicleedit_sessions_previously_tagged_with">Sessions previously tagged with this vehicle will keep their data but be unassigned.</string>
     <string name="vehicleedit_this_vehicle_has_unsaved">This vehicle has unsaved edits. Leaving now throws them away.</string>
     <string name="vehicleedit_title_edit">Edit vehicle</string>
