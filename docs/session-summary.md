@@ -201,12 +201,19 @@ in review.
     with that name (truncated to 2 lines with ellipsis) instead of
     a generic "PDF receipt". The on-disk file is still UUID-named —
     `originalFileName` is purely a UI label.
-  - **Rename action** on each PDF tile (sibling to Remove) — opens a
+  - **Rename action** on every tile (sibling to Remove) — opens a
     small `AlertDialog` with a text field so the user can backfill
     or correct the label. Auto-appends `.pdf` (case-insensitive
     check) when the typed value doesn't already end in it. Clearing
-    the field reverts the tile to the generic "PDF receipt" caption.
-    Photos hide the rename action since they don't display a filename.
+    the field reverts a PDF tile to the generic "PDF receipt"
+    caption. Rename was originally PDF-only (photos showed no
+    filename anywhere, so the action would have been invisible);
+    photo tiles now render their `originalFileName` as a one-line
+    ellipsized caption under the image when it's set — no caption
+    while unnamed, the photo speaks for itself — so the action is
+    offered on both kinds. The ViewModel path was already
+    type-agnostic: the `.pdf` suffix fixup only applies to PDFs, and
+    save() persists label changes by id for both.
   - **Per-tile Remove** drops a single attachment immediately from the
     in-memory list; no confirmation dialog because the on-disk file
     isn't actually deleted until save() commits, so a wrong tap is
@@ -562,7 +569,11 @@ vehicle on the same trip.
   snackbar on overflow), name, year/make/model/trim, battery kWh,
   range (km or mi based on pref), VIN, notes, Default-vehicle switch
   (mutually exclusive — `clearDefaultExcept`), delete with
-  confirmation.
+  confirmation. Save is a full-width bottom-bar button that rides
+  above the soft keyboard — it replaced a top-bar check mark that
+  adjustPan devices panned off-screen while typing (see
+  "Soft-keyboard (IME) handling"). Delete stays in the top bar,
+  away from where thumbs land.
 
 ### Trips
 
@@ -890,6 +901,42 @@ of years where they have data) and recomputes the recap on each pick.
   Stored as `themeMode` in `AppPreferences`; read at the top of
   `MainActivity` and threaded into `EvsctTheme` so the override
   applies everywhere including dialogs.
+
+### Soft-keyboard (IME) handling
+
+July 2026 batch (PR #67). The app is edge-to-edge, so nothing moves
+out of the keyboard's way unless each screen handles
+`WindowInsets.ime` itself:
+
+- **Manifest pins `android:windowSoftInputMode="adjustResize"`** on
+  `MainActivity`. Some OEM builds resolve the unset default to
+  `adjustPan` for Compose windows (no View-level scroll container to
+  resize), which pans the whole window — top bar included —
+  off-screen while typing. With edge-to-edge the window never
+  actually resizes; the setting just pins it in place so the
+  screens' own inset handling does the moving.
+- **Bottom Save bars ride above the keyboard** — the session and
+  vehicle forms' Save bars pad with
+  `WindowInsets.navigationBars.union(WindowInsets.ime)`; union takes
+  the larger inset per side, so the gesture-pill padding never
+  stacks on top of the keyboard's. The Scaffold's content padding
+  follows the taller bar, keeping the focused field visible above it.
+- **Scroll columns pad the viewport with the IME inset** — vehicle
+  edit (VIN, notes) and Settings (backup-reminder threshold) chain
+  `.consumeWindowInsets(padding).imePadding()` so a field focused
+  low on the screen scrolls clear of the keyboard instead of being
+  typed into blind behind it (consume first so `imePadding` only
+  adds what the Scaffold padding didn't already cover). The session
+  form doesn't need this — its keyboard-following bottom bar already
+  drives the content padding.
+- **Dialogs are their own windows**, so the activity's adjustResize
+  doesn't reach them. `TripEditDialog` sets
+  `DialogProperties(decorFitsSystemWindows = false)` — the same
+  edge-to-edge contract the activity uses — and pads its Compose
+  tree with `systemBarsPadding()` + `imePadding()`, holding the
+  whole dialog (Save/Create row included) between the status bar and
+  the keyboard while the field column scrolls inside the remaining
+  height.
 
 ## Settings screen
 
