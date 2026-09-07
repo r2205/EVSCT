@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -46,6 +47,7 @@ import com.evsct.app.R
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.MoneyStat
+import com.evsct.app.ui.StatColumns
 import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.EfficiencyAnalysis
 import com.evsct.app.util.ExcludedPair
@@ -120,48 +122,47 @@ fun TripDetailScreen(
                             )
                             Spacer(Modifier.height(12.dp))
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Stat(stringResource(R.string.common_sessions), st.sessionCount.toString())
-                            MoneyStat(stringResource(R.string.common_total_cost), st.totalCostByCurrency)
-                            Stat(stringResource(R.string.common_energy), Format.kwh(st.totalEnergyKwh))
+                        // StatColumns rather than a plain SpaceBetween Row: three
+                        // stats across only works while all three fit, and at the
+                        // larger accessibility font sizes a "$834.84 CAD" or
+                        // "1,651.76 kWh" column ran into its neighbours. Same
+                        // helper the Log summary and Stats headline use; see
+                        // ui/StatStacking.kt for why wrapping alone wasn't enough.
+                        StatColumns(modifier = Modifier.fillMaxWidth()) { statModifier ->
+                            Stat(stringResource(R.string.common_sessions), st.sessionCount.toString(), statModifier)
+                            MoneyStat(stringResource(R.string.common_total_cost), st.totalCostByCurrency, statModifier)
+                            Stat(stringResource(R.string.common_energy), Format.kwh(st.totalEnergyKwh), statModifier)
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            val missing = state.sessionsWithoutDuration
-                            val timeText = Format.duration(state.totalChargeSeconds) +
-                                if (missing > 0) "*" else ""
-                            Stat(stringResource(R.string.common_charge_time), timeText)
-                            if (missing > 0) {
-                                val sCount = st.sessionCount
-                                Text(
-                                    text = pluralStringResource(
-                                        R.plurals.common_missing_duration, sCount, missing, sCount,
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(start = 12.dp),
-                                )
-                            }
+                        val missing = state.sessionsWithoutDuration
+                        val timeText = Format.duration(state.totalChargeSeconds) +
+                            if (missing > 0) "*" else ""
+                        StatColumns(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { statModifier ->
+                            Stat(stringResource(R.string.common_charge_time), timeText, statModifier)
+                        }
+                        if (missing > 0) {
+                            // Under the stat rather than beside it: beside, the
+                            // note shared its line with the stat and squeezed to a
+                            // sliver at large font scale. Full width, it wraps.
+                            val sCount = st.sessionCount
+                            Text(
+                                text = pluralStringResource(
+                                    R.plurals.common_missing_duration, sCount, missing, sCount,
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            )
                         }
                         if (st.totalDistanceKm > 0) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Stat(stringResource(R.string.common_distance), Format.distance(st.totalDistanceKm, units.useMiles))
+                            StatColumns(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { statModifier ->
+                                Stat(stringResource(R.string.common_distance), Format.distance(st.totalDistanceKm, units.useMiles), statModifier)
                                 Stat(
                                     stringResource(R.string.common_cost_per_distance, distUnit),
                                     Format.moneyRatePerDistance(st.costPerKm, units.useMiles),
+                                    statModifier,
                                 )
-                                Stat(stringResource(R.string.common_cost_per_kwh), Format.moneyRate(st.costPerKwh, "kWh"))
+                                Stat(stringResource(R.string.common_cost_per_kwh), Format.moneyRate(st.costPerKwh, "kWh"), statModifier)
                             }
                         }
                     }
@@ -188,13 +189,28 @@ fun TripDetailScreen(
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { onEditSession(s.id) },
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("${s.brand ?: stringResource(R.string.common_unknown)} · ${s.locationCity ?: "—"}", fontWeight = FontWeight.Medium)
-                                Text(Format.money(s.totalCost, s.currency))
+                        // Same shape as VehicleDetailScreen's RecentSessionRow.
+                        // The old SpaceBetween Row gave neither child a weight,
+                        // so a long "Brand · City" title claimed the whole width
+                        // and the cost was left to squeeze in beside it: no gap
+                        // ("North Bay$43.93"), then "CAD" pushed onto its own
+                        // line. Weighting the title column measures the cost
+                        // first at its natural width and wraps the title around
+                        // whatever is left.
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${s.brand ?: stringResource(R.string.common_unknown)} · ${s.locationCity ?: "—"}",
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(Format.dateTime(s.sessionStart), style = MaterialTheme.typography.bodySmall)
+                                Text("${Format.kwh(s.energyKwh)} · ${Format.duration(s.durationSeconds)}", style = MaterialTheme.typography.bodySmall)
                             }
-                            Text(Format.dateTime(s.sessionStart), style = MaterialTheme.typography.bodySmall)
-                            Text("${Format.kwh(s.energyKwh)} · ${Format.duration(s.durationSeconds)}", style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.width(12.dp))
+                            Text(Format.money(s.totalCost, s.currency))
                         }
                     }
                 }
@@ -226,10 +242,17 @@ fun TripDetailScreen(
 }
 
 @Composable
-private fun Stat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(label, style = MaterialTheme.typography.labelSmall)
+private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        // Centred explicitly: a value long enough to wrap inside its column
+        // would otherwise wrap left-aligned under a centred label.
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        Text(label, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
     }
 }
 
