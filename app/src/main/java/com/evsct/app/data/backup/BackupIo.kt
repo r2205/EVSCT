@@ -415,7 +415,15 @@ class BackupIo @Inject constructor(
                 tripDao.deleteAll()
                 vehicleDao.deleteAll()
 
+                // Inserting directly bypasses saveEnsuringSingleDefault, so
+                // enforce its invariant here: a merged or hand-edited backup
+                // flagging two vehicles as default would otherwise leave
+                // findDefault() picking one at random for every new
+                // session. Export orders default-first, so first wins.
+                var defaultSeen = false
                 payload.vehicles.forEach { raw ->
+                    val isDefault = raw.isDefault && !defaultSeen
+                    if (isDefault) defaultSeen = true
                     val newId = vehicleDao.insert(
                         Vehicle(
                             id = 0,
@@ -429,7 +437,7 @@ class BackupIo @Inject constructor(
                             vin = raw.vin,
                             notes = raw.notes,
                             imagePath = raw.imageFile?.let(::sanitizedBasename)?.let { plannedImages[it] },
-                            isDefault = raw.isDefault,
+                            isDefault = isDefault,
                             createdAt = raw.createdAt,
                             updatedAt = raw.updatedAt,
                         )
@@ -869,10 +877,13 @@ private val MANAGED_FILE_PATTERN = Regex(
 )
 
 /** Strip any path components from a JSON-supplied filename and return the
- *  basename. Returns null if the result is blank. Same defense extractInto
- *  applies to zip entry names — guards against zip-slip via the JSON. */
-private fun sanitizedBasename(raw: String): String? =
-    File(raw).name.takeIf { it.isNotBlank() }
+ *  basename. Returns null if the result is blank, or is `.` or `..` — File
+ *  keeps those as a "name", and a row pointing at `receipts/..` resolves
+ *  to the app's files directory itself: a phantom tile that exists() but
+ *  can never be opened or removed. Same defense extractInto applies to zip
+ *  entry names — guards against zip-slip via the JSON. */
+internal fun sanitizedBasename(raw: String): String? =
+    File(raw).name.takeIf { it.isNotBlank() && it != "." && it != ".." }
 
 /* --- raw payload + JSON helpers --- */
 

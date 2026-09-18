@@ -7,7 +7,9 @@ import com.evsct.app.data.entity.ChargingType
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.VehicleRepository
+import com.evsct.app.util.BoundedInputStream
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.IOException
 import java.util.Calendar
 import java.util.Date
 import javax.inject.Inject
@@ -28,6 +30,9 @@ data class XlsxImportResult(val imported: Int, val skipped: Int)
 // zip/OOXML bombs that decompress a few KB of input into gigabytes.
 private const val MAX_XLSX_ENTRIES: Long = 2_000L
 private const val MAX_XLSX_ENTRY_BYTES: Long = 50L * 1024 * 1024
+/** Cap on the compressed file itself, applied before POI inflates any of
+ *  it. A hand-maintained charging log is a few hundred KB. */
+private const val MAX_XLSX_FILE_BYTES: Long = 64L * 1024 * 1024
 
 /**
  * Imports the legacy "DC Fast Charging.xlsx" sheet with the column layout the user has been
@@ -57,7 +62,18 @@ class XlsxImporter @Inject constructor(
 
         context.contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Could not open file" }
-            XSSFWorkbook(input).use { wb ->
+            // POI reads the whole package into memory before the entry
+            // caps above can apply, so bound the raw stream too — a
+            // mis-picked huge file fails with a message instead of an
+            // out-of-memory crash.
+            val bounded = BoundedInputStream(input, MAX_XLSX_FILE_BYTES) {
+                IOException(
+                    "This file is larger than ${MAX_XLSX_FILE_BYTES / (1024 * 1024)} MB — far " +
+                        "bigger than any charging-log spreadsheet — so it was not read. " +
+                        "Nothing was imported.",
+                )
+            }
+            XSSFWorkbook(bounded).use { wb ->
                 val sheet = wb.getSheetAt(0)
                 var headerSeen = false
                 for (r in 0..sheet.lastRowNum) {

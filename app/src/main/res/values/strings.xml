@@ -577,6 +577,7 @@
     <string name="settings_vehicles">Vehicles</string>
     <string name="settings_version">EVSCT %1$s (build %2$d)</string>
     <string name="settings_view_on_github">View on GitHub</string>
+    <string name="settings_no_browser">No app on this device can open web links.</string>
 
     <!-- Image viewer -->
     <string name="zoom_close">Close</string>

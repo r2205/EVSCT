@@ -11,6 +11,7 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.map.TripPinColor
+import com.evsct.app.util.BoundedInputStream
 import com.evsct.app.util.ExportNaming
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.ReceiptImageStore
@@ -180,6 +181,10 @@ sealed interface PrepareCsvShareResult {
  *  in res/xml/file_paths.xml so FileProvider can hand out content:// URIs. */
 private const val CSV_SHARE_DIR_IN_CACHE = "csv-share"
 
+/** Largest CSV the importer will read. Ten thousand sessions export to a
+ *  few MB, so this only ever trips on a file that isn't an EVSCT CSV. */
+private const val MAX_CSV_IMPORT_BYTES: Long = 64L * 1024 * 1024
+
 @Singleton
 class CsvIo @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -279,8 +284,17 @@ class CsvIo @Inject constructor(
         // A null stream (revoked SAF grant, provider gone) must surface as a
         // failure — returning (0, 0) here read as "Imported 0 sessions", a
         // success message for an import that never even opened the file.
+        // readText() slurps the whole file, so bound the stream first: a
+        // mis-picked video or disk image must fail with a message, not an
+        // out-of-memory crash. The cap is far above any EVSCT export.
         val raw = context.contentResolver.openInputStream(uri)?.use { inp ->
-            BufferedReader(InputStreamReader(inp, Charsets.UTF_8)).readText()
+            val bounded = BoundedInputStream(inp, MAX_CSV_IMPORT_BYTES) {
+                IOException(
+                    "This file is larger than ${MAX_CSV_IMPORT_BYTES / (1024 * 1024)} MB — far " +
+                        "bigger than any EVSCT export — so it was not read. Nothing was imported.",
+                )
+            }
+            BufferedReader(InputStreamReader(bounded, Charsets.UTF_8)).readText()
         } ?: throw IOException("Could not open the selected file. Nothing was imported.")
         // Excel's "CSV UTF-8" flavour always writes a byte-order mark, which
         // the reader keeps as U+FEFF (not whitespace, so trim() keeps it too).
