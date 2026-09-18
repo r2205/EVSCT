@@ -12,6 +12,7 @@ import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.map.TripPinColor
 import com.evsct.app.util.ExportNaming
+import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.ReceiptImageStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedReader
@@ -188,6 +189,7 @@ class CsvIo @Inject constructor(
     private val vehicleRepository: VehicleRepository,
     private val sessionReceiptRepository: SessionReceiptRepository,
     private val receiptImageStore: ReceiptImageStore,
+    private val inProgressChargeNotifier: InProgressChargeNotifier,
 ) {
     suspend fun export(uri: Uri): Int = withContext(Dispatchers.IO) {
         // Stage in cacheDir before touching the destination — mirrors
@@ -380,6 +382,13 @@ class CsvIo @Inject constructor(
         // shared-path caution as elsewhere doesn't apply — the whole table
         // was wiped, nothing can still point at these.
         receiptPathsBeforeWipe.forEach { receiptImageStore.delete(it) }
+
+        // The wipe also took any charge the shade was tracking. Left alone,
+        // the ongoing notification outlived its row: it can't be swiped
+        // away, its tap opened an edit screen for a row that no longer
+        // exists, and saving there inserted a stray new session whose id
+        // never matched the tracked one — so nothing ever cleared it.
+        if (replaceExisting) inProgressChargeNotifier.cancel()
 
         CsvImportResult(imported, skipped)
     }
