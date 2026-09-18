@@ -24,6 +24,22 @@ class DurationFormatTest {
     }
 
     @Test
+    fun `overflowing digit runs are rejected instead of wrapping negative`() {
+        // Long.MAX_VALUE hours: the multiply used to wrap to a negative
+        // total, which the save path stored as the session's duration.
+        assertNull(DurationFormat.parse("9223372036854775807h"))
+        assertNull(DurationFormat.parse("9223372036854775807:00:00"))
+        assertNull(DurationFormat.parse("9223372036854775807"))
+        // Too long for a Long at all: previously read as 0 in pretty form.
+        assertNull(DurationFormat.parse("99999999999999999999h"))
+    }
+
+    @Test
+    fun `a large but representable duration still parses`() {
+        assertEquals(1_000_000L * 3600, DurationFormat.parse("1000000h"))
+    }
+
+    @Test
     fun `editable drops the hours part under an hour`() {
         assertEquals("32:14", DurationFormat.editable(32 * 60L + 14))
         assertEquals("0:45", DurationFormat.editable(45))

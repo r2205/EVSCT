@@ -18,18 +18,30 @@ package com.evsct.app.util
  */
 object DurationFormat {
 
+    /**
+     * Seconds for [text], or null when it isn't a duration. Every input
+     * form is digits-only, so a non-null result is never negative: the
+     * arithmetic is overflow-checked, and a digit run too long for a Long
+     * is rejected rather than read as zero — "9223372036854775807h" used
+     * to wrap to a negative total that the save path then stored.
+     */
     fun parse(text: String): Long? {
         val t = text.trim().lowercase()
         if (t.isEmpty()) return null
+        return try {
+            parseChecked(t)
+        } catch (_: ArithmeticException) {
+            null
+        }
+    }
 
+    private fun parseChecked(t: String): Long? {
         // Pretty: 1h 25m 30s, or partial like 1h, 25m, 30s, 1h 30s, etc.
         val pretty = Regex("""^\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$""")
         pretty.matchEntire(t)?.let { match ->
             val (h, m, s) = match.destructured
             if (h.isBlank() && m.isBlank() && s.isBlank()) return@let
-            return (h.toLongOrNull() ?: 0L) * 3600 +
-                (m.toLongOrNull() ?: 0L) * 60 +
-                (s.toLongOrNull() ?: 0L)
+            return hms(part(h) ?: return null, part(m) ?: return null, part(s) ?: return null)
         }
 
         // Colon-separated: h:m:s or m:s. Parts must be pure digits —
@@ -41,16 +53,27 @@ object DurationFormat {
             if (parts.any { p -> p.isEmpty() || !p.all(Char::isDigit) }) return null
             val nums = parts.map { it.toLongOrNull() ?: return null }
             return when (nums.size) {
-                3 -> nums[0] * 3600 + nums[1] * 60 + nums[2]
-                2 -> nums[0] * 60 + nums[1]
+                3 -> hms(nums[0], nums[1], nums[2])
+                2 -> hms(0L, nums[0], nums[1])
                 else -> null
             }
         }
 
         // Bare integer: minutes — digits only, same reasoning.
         if (!t.all(Char::isDigit)) return null
-        return t.toLongOrNull()?.let { it * 60 }
+        return t.toLongOrNull()?.let { Math.multiplyExact(it, 60L) }
     }
+
+    /** An absent pretty-form group is zero; a present one that doesn't fit
+     *  a Long is a rejection, not a zero. */
+    private fun part(group: String): Long? =
+        if (group.isBlank()) 0L else group.toLongOrNull()
+
+    private fun hms(h: Long, m: Long, s: Long): Long =
+        Math.addExact(
+            Math.addExact(Math.multiplyExact(h, 3600L), Math.multiplyExact(m, 60L)),
+            s,
+        )
 
     fun pretty(seconds: Long?): String {
         if (seconds == null || seconds <= 0) return ""

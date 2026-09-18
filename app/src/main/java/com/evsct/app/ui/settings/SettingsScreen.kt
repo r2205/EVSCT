@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.widget.Toast
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -880,8 +881,7 @@ private fun AboutCard(context: Context) {
                 Text(
                     commitLine,
                     modifier = Modifier.clickable {
-                        val url = "https://github.com/r2205/EVSCT/commit/$sha"
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        openUrl(context, "https://github.com/r2205/EVSCT/commit/$sha")
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
@@ -895,18 +895,14 @@ private fun AboutCard(context: Context) {
             }
             Text(
                 stringResource(R.string.settings_view_on_github),
-                modifier = Modifier.clickable {
-                    val url = "https://github.com/r2205/EVSCT"
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                },
+                modifier = Modifier.clickable { openUrl(context, "https://github.com/r2205/EVSCT") },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
                 stringResource(R.string.settings_privacy_policy),
                 modifier = Modifier.clickable {
-                    val url = "https://r2205.github.io/EVSCT/privacy-policy.html"
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    openUrl(context, "https://r2205.github.io/EVSCT/privacy-policy.html")
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
@@ -917,6 +913,18 @@ private fun AboutCard(context: Context) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/** Open [url] in whatever handles web links. A managed or restricted
+ *  profile can have no browser at all, in which case startActivity throws
+ *  ActivityNotFoundException — a crash from tapping an About link. Say so
+ *  instead. */
+private fun openUrl(context: android.content.Context, url: String) {
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }.onFailure {
+        Toast.makeText(context, R.string.settings_no_browser, Toast.LENGTH_SHORT).show()
     }
 }
 
