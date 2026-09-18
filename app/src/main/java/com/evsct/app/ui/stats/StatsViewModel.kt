@@ -13,6 +13,7 @@ import com.evsct.app.ui.orAllIfEmpty
 import com.evsct.app.util.BrandSpend
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.OdometerDistance
+import com.evsct.app.util.SessionAverages
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -166,8 +167,12 @@ class StatsViewModel @Inject constructor(
             totalCostByCurrency = CurrencyTotals.from(sessions),
             excludedByCurrency = excluded,
             totalEnergyKwh = sessions.sumOf { it.energyKwh ?: 0.0 },
-            avgEffPricePerKwh = computeAvgEffPrice(costSessions),
-            avgPowerKw = computeAvgPower(sessions),
+            // Paired per session (see SessionAverages): this used to divide
+            // kWh summed over every session by hours summed over only the
+            // ones with a duration, so an import lacking durations pushed
+            // the headline power into the hundreds of kW.
+            avgEffPricePerKwh = SessionAverages.avgEffectivePricePerKwh(costSessions),
+            avgPowerKw = SessionAverages.avgPowerKw(sessions),
             chartWindow = window,
             costSeries = when (window) {
                 StatsChartWindow.LAST_12_MONTHS -> monthlySeries(costSessions) { it.totalCost ?: 0.0 }
@@ -189,18 +194,6 @@ class StatsViewModel @Inject constructor(
     fun setVehicleScope(scope: VehicleScope) { vehicleScopeFlow.value = scope }
 
     fun setChartWindow(window: StatsChartWindow) { chartWindow.value = window }
-
-    private fun computeAvgEffPrice(sessions: List<ChargingSession>): Double? {
-        val totalCost = sessions.sumOf { it.totalCost ?: 0.0 }
-        val totalKwh = sessions.sumOf { it.energyKwh ?: 0.0 }
-        return if (totalKwh > 0) totalCost / totalKwh else null
-    }
-
-    private fun computeAvgPower(sessions: List<ChargingSession>): Double? {
-        val totalKwh = sessions.sumOf { it.energyKwh ?: 0.0 }
-        val totalHours = sessions.sumOf { (it.durationSeconds ?: 0L) / 3600.0 }
-        return if (totalHours > 0) totalKwh / totalHours else null
-    }
 
     /** Epoch millis of the first day of the month 11 months back — the
      *  oldest bucket [monthlySeries] renders, so the page-level filter and

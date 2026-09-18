@@ -11,6 +11,7 @@ import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.Derived
 import com.evsct.app.util.EfficiencyAnalysis
+import com.evsct.app.util.SessionAverages
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -104,18 +105,13 @@ class VehicleDetailViewModel @Inject constructor(
         val totalDistance = if (odometers.size < 2) 0.0 else odometers.max() - odometers.min()
 
         // Derived rates only compose when every session shares a currency.
-        // When mixed, a "$/kWh" or "$/km" number has no single unit.
+        // When mixed, a "$/kWh" or "$/km" number has no single unit. Both
+        // averages pair cost/energy and energy/duration per session (see
+        // SessionAverages) so a session missing one side can't inflate the
+        // ratio for the rest.
         val singleTotal = totals.singleTotal
-        val avgEff = if (singleTotal != null && totalKwh > 0) singleTotal / totalKwh else null
-        // Avg power must divide energy by charge time from the SAME
-        // sessions. Summing kWh over all sessions but hours over only the
-        // ones with a duration (imports routinely lack durations) inflated
-        // the stat arbitrarily — ten 50 kWh charges with one recorded hour
-        // read as 500 kW.
-        val powerPaired = sessions.filter { it.energyKwh != null && (it.durationSeconds ?: 0L) > 0L }
-        val pairedKwh = powerPaired.sumOf { it.energyKwh ?: 0.0 }
-        val pairedHours = powerPaired.sumOf { (it.durationSeconds ?: 0L) / 3600.0 }
-        val avgPower = if (pairedHours > 0) pairedKwh / pairedHours else null
+        val avgEff = if (singleTotal != null) SessionAverages.avgEffectivePricePerKwh(sessions) else null
+        val avgPower = SessionAverages.avgPowerKw(sessions)
         val costPerKm = if (singleTotal != null && totalDistance > 0) singleTotal / totalDistance else null
 
         val fastest = sessions
