@@ -279,11 +279,12 @@ class SettingsViewModel @Inject constructor(
         transient.update { it.copy(busyOp = SettingsOp.RESTORE, feedback = null) }
         when (val result = backupIo.restore(uri)) {
             is BackupResult.RestoreSuccess -> finish(OpFeedback(
-                title = "Restore complete",
+                title = if (result.mediaFailed > 0) "Restore complete, with a problem" else "Restore complete",
                 body = "Restored ${result.sessions} sessions, ${result.trips} " +
                     "trips, ${result.vehicles} vehicles. Your previous data " +
                     "was snapshotted first — \"Undo last restore or import\" " +
-                    "on this screen brings it back.",
+                    "on this screen brings it back." + mediaWarning(result),
+                isError = result.mediaFailed > 0,
                 asDialog = true,
             ))
             is BackupResult.Failure -> finish(OpFeedback(
@@ -304,11 +305,12 @@ class SettingsViewModel @Inject constructor(
         transient.update { it.copy(busyOp = SettingsOp.UNDO_RESTORE, feedback = null) }
         when (val result = backupIo.restoreFromSnapshot()) {
             is BackupResult.RestoreSuccess -> finish(OpFeedback(
-                title = "Undo complete",
+                title = if (result.mediaFailed > 0) "Undo complete, with a problem" else "Undo complete",
                 body = "Brought back ${result.sessions} sessions, " +
                     "${result.trips} trips, ${result.vehicles} vehicles from " +
                     "the snapshot. The data you just replaced was snapshotted " +
-                    "too, so the undo is itself undoable.",
+                    "too, so the undo is itself undoable." + mediaWarning(result),
+                isError = result.mediaFailed > 0,
                 asDialog = true,
             ))
             is BackupResult.Failure -> finish(OpFeedback(
@@ -320,6 +322,27 @@ class SettingsViewModel @Inject constructor(
         }
         refreshSnapshotInfo()
     }
+
+    /** Tail for the restore/undo dialogs when attached files didn't all
+     *  make it. Says what the startup media sweep is about to do to the
+     *  affected rows, and — for the copy-failure case, which a freed-up
+     *  device fixes — what to do about it. Empty when nothing went wrong. */
+    private fun mediaWarning(result: BackupResult.RestoreSuccess): String = buildString {
+        if (result.mediaFailed > 0) {
+            val n = result.mediaFailed
+            append("\n\n$n attached ${files(n)} could not be written to this device — it may be out of storage. ")
+            append("The affected receipts and photos will be dropped when the app next starts. ")
+            append("Free up space and restore the same backup again to bring them back.")
+        }
+        if (result.mediaAbsent > 0) {
+            val n = result.mediaAbsent
+            append("\n\n$n attached ${files(n)} referenced by this backup ${wasWere(n)} not inside it, ")
+            append("so the affected receipts or photos will be dropped when the app next starts.")
+        }
+    }
+
+    private fun files(n: Int) = if (n == 1) "file" else "files"
+    private fun wasWere(n: Int) = if (n == 1) "was" else "were"
 
     fun clearFeedback() = transient.update { it.copy(feedback = null) }
 }
