@@ -14,6 +14,7 @@ import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.util.BackupReminderScheduler
 import com.evsct.app.util.ExportNaming
+import com.evsct.app.util.InProgressChargeNotifier
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -100,6 +101,7 @@ class BackupIo @Inject constructor(
     private val database: EvsctDatabase,
     private val appPreferences: AppPreferences,
     private val backupReminderScheduler: BackupReminderScheduler,
+    private val inProgressChargeNotifier: InProgressChargeNotifier,
 ) {
 
     // NonCancellable: export runs in a ViewModel scope, and backing out of
@@ -516,6 +518,15 @@ class BackupIo @Inject constructor(
             // orphaned and safe to remove.
             cleanOrphans(IMAGE_DIR_IN_FILES, plannedImages.values.toSet())
             cleanOrphans(RECEIPT_DIR_IN_FILES, plannedReceipts.values.toSet())
+
+            // Every pre-restore row is gone, including any charge the shade
+            // was tracking, and restored rows get fresh ids so the tracked
+            // id can never match one of them. Without this the ongoing
+            // notification survived the wipe with nothing left to clear
+            // it: its tap opened an edit screen for a missing row, and
+            // saving there inserted a stray new session. Same for the
+            // undo path, which is a restore of the snapshot.
+            inProgressChargeNotifier.cancel()
 
             // The restored data already lives in a backup file the user
             // pointed us at, so treat this moment as a fresh successful

@@ -365,13 +365,22 @@ class SessionEditViewModel @Inject constructor(
             if (sessionId > 0) {
                 val s = sessionRepository.findById(sessionId)
                 if (s != null) loadFrom(s, units)
-                else _state.update {
-                    it.copy(
-                        isLoading = false,
-                        isNew = true,
-                        useMiles = units.useMiles,
-                        postedTimeRateUnit = defaultTimeRateUnit(units),
-                    )
+                else {
+                    // The row is gone (deleted, or wiped by a restore or
+                    // replace-import). If the shade is still tracking it,
+                    // the notification is now orphaned — its tap led
+                    // here, and a save from here inserts a NEW row whose
+                    // id the notifier would never match. Clear it now
+                    // rather than let the form open as a tracked charge.
+                    inProgressChargeNotifier.cancelIfFor(sessionId)
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            isNew = true,
+                            useMiles = units.useMiles,
+                            postedTimeRateUnit = defaultTimeRateUnit(units),
+                        )
+                    }
                 }
             } else {
                 val initialVehicleId = preselectVehicleId
