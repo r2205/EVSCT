@@ -67,7 +67,22 @@ private const val MAX_BACKUP_ENTRIES: Int = 5_000
 
 sealed interface BackupResult {
     data class ExportSuccess(val sessions: Int, val trips: Int, val vehicles: Int) : BackupResult
-    data class RestoreSuccess(val sessions: Int, val trips: Int, val vehicles: Int) : BackupResult
+    /**
+     * The database was replaced. [mediaFailed] counts attached files (receipts
+     * and vehicle photos) the backup carried but that could not be written to
+     * disk — a full device, typically — and [mediaAbsent] counts files the
+     * restored rows reference that the backup never contained and that are
+     * not already on disk. Either is non-zero only rarely, but never silently:
+     * the missing-media sweep drops those rows for good at the next launch,
+     * so the user has to hear about it while restoring again can still fix it.
+     */
+    data class RestoreSuccess(
+        val sessions: Int,
+        val trips: Int,
+        val vehicles: Int,
+        val mediaFailed: Int = 0,
+        val mediaAbsent: Int = 0,
+    ) : BackupResult
     data class Failure(val message: String) : BackupResult
 }
 
@@ -507,11 +522,13 @@ class BackupIo @Inject constructor(
             } catch (_: Exception) {
             }
 
-            // Now (and only now) mutate filesDir. A copy failure here just
-            // leaves an individual image missing; the database is already
-            // internally consistent.
-            installFiles(File(tempDir, IMAGE_DIR_IN_FILES), IMAGE_DIR_IN_FILES, plannedImages.keys)
-            installFiles(File(tempDir, RECEIPT_DIR_IN_FILES), RECEIPT_DIR_IN_FILES, plannedReceipts.keys)
+            // Now (and only now) mutate filesDir. A copy failure here leaves
+            // an individual file missing while the database stays internally
+            // consistent — but it is counted and reported, not swallowed:
+            // the startup media sweep would otherwise turn a full-disk error
+            // into a silent, permanent loss of the affected rows.
+            val images = installFiles(File(tempDir, IMAGE_DIR_IN_FILES), IMAGE_DIR_IN_FILES, plannedImages.keys)
+            val receipts = installFiles(File(tempDir, RECEIPT_DIR_IN_FILES), RECEIPT_DIR_IN_FILES, plannedReceipts.keys)
 
             // Best-effort: drop any image files in filesDir that weren't
             // referenced by the restored set. Old pre-restore images are now
@@ -540,6 +557,8 @@ class BackupIo @Inject constructor(
                 sessions = payload.sessions.size,
                 trips = payload.trips.size,
                 vehicles = payload.vehicles.size,
+                mediaFailed = images.failed + receipts.failed,
+                mediaAbsent = images.absent + receipts.absent,
             )
         } catch (e: Exception) {
             BackupResult.Failure(e.message ?: "Restore failed")
@@ -788,24 +807,42 @@ class BackupIo @Inject constructor(
         )
     }
 
+    /** Tally of one [installFiles] pass. [failed] files existed in the
+     *  backup but could not be written; [absent] files were referenced by
+     *  the restored rows, missing from the backup, and not already on disk
+     *  from an earlier restore of the same media. */
+    private data class InstallOutcome(val failed: Int, val absent: Int)
+
     /** Copy each [name] from [tempSubdir] into filesDir/[targetSubdir]/.
-     *  Called only after the DB transaction commits, so a partial failure
-     *  here at worst leaves a single image missing. */
-    private fun installFiles(tempSubdir: File, targetSubdir: String, names: Set<String>) {
-        if (names.isEmpty()) return
+     *  Called only after the DB transaction commits, so a failure here
+     *  leaves a single file missing rather than a half-restored database.
+     *  A partially written destination is removed: left in place it would
+     *  pass the media sweep's existence check and stand in as a corrupt
+     *  receipt or photo forever. */
+    private fun installFiles(tempSubdir: File, targetSubdir: String, names: Set<String>): InstallOutcome {
+        if (names.isEmpty()) return InstallOutcome(failed = 0, absent = 0)
         val targetDir = File(context.filesDir, targetSubdir).apply { mkdirs() }
+        var failed = 0
+        var absent = 0
         names.forEach { name ->
             val src = File(tempSubdir, name)
-            if (!src.exists()) return@forEach
             val dest = File(targetDir, name)
+            // isFile rather than exists(): a name that resolves to a
+            // directory (".") is as unusable as a missing one.
+            if (!src.isFile) {
+                if (!dest.isFile) absent++
+                return@forEach
+            }
             try {
                 src.inputStream().use { input ->
                     dest.outputStream().use { output -> input.copyTo(output) }
                 }
             } catch (_: IOException) {
-                // Skip silently – row just won't have a media file after restore.
+                dest.delete()
+                failed++
             }
         }
+        return InstallOutcome(failed = failed, absent = absent)
     }
 
     private fun cleanOrphans(subdir: String, referencedPaths: Set<String>) {
