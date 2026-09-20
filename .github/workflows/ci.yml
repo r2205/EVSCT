@@ -21,6 +21,13 @@ jobs:
     name: Build & test
     runs-on: ubuntu-latest
     steps:
+      # Every action below is pinned to a commit SHA rather than a version
+      # tag. A tag is mutable: whoever controls the action's repo (or
+      # anyone who compromises it) can repoint v4 at new code, which would
+      # then run here with the workflow's token and whatever a release
+      # build reads. The trailing comment records which release each SHA
+      # is, so the pins stay readable and reviewable when they're bumped.
+      #
       # fetch-depth: 0 for the full history, because app/build.gradle.kts
       # derives versionCode from `git rev-list --count HEAD`. The action's
       # default shallow clone (depth 1) makes that count 1, so every CI build
@@ -29,7 +36,7 @@ jobs:
       # b<count>-<sha>). The commit sha still identifies the build either way;
       # this just stops CI artifacts from disagreeing with local ones.
       - name: Check out the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -39,13 +46,13 @@ jobs:
       # compiled to Java 17 bytecode via compileOptions and jvmTarget in
       # app/build.gradle.kts, so the release artifact is unchanged.
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Set up Gradle (with caching)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace

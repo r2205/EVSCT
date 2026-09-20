@@ -51,32 +51,26 @@ class MainActivity : ComponentActivity() {
         // aftermath of a cloud auto-restore, which carries the DB but not
         // receipts/ or vehicles/. Once per process, runs on the app scope.
         missingMediaSweeper.sweepInBackground()
-        // Consume the launching intent exactly once per delivery. Four
-        // arrival shapes need telling apart:
-        //  - Fresh start (no saved state, not from history): a launcher
-        //    open or a notification tap on a finished activity — consume
-        //    normally.
-        //  - Recents relaunch (LAUNCHED_FROM_HISTORY): the task's BASE
-        //    intent is redelivered, and it may be a notification tap from a
-        //    charge finished days ago — honor it only while that charge is
-        //    still the live tracked one. A genuine tap passes the same gate
-        //    trivially.
-        //  - In-process recreation (rotation, theme change): saved state
-        //    present AND this process already examined the intent —
-        //    getIntent() is the same, already-consumed object; refiring
-        //    would hijack navigation on every config change.
-        //  - Process-death restore: saved state present but this process
-        //    has never seen the intent. When the restore was triggered by
-        //    tapping the in-progress notification, this is the only
-        //    delivery that tap gets — dropping it lands the user on
-        //    whatever screen was restored. Same stale-intent hazard as the
-        //    history case, so same gate.
-        val fromHistory =
-            ((intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        when {
-            savedInstanceState == null && !fromHistory -> consumeIntentExtras(intent)
-            savedInstanceState == null || !launchIntentExamined ->
-                consumeIntentExtrasIfStillTracked(intent)
+        // Consume the launching intent exactly once per delivery, and only
+        // when it is worth acting on. Two questions, in order:
+        //
+        // Has this process already examined this intent? Saved state plus
+        // an examined intent means in-process recreation (rotation, theme
+        // change): getIntent() is the same, already-consumed object, and
+        // refiring would hijack navigation on every config change. Saved
+        // state with an UNexamined intent is a process-death restore,
+        // where this is the only delivery a notification tap gets —
+        // dropping it lands the user on whatever screen was restored.
+        //
+        // Is the id worth honoring? Every path goes through the tracked
+        // charge gate, because the intent is not trustworthy on its own:
+        // a redelivered base intent (recents relaunch) can name a charge
+        // that finished days ago, and this activity is exported, so any
+        // installed app can send the same extra to open an arbitrary
+        // session. A live notification always names the tracked charge,
+        // so a genuine tap passes trivially.
+        if (savedInstanceState == null || !launchIntentExamined) {
+            consumeIntentExtrasIfStillTracked(intent)
         }
         launchIntentExamined = true
         setContent {
@@ -145,25 +139,26 @@ class MainActivity : ComponentActivity() {
         // Already-running case: the activity is brought to the foreground by
         // the notification's PendingIntent. Push the new intent's session id
         // through the deep-link channel so the existing composition routes
-        // to the right edit screen.
-        consumeIntentExtras(intent)
+        // to the right edit screen — through the same gate as every other
+        // delivery, since an exported activity can be started by anyone.
+        consumeIntentExtrasIfStillTracked(intent)
     }
 
-    private fun consumeIntentExtras(intent: Intent?) {
-        val sessionId = intent
-            ?.getLongExtra(InProgressChargeNotifier.EXTRA_OPEN_SESSION_ID, -1L)
-            ?: -1L
-        if (sessionId > 0) {
-            pendingDeepLinkRoute.value = Routes.sessionEdit(sessionId)
-        }
-    }
-
-    /** Gated consume for redelivered base intents (recents relaunch,
-     *  process-death restore): navigate only when the intent's session is
-     *  still the live tracked charge, so a stale notification tap doesn't
-     *  hijack the screen. Reads the tracked id straight from DataStore —
-     *  the notifier's in-memory copy restores asynchronously and may not be
-     *  populated yet this early in startup. */
+    /**
+     * Route to a session's edit screen from an intent extra, but only when
+     * that session is still the live tracked charge.
+     *
+     * The gate does two jobs. A redelivered base intent (recents relaunch,
+     * process-death restore) can name a charge that finished days ago, and
+     * MainActivity is exported, so any installed app can send this extra to
+     * open an arbitrary session by id. Neither should move the user. The
+     * notification only ever exists for the tracked charge, so a real tap
+     * always passes.
+     *
+     * Reads the tracked id straight from DataStore — the notifier's
+     * in-memory copy restores asynchronously and may not be populated yet
+     * this early in startup.
+     */
     private fun consumeIntentExtrasIfStillTracked(intent: Intent?) {
         val sessionId = intent
             ?.getLongExtra(InProgressChargeNotifier.EXTRA_OPEN_SESSION_ID, -1L)
