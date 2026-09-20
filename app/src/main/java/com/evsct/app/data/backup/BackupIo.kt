@@ -12,6 +12,7 @@ import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.SessionReceipt
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
+import com.evsct.app.ui.map.TripPinColor
 import com.evsct.app.util.BackupReminderScheduler
 import com.evsct.app.util.ExportNaming
 import com.evsct.app.util.InProgressChargeNotifier
@@ -445,7 +446,18 @@ class BackupIo @Inject constructor(
                     vehicleIdMap[raw.id] = newId
                 }
 
+                // Trips from a pre-v6 backup carry no pin color. The app's
+                // start-up backfill assigns one, but only at cold start, so
+                // a restored trip's pins stayed the fallback gray for the
+                // rest of the session. Assign here instead, from a list
+                // seeded with the colors the backup already uses so the new
+                // ones spread across the palette. Picked inline rather than
+                // through TripRepository.upsert, whose auto-pick collects a
+                // DAO Flow that must not run inside a transaction.
+                val usedPinColors = payload.trips.mapNotNullTo(mutableListOf()) { it.pinColor }
                 payload.trips.forEach { raw ->
+                    val pinColor = raw.pinColor
+                        ?: TripPinColor.nextDefault(usedPinColors).name.also { usedPinColors += it }
                     val newId = tripDao.insert(
                         Trip(
                             id = 0,
@@ -457,7 +469,7 @@ class BackupIo @Inject constructor(
                             startBatteryPct = raw.startBatteryPct,
                             endBatteryPct = raw.endBatteryPct,
                             notes = raw.notes,
-                            pinColor = raw.pinColor,
+                            pinColor = pinColor,
                             createdAt = raw.createdAt,
                         )
                     )
