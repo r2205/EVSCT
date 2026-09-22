@@ -9,8 +9,10 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3-7F52FF.svg?logo=kotlin&logoColor=white)](#)
 
 Personal Android app for logging EV charging sessions (DC fast on road trips,
-AC at home/hotels). Stores everything locally; nothing leaves the phone unless
-you hit Export. Built with Kotlin + Jetpack Compose + Room + Hilt.
+AC at home/hotels). Stores everything locally: no account, no server, no
+analytics. Apart from the Google map tiles and address lookups the map needs,
+nothing leaves the phone unless you export it. Built with Kotlin + Jetpack
+Compose + Room + Hilt.
 
 ## Screenshots
 
@@ -59,6 +61,14 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 ### Logging a session
 - Date/time, charging type (DC Fast / AC L2 / AC L1), and pricing model
   (per-kWh, per-minute, flat, free, hybrid).
+- **A form that folds** — the essentials (date, vehicle, type, pricing,
+  odometer, energy, cost, duration, brand and city) stay at the top, and
+  seven optional groups fold beneath them: battery & wait, posted rates,
+  more station detail, trip, receipts, tags, and notes. Everything is
+  open while you enter a charge; reopening a saved one folds the empty
+  groups out of the way. A group holding a value always opens, a group
+  you fold by hand shows an "n set" badge, and a validation warning
+  opens the group it points at. **Save** sits at the foot of the form.
 - **Track a charge live** — "Start charge" logs the session the moment
   you plug in and posts a persistent "Charging in progress" notification
   with a running stopwatch; tap it to jump back to the entry and fill in
@@ -103,8 +113,11 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 - **Brand picker** — curated North-American networks (Tesla, Electrify
   America/Canada, ChargePoint, EVgo, FLO, BC Hydro, Ivy, Rivian, IONNA,
   etc.) plus free-text entry. Sorted by your own usage history.
-- **Use a recent stop…** — pre-fills brand, city, prov/state, address, and
-  station name from a previous visit.
+- **Use a recent stop…** — pre-fills what the station determines from a
+  previous visit: brand, city, prov/state, address, station and stall,
+  plus the charging type, currency, pricing model, posted rates, max kW,
+  and map location. What the visit determines (energy, cost, duration,
+  battery, odometer) stays blank for you to fill in.
 - **Tag suggestions** — a row of one-tap chips under the "Add tag…" field.
   With the field empty they're your most recently used tags; as you type
   they narrow to what matches. Matching ignores case, spaces and
@@ -141,8 +154,11 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   list and collapses to a bare `+` once you scroll. It opens a chooser to
   either track a charge live (a running timer plus a persistent
   notification) or backfill a charge you've already finished.
-- **Vehicle tabs** — filter to a specific car, or All. New sessions started
-  from a vehicle tab pre-select that vehicle.
+- **Vehicle tabs** — filter to a specific car, All, or **Unassigned**
+  (sessions with no vehicle, such as CSV imports, so you can find and
+  assign them). The tabs appear whenever there's more than one group to
+  choose between. New sessions started from a vehicle tab pre-select that
+  vehicle. A car icon at the end of the tabs opens the Vehicles list.
 - **Search** — free-text matching brand, city, prov, address, station,
   notes, and tag names.
 - **Filter sheet** — by brand, by date range with quick presets (This
@@ -162,8 +178,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   trip, or delete them in bulk — a confirmation dialog first, then an Undo
   snackbar so a mistaken batch is reversible.
 - Top bar entries: Search · **Sort** · **Select** · Settings. Log / Map / Stats /
-  Trips switch via the **bottom navigation bar**, which preserves each
-  tab's state (scroll position, camera, filters) across switches.
+  Trips switch via the **bottom navigation bar** (a side navigation rail in
+  landscape), which preserves each tab's state (scroll position, camera,
+  filters) across switches.
 - **Undo delete** — removing sessions (one from its edit screen, or a whole
   multi-select batch) raises a "Session deleted" snackbar on the log with an
   **Undo** action that restores the rows and their receipt files. The offer
@@ -195,8 +212,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   filter sheet and toggle those same trips. It hides when trip colors are
   off, the heatmap owns the canvas, or no colored trip is visible.
 - **Filter sheet** — decides *which* stops show, not how the map looks
-  (that moved to the Layers menu): scope the map to a single vehicle
-  (chip row appears when you have ≥2 vehicles), hide individual trips and
+  (that moved to the Layers menu): scope the map to a single vehicle or to
+  Unassigned sessions (the chip row appears when there's more than one to
+  choose between), hide individual trips and
   the untripped bucket with a checkbox list, or use **Show all** / **Hide
   all** to flip the trip selection in one tap when the trip list grows
   long. **Reset** clears every active filter at once.
@@ -224,11 +242,13 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   for figuring out which session at a frequently-visited stop is the
   one you need to fix.
 - **Address backfill** — every time you open the map, any stop with a
-  textual address but no coordinates is reverse-geocoded and the resolved
-  point saved back to those sessions so it appears as a pin. Once an
-  address has been tried the pass is throttled to at most once a day, but
-  a stop whose address was **added or edited since the last attempt** is
-  always re-geocoded on the next open. Addresses that still can't be
+  textual address but no coordinates is looked up (the address text goes
+  to the phone's geocoding service, which is Google on most devices) and
+  the resolved point saved back to those sessions so it appears as a pin.
+  Once an address has been tried the pass is throttled to at most once a
+  day, but a stop whose address was **added or edited since the last
+  attempt** is always looked up again on the next open. Addresses that
+  still can't be
   located raise a snackbar ("N addresses couldn't be located — those
   stops stay off the map"), pointing you to fix the address or open the
   session and use *Pick on map*.
@@ -263,6 +283,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   measured km/kWh per leg (and the reason whenever a leg can't be
   measured). A trip with no sessions yet shows a how-to empty state
   explaining how to tag sessions to it.
+- **View on map** — a map button in the trip detail top bar jumps to the
+  Map tab filtered to just that trip's stops, framed on them. It appears
+  once the trip has sessions.
 
 ### Stats
 - A **Last 12 months / All time** segmented selector at the top of the
@@ -270,7 +293,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   brands, type split, and heatmaps. (The "vs gas this month" card is the
   one exception: it's pinned to the current calendar month.)
 - Headline card: sessions, total cost (one line per currency you've paid
-  in), total energy, average effective $/kWh, average power.
+  in), total energy, average effective $/kWh, average power. The two
+  averages only count sessions that recorded both sides of the ratio, so
+  an import with missing durations can't read as hundreds of kW.
 - **vs gas this month** card — compares this month's charging cost to
   what an equivalent distance of driving would have cost in gas. Shows a
   big "Saved $X" headline with the underlying numbers below.
@@ -285,7 +310,8 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   separately from home/commute charging. Each shows its peak day/hour
   ("Peak: Sat 2 pm"), a **Less → More** shading legend, and **tappable
   cells** — tap any square to read its exact session count.
-- Vehicle filter mirrors the Charging log tabs.
+- Vehicle filter mirrors the Charging log tabs, Unassigned and the car
+  icon included.
 - **Year recap** — tap the **Recap** button in the top bar to open a
   year-end recap (any year you pick): headline totals, an on-screen
   **charging map** (that year's stops and trip routes over a bundled
@@ -297,8 +323,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   responsive page (full monthly cost+energy table, a Cost/Energy chart
   toggle, and the same charging map). The HTML opens offline in any
   browser with no external resources, so nothing leaves the phone.
-  When you open it from a specific vehicle's tab, the recap and its
-  exports are scoped to that vehicle (and the filename includes its name).
+  When you open it from a specific vehicle's tab (or Unassigned), the
+  recap and its exports are scoped to that group: a line under the title
+  names the scope, and the filename includes it.
 
 ### Settings
 - **Vehicles** — manage your EVs and pick a default for new sessions.
@@ -335,6 +362,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   existing" toggle.
 - **One-time XLSX import** — for the legacy `DC Fast Charging.xlsx`
   log; auto-tags imported rows with the default vehicle.
+- **About** — the running build version and git commit (linked to that
+  commit on GitHub for clean builds), plus View on GitHub and privacy
+  policy links.
 
 ### Backup & export
 - **Full backup** — single `.zip` containing `backup.json` + every vehicle
@@ -350,7 +380,10 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   destructive action, a damaged or inconsistent backup is refused
   outright before anything is wiped, and a **pre-restore safety
   snapshot** is written automatically so any restore can be undone from
-  Settings.
+  Settings. If some photos or receipts can't be written during a restore
+  (usually because the phone is out of storage), the result dialog says so
+  instead of reporting a clean success. Free up space and restore the same
+  backup again to get them back.
 - **Backup reminder** — in-app banner on the Charging log when it's been
   longer than your threshold since the last backup, optionally pushed to
   the notification shade. The notification fires even when the app is
@@ -362,6 +395,23 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   re-toned for dark mode so they keep their pop instead of washing out on
   dark surfaces. Material You dynamic color is off by default so the look
   stays consistent regardless of wallpaper.
+- Every Material color role is set explicitly, including the surface tones
+  behind cards, dialogs, sheets, menus, snackbars, and the navigation bar,
+  so none of them fall back to Material's default purple tint.
+- Status and navigation bar icons follow the in-app theme choice, and a
+  dark-mode cold start opens on a dark window rather than a white flash.
+
+### Layout & accessibility
+- **Landscape** — in wide windows (600dp and up) the bottom bar becomes a
+  side navigation rail that stays clear of a hole-punch camera, and the
+  session, vehicle, and Settings forms stop at a readable width instead of
+  stretching across the screen.
+- **Large text** — above 1.5× font size, stat cards stack one stat per
+  line instead of wrapping into rows that don't line up, and chart labels
+  and values widen with the font so amounts don't break mid-number.
+- **TalkBack** — each log row reads as one sentence with units and rates
+  spoken as words, charts and heatmaps carry spoken summaries, and each
+  switch row is a single toggle.
 
 ## Open in Android Studio
 
@@ -476,6 +526,14 @@ the sheet to CSV from Google Sheets and use **Import CSV…** instead.
 Sessions, trips, vehicles, vehicle photos, and receipt files (photos and
 PDFs) all come across.
 
+## Sample data
+
+[`docs/sample-backup/`](docs/sample-backup/README.md) holds three
+ready-to-restore backups so testers can start from a populated app: a
+standard pack, a larger superset of it, and a separate three-year road-trip
+pack. Restore one from **Settings → Full backup → Restore from backup…**.
+Like any restore, it replaces the data already on the phone.
+
 ## Stack
 
 - Kotlin 2.3, Jetpack Compose, Material 3
@@ -491,9 +549,18 @@ PDFs) all come across.
 - Apache POI for the legacy XLSX importer (one-shot only)
 - DataStore Preferences for cross-screen settings (units, currency,
   backup reminder, map prefs, last-backup timestamp)
+- Screen text lives in `res/values/strings.xml`, so a translation is one
+  `values-<lang>` copy of that file. Messages built in ViewModels, exports,
+  and notifications are still inline.
+- JUnit, plus Robolectric for Compose UI tests that run on the JVM inside
+  `testDebugUnitTest` (no emulator needed)
 - AGP 9.3.0, Gradle 9.6.1, minSdk 30, targetSdk 36. Build on JDK 21 — the
   Robolectric tests simulate SDK 36 and need a 21 runtime, though the app
   itself is still compiled to Java 17 bytecode.
+- GitHub Actions CI runs the unit tests and an R8 release build on every
+  pull request and push to `main`. Its actions are pinned to commit SHAs,
+  and it checks out the full history so CI's `versionCode` matches a local
+  build's.
 
 ## License
 

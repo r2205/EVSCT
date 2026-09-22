@@ -32,6 +32,14 @@ context is in the repo even if the conversation is summarized later.
 - minSdk 30, targetSdk 36, AGP 9.3.0, Gradle 9.6.1, KSP 2.3.10
   (Kotlin is compiled by AGP's built-in Kotlin — no `kotlin-android` plugin)
   (upgraded mid-project from AGP 8.13.2 / Gradle 8.13 / Kotlin 2.1)
+- Tests: JUnit 4, plus Robolectric 4.16.1 with Compose `ui-test-junit4`
+  so Compose UI suites run on the JVM inside `testDebugUnitTest` (no
+  emulator). `robolectric.properties` pins `sdk=36` to targetSdk and
+  `graphicsMode=NATIVE`; SDK 36 needs a JDK 21 test runtime.
+- CI: GitHub Actions (`.github/workflows/ci.yml`) runs
+  `testDebugUnitTest` and `assembleRelease` (R8 + release lint) on every
+  PR and push to `main`, on JDK 21. The actions are pinned to commit SHAs
+  and the checkout is full-depth (see "Notable lessons learned").
 
 ## Data model
 
@@ -51,8 +59,8 @@ context is in the repo even if the conversation is summarized later.
 - **v3 → v4**: added `receiptImagePath` on sessions (nullable TEXT).
 - **v4 → v5**: added `latitude` / `longitude` columns on sessions for
   the map view (populated by GPS autofill going forward, and by a
-  one-shot reverse-geocode backfill for older sessions on first map
-  open).
+  forward-geocode backfill of the typed address for older sessions on
+  map open).
 - **v5 → v6**: added `pinColor` on trips (TEXT, nullable). Auto-assigned
   on insert from a fixed 10-color palette.
 - **v6 → v7**: added `continuesPrevious` (INTEGER NOT NULL DEFAULT 0)
@@ -99,9 +107,37 @@ in review.
 
 - Date/time, charging type (DC Fast / AC L2 / AC L1), pricing model
   (per-kWh, per-min, flat, free, hybrid).
-- **Order**: Vehicle chips at top (under date/time), then Odometer,
-  Energy, Cost, Currency chips, Duration, Battery start/end. Posted
-  rates section below.
+- **Order** (PR #50): validation hints card, date/time, Vehicle chips,
+  charging type, pricing model; then a Session group (Odometer, Energy,
+  Cost + Currency chips, Duration) and a Station group ("Use a recent
+  stop…", brand, city, prov/state). Everything after that folds (next
+  bullet). Save is a full-width bottom bar at the foot of the form and
+  is the *only* Save — the old top-bar check was a full scroll away from
+  the last field filled in, and two Saves on a form this long would be
+  ambiguous. Delete stays in the top bar.
+- **Folding groups** (`CollapsibleSection`, PR #50): seven optional
+  groups fold — Battery & wait, Posted rates, More station detail, Trip,
+  Receipts, Tags, Notes. The form was 26 inputs in one flat scroll, and a
+  typical charge needs about nine. Folding may never hide something the
+  user entered, so the section enforces:
+  - A group holding a value opens itself, seeded from `filledCount` and
+    re-checked as values land while the form is open (map picker
+    coordinates, GPS autofill). Coordinates and the uncommitted tag draft
+    count as filled even though no text field shows them.
+  - A group the user collapses by hand shows an "n set" badge and stays
+    collapsed (`userToggled` beats auto-open, or it would fight every
+    keystroke).
+  - `demandsAttention` beats everything: a validation hint forces its
+    group open, so a hint never names a field the user can't reach. All
+    nine `HintField`s are covered (odometer / energy / cost / duration
+    never fold; posted-rate and battery hints open their groups).
+  - **Entry vs review** (`startExpanded = enteringCharge`): a new charge
+    — or a live-tracked one, whose row already exists — starts with every
+    group open, because that's when the user decides what to record.
+    Reopening a saved charge folds the empty groups out of the way.
+  - Expansion is `rememberSaveable`, since the map and photo pickers put
+    the screen at risk of process death. `CollapsibleSectionTest`
+    (Robolectric) pins all of these rules.
 - **Smart duration entry**: `25` → `0h 25m 0s`; `32:14` → `0h 32m 14s`
   (two-part is m:s, the stopwatch reading — sub-hour charges dominate);
   `1:25:00` exact. While focused, supporting text previews the
@@ -113,11 +149,25 @@ in review.
   + history-sorted brands; search filters both; "Use \"...\"" custom
   entry option appears for unrecognized typed text. DAO query groups by
   `TRIM(brand) COLLATE NOCASE` so `"Tesla "` and `"Tesla"` are one entry.
-- **Use a recent stop…**: bottom-sheet pre-fill for brand/city/prov/
-  address/station from past sessions, deduped by
-  `(brand, address, city)` case-insensitive. Station/stall name is
-  intentionally **not** part of the dedup key (see "stop-grouping" note
-  below).
+- **Use a recent stop…**: bottom-sheet pre-fill from past sessions,
+  deduped by `(brand, address, city)` case-insensitive. Station/stall
+  name is intentionally **not** part of the dedup key (see
+  "stop-grouping" note below). Since PR #56 a stop pre-fills everything
+  the *station* determines and nothing the *visit* determines: identity
+  text (brand, city, prov, address, station, stall), plus charging type,
+  currency, pricing model, posted $/kWh, posted time rate, posted max kW,
+  and coordinates. Energy, cost, duration, battery, odometer, and notes
+  stay blank; the vehicle keeps its own preselect logic.
+  `computeRecentStops` sources each part so a quick log can't degrade
+  the stop: identity text and type/currency from the most recent visit;
+  the pricing set (model + both rates + max kW) *whole* from the newest
+  visit that recorded any of it, so one visit's model is never paired
+  with another's rate; coordinates from the newest visit with both
+  halves. `applyStop` replaces rather than merges (re-picking a different
+  stop must not keep the last one's residue), echoes rates in canonical
+  $/min, recomputes hints, and clears `timeRateFlipUndo`. The helpers
+  live at file scope so `RecentStopsTest` can drive them without the
+  Hilt ViewModel.
 - **GPS autofill**: tap the tertiary-tinted card to request location
   permission; `LocationManager` one-shot with 15s timeout, last-known
   fast path, `Geocoder` reverse-lookup. Result reported via snackbar.
@@ -253,9 +303,40 @@ in review.
   `SessionReceiptDao.observeCountsBySession()`). The duration line
   appends `+Xm wait` when the session carries a wait time; a
   wrapping FlowRow of `#tag` pills sits below the meta line when
-  tags are set.
-- **Vehicle tabs** — `ScrollableTabRow` with All + each vehicle.
-  Hidden when ≤ 1 vehicle.
+  tags are set. The stat line (type badge, energy, duration, avg kW) is
+  a `FlowRow` too (PR #53) — it was a plain `Row` that clipped "85 kW
+  avg" at large font scale. Its two "·" separators were dropped for
+  everyone, since a wrap would strand one at a line edge; spacing now
+  carries the grouping.
+- **Row TalkBack sentence** (`sessionRowDescription`, PRs #50/#53): each
+  row is one spoken sentence in reading order instead of a dozen
+  fragments, with units and type abbreviations as words and the
+  effective rates spoken as rates (`effective $0.576 per kilowatt hour,
+  effective $0.82 per minute`). `clearAndSetSemantics`, not
+  `mergeDescendants`, because merging would trail "Has receipt" after the
+  sentence. The time rate comes from `cardTimeRate(session, preference)`
+  so the sentence never recites a rate the card isn't showing, and the
+  preference is part of the `remember` key. `SessionRowDescriptionTest`.
+- **Vehicle tabs** (`VehicleScopeTabs`, PR #51) — a `VehicleScope`
+  sealed type: All, One(vehicleId), or **Unassigned** (sessions whose
+  vehicle is null: CSV imports, anything logged before a vehicle
+  existed). Previously the filter was a `Long?` where null meant
+  "everything", so orphans were only reachable mixed into All. The tabs
+  are one per bucket that holds sessions, plus All, and show only when
+  there's more than one bucket (`needsVehiclePicker`): 1 vehicle alone →
+  no tabs; 1 vehicle + orphans → All | EV6 | Unassigned; with no
+  vehicles at all, All and Unassigned would hold the same rows, so no
+  tabs. Unassigned sits last. It preselects *nothing* for Add/Track (a
+  new charge should take the default vehicle, not become another
+  orphan). `hasUnassignedSessions` reads the unfiltered set so a search
+  can't make the tab vanish mid-use, and `orAllIfEmpty` drops back to All
+  once the last orphan is assigned. A car icon at the strip's end opens
+  the Vehicles list (PR #58); it sits outside the scrollable row so a
+  long garage can't push it off-screen. The same tabs, rule, and icon
+  are shared by Stats (and the rule by the Map's filter chips).
+  `VehicleScopeTest`, `VehicleScopeTabsTest` (including overflow:
+  Unassigned reachable by scroll, a selected last tab scrolled into
+  view).
 - **Search** (toggle via top-bar magnifying glass): matches brand,
   city, prov, address, station, stall, notes.
 - **Filter sheet** (tune icon next to search): brand FilterChips +
@@ -319,6 +400,24 @@ in review.
   tracking (the notifier records the tracked id before the permission
   check). The tracked id is mirrored to DataStore so process death
   doesn't orphan the ongoing notification.
+  - **Deep-link gate** (Sept 2026, PR #76): `MainActivity` is exported
+    as the launcher, so any installed app could send
+    `EXTRA_OPEN_SESSION_ID` and open an arbitrary session's edit screen.
+    Every delivery — fresh start, recents relaunch, process-death
+    restore, and `onNewIntent` — now goes through
+    `consumeIntentExtrasIfStillTracked`, which navigates only when the id
+    is the live tracked charge (read straight from DataStore, since the
+    notifier's in-memory copy restores asynchronously). A real
+    notification always names the tracked charge, so genuine taps pass.
+    The only other question is whether this process already examined the
+    intent (in-process recreation must not re-fire it).
+  - **Orphan cleanup** (PR #73): restore, undo-restore, and CSV
+    replace-import wipe every session, so each now cancels the notifier
+    after its transaction commits. The edit screen also calls
+    `cancelIfFor(id)` when the row it was opened for no longer exists;
+    before, that screen loaded the missing row as a new session still
+    flagged as tracking, and saving inserted a stray row the notifier
+    could never match.
 - **Back-to-top FAB** — a `SmallFloatingActionButton` (up-chevron) fades
   in above the Add button once the list is scrolled past ~12 rows
   (`firstVisibleItemIndex > 12`) and animates the list back to the top.
@@ -328,18 +427,29 @@ in review.
   configurable threshold (default 30 days) and the master enable
   toggle. State stored in `AppPreferences` DataStore (`last_backup_at`
   + reminder prefs).
-- **Empty state**: shared `EmptyState` composable on first launch with
-  a "Add session" call to action. Same composable used on Vehicles,
-  Trips, Stats, and Map for consistent zero-data guidance.
+- **Empty states**: the shared `EmptyState` composable (PR #51 removed a
+  hand-written copy in this file that had drifted from it). With no
+  vehicles yet, the first-launch welcome says "Add a vehicle first" and
+  its button goes to the Vehicles list (PR #58; it used to say "Open
+  Settings"). A vehicle-filtered empty log offers **Show all vehicles**.
+  The plain empty log has no button on purpose, because the labelled
+  Add session FAB is already on screen. Trips and Vehicles use the same
+  composable with an action button. The Map keeps its own quieter
+  variant because it renders over a live basemap.
 - **Row animations** — list rows carry `Modifier.animateItem()`, so a
   delete, an undo re-insert, or a re-sort glides the affected rows into
   place instead of teleporting.
-- Top bar: Search · Sort · Select · Settings. Log / Map / Stats / Trips are
-  bottom-navigation tabs (July 2026): the bar shows only on those four
-  top-level screens, tab switches use save/restore-state navigation so
-  each tab keeps its scroll/camera/filter state, and system back from
-  any tab lands on the Log. Predictive back is opted in via
-  `enableOnBackInvokedCallback`.
+- **Summary card** stats go through the shared `StatColumns` (see
+  "Adaptive layout & large text").
+- Top bar: the EVSCT brand lockup + "Log" title (`EvsctBarTitle`, shared
+  by the five top-level bars — Log, Map, Stats, Trips, Settings; the
+  titles were shortened to the tab labels so the lockup fits on 360dp
+  phones), then Search · Sort · Select · Settings. Log / Map / Stats /
+  Trips are bottom-navigation tabs (July 2026), or a navigation rail in
+  wide windows: the bar shows only on those four top-level screens, tab
+  switches use save/restore-state navigation so each tab keeps its
+  scroll/camera/filter state, and system back from any tab lands on the
+  Log. Predictive back is opted in via `enableOnBackInvokedCallback`.
 
 ### Map view (`MapScreen`)
 
@@ -371,11 +481,13 @@ in review.
     longer live here — they moved to the Layers menu. This sheet now
     decides only *which* stops show, not how the map looks.)
   - "Show pins for vehicle" — single-select FilterChip row ("All
-    vehicles" + one chip per garage entry) hidden when fewer than two
-    vehicles exist. The selection is applied *before* stops and trip
-    options are computed so the trip list collapses to only the trips
-    that vehicle actually visited; stale ids (deleted underneath) are
-    dropped silently.
+    vehicles" + one chip per garage entry + an **Unassigned** chip last
+    when vehicle-less sessions exist), driven by the same `VehicleScope`
+    and `needsVehiclePicker` rule as the Log and Stats tabs (PR #51), so
+    it hides when there's only one bucket. The selection is applied
+    *before* stops and trip options are computed so the trip list
+    collapses to only the trips that vehicle actually visited; stale ids
+    (deleted underneath) are dropped silently.
   - Checkbox list of trips and an "Untripped sessions" row. Hiding one
     trip on a multi-trip stop re-colors that stop to the remaining
     trip rather than staying gray.
@@ -454,9 +566,24 @@ in review.
     re-resolves the selected stop against the currently-visible
     stops list, so the sheet auto-closes when a filter change hides
     its pin.
+- **Trip focus from trip detail** (PR #46): the trip detail top bar's
+  "View on map" action switches to the Map tab with only that trip
+  visible and frames the camera on its stops. The handoff reuses the
+  Stats → Log brand drill-down relay (a `SavedStateHandle` key on the
+  destination's back-stack entry), reversed: the Map entry may not be on
+  the back stack yet, so the sender navigates first and writes the
+  payload second. `MapViewModel.focusTrip` reads trips from the
+  repository (the UI state hasn't emitted yet on a cold open), hides
+  every other trip bucket plus untripped, clears any vehicle filter that
+  could mask the trip, and returns the trip's coordinates so the screen
+  frames them without racing the first-emission auto-frame. The action
+  only appears once the trip has sessions.
 - **First-open backfill**: when the screen opens, every distinct stop
-  that has only a textual address is geocoded and the coordinates
-  written back to all sessions sharing that address. Progress shows in a
+  that has only a textual address is forward-geocoded (the address
+  *text* goes to the platform `Geocoder`, Google on most devices, which
+  needs no location permission) and the coordinates written back to all
+  sessions sharing that address. `docs/play-data-safety.md` lists this
+  among the automatic paths that send data to Google. Progress shows in a
   banner. Stops that fail to geocode are reported as "N unlocated" in
   the subtitle **and raise a one-time snackbar** once the pass completes
   ("N addresses couldn't be located — those stops stay off the map…"),
@@ -553,7 +680,14 @@ vehicle on the same trip.
 
 ### Vehicles
 
-- **List**: tap a row → detail screen. Default vehicle gets a star.
+- **List**: tap a row → detail screen. Default vehicle gets a star. The
+  empty state carries an "Add vehicle" button (PR #51). Two more ways in
+  besides Settings (PR #58): the car icon on the Log/Stats vehicle tabs,
+  and the first-launch welcome's "Add a vehicle" button. Vehicles is
+  deliberately not a fifth nav-bar item — it's the least-visited screen
+  after setup, and bar space is scarce. Known gap: a single-vehicle setup
+  with no orphans shows no tab strip, so Settings stays that user's only
+  path.
 - **Detail screen**: hero card with photo + label, Lifetime card
   (sessions, total cost, energy, distance, $/km or $/mi, $/kWh, avg
   power, total charge time, top brand), highlight tiles (fastest
@@ -581,14 +715,25 @@ vehicle on the same trip.
   start/end dates), sessions, total $, energy, distance ($/km or $/mi
   based on pref). Rows carry `Modifier.animateItem()` so they glide to
   their new slot when a date edit re-sorts the list (newest first) or a
-  trip is deleted. + FAB opens shared edit dialog.
+  trip is deleted. + FAB opens shared edit dialog. The empty state has a
+  "New trip" button (PR #51) instead of body text telling the user to
+  "Tap +".
 - **Detail screen**: stats card (an optional date-range label in its
   header, sessions, total $, energy, distance, total charge time with
   missing-duration flag, average km/kWh from the efficiency analysis
   when available) + sessions list — or, when the trip has no sessions
   yet, a how-to empty state ("No sessions in this trip yet" with
   tag-from-the-Log instructions) — + driving efficiency card + pencil in
-  top bar for edit dialog.
+  top bar for edit dialog, plus a "View on map" action once the trip has
+  sessions (see Map view → Trip focus). Since PR #71 the stats card's
+  rows use the shared `StatColumns` (side by side while they fit, one per
+  line past 1.5× font), and the missing-duration note sits full-width
+  under the charge-time stat. Each session card lays out its
+  "Brand · City" title in a weighted column with a 12dp gap, and the cost
+  is measured first at its natural width (the same layout as
+  `VehicleDetailScreen`'s recent rows). Before, a long title pushed
+  against the cost (`North Bay$43.93`) and wrapped "CAD" onto its own
+  line.
 - **Edit dialog** (`TripEditDialog`, used for both create and edit):
   Name, optional Start/End **date** pickers (M3 `DatePicker` dialogs
   stored at local midnight — they label the trip and sort the list, with
@@ -629,7 +774,16 @@ vehicle on the same trip.
   in the last 12 months / Switch to All time" notice, not "No sessions
   yet"; the selector itself hides when the scope has no data at all.
 - Headline card: sessions, total cost, total energy, avg eff. $/kWh,
-  avg power — all within the selected window.
+  avg power — all within the selected window. Laid out with the shared
+  `StatColumns`. Both averages come from `util/SessionAverages` (PR
+  #72), shared with the vehicle detail card, and pair per session: a
+  session counts toward a ratio only if it carries *both* sides. Before,
+  Stats divided kWh summed over every session by hours summed over only
+  those with a duration, so an import mostly lacking durations read as
+  hundreds of kW, and a session with a cost but no kWh inflated $/kWh.
+  The vehicle detail card had been fixed for the same bug earlier
+  (`9177466`) while Stats kept its own copy of the arithmetic, which is
+  why it's shared now. `SessionAveragesTest`.
 - **"vs gas this month" card** — slotted right under the headline.
   Big "Saved $X" line with sub-text "$cost charging vs ~$gas on gas"
   and an "Assumes $2.15/L · 12 L/100 km" caption. Distance preference:
@@ -649,7 +803,9 @@ vehicle on the same trip.
 - Top brands by spend (top 8) — each row is **tappable**: it grows a
   trailing chevron and, when tapped, jumps to the Log pre-filtered to
   that brand (`onOpenLogForBrand` → the log's `applyBrandDrilldown`,
-  which swaps in a brand-only filter for the current vehicle scope). A
+  which swaps in a brand-only filter for the current vehicle scope; the
+  scope travels as a `VehicleScope` token, so Unassigned survives the
+  hop — PR #51). A
   "Tap a brand to see its sessions in the Log" subtitle advertises it.
 - Charging type split (DC/AC L2/AC L1) — stacked bar with %.
 - **"When you charge" card** — two 7×24 day-of-week × hour-of-day
@@ -674,10 +830,11 @@ vehicle on the same trip.
 - **Year recap entry** — a labeled **"Recap"** button in the Stats top
   bar (a `TextButton` with a `Summarize` icon + text, not a bare PDF
   glyph — the icon alone read as "some PDF button" in testing) carries
-  the currently-selected `vehicleFilterId` into the `YearRecapScreen`
+  the currently-selected vehicle scope into the `YearRecapScreen`
   (see below). The button is always present (an unconditional top-bar
   action, even before the first session is logged).
-- Vehicle filter mirrors the log tabs.
+- Vehicle filter mirrors the log tabs: the shared `VehicleScopeTabs`,
+  Unassigned bucket and car icon included (PRs #51, #58).
 - No charting library; pure Compose primitives (Box width-fraction).
 - **Multi-currency totals**: the Stats headline + per-vehicle lifetime
   uses `CurrencyTotals` (a map keyed by ISO currency code). When all
@@ -695,13 +852,19 @@ End-of-year-style recap reachable from the Stats top-bar "Recap" button (a label
 Pre-selects the year of the user's most recent session (`ScrollableTabRow`
 of years where they have data) and recomputes the recap on each pick.
 
-- **Scoping**: takes an optional `vehicleId` nav arg
-  (`-1L` sentinel = "All"). When the user opens it from a specific
-  vehicle's Stats tab, the VM reads the arg from `SavedStateHandle`
-  and filters the session list *before* any year bucketing — so
-  available-years, totals, top brands, monthly trend, longest trip,
-  and the rendered PDF all reflect that one vehicle. The VM also
-  resolves the vehicle's display name into `state.vehicleName`.
+- **Scoping**: takes a `VehicleScope` token nav arg — `all`,
+  `unassigned`, or a vehicle id (PR #51; it used to be a `Long` with a
+  `-1L` "All" sentinel, which had no way to say Unassigned, so opening
+  the recap from that tab silently showed everything). The VM reads the
+  token from `SavedStateHandle` and filters with `scope.matches` *before*
+  any year bucketing — so available-years, totals, top brands, monthly
+  trend, longest trip, and the exports all reflect that scope. It
+  resolves a display name into `state.vehicleName` ("Unassigned" for that
+  bucket), which feeds the HTML title and the export filename slug. A
+  malformed token widens to All rather than blanking the screen. A
+  **scope line** under the top-bar title (`RecapTitle`) shows the vehicle,
+  "Unassigned", or "All vehicles", so a recap that had silently widened
+  can no longer look identical to a correctly scoped one.
 - **Content** (scrollable, top to bottom):
   - Headline grid: sessions / total cost / total energy / total
     distance.
@@ -810,7 +973,38 @@ of years where they have data) and recomputes the recap on each pick.
     never gets nuked.
   - Bounded decompression: zip-bomb defense via `copyBoundedTo` /
     `readBytesBounded` with per-entry and total caps.
-  - Zip-slip guard via `sanitizedBasename` on JSON-declared paths.
+  - Zip-slip guard via `sanitizedBasename` on JSON-declared paths. Since
+    PR #75 it also rejects `.` and `..` (which `File.name` keeps), so a
+    hand-edited row can't point at `receipts/..`: the files directory
+    itself, a phantom tile that `exists()` but can never be opened or
+    removed. `SanitizedBasenameTest`.
+  - **Media install failures are reported** (PR #74): `installFiles`
+    used to swallow every `IOException`, so a restore that ran out of
+    disk part-way still said "Restore complete" — and at next launch
+    `MissingMediaSweeper` deleted every row whose file never arrived,
+    turning a recoverable copy error into silent loss. A restore
+    transiently needs about three copies of the media (extracted temp
+    dir, snapshot staging zip, final files), so this is plausible.
+    `installFiles` now counts copy failures (removing the partial file,
+    which would otherwise pass the sweep's existence check as corrupt)
+    and counts referenced files the backup never contained.
+    `RestoreSuccess.mediaFailed` / `mediaAbsent` feed the restore and
+    undo dialogs ("Restore complete, with a problem"), which say what
+    the sweep is about to drop and, for copy failures, that freeing
+    space and restoring again brings the files back.
+  - **One default vehicle** (PR #75): restore inserts vehicles directly,
+    bypassing `saveEnsuringSingleDefault`, so a merged or hand-edited
+    backup with two defaults left `findDefault()` picking at random. The
+    first default wins (export writes the default first).
+  - **Restored trips get pin colors** (PR #76): pre-v6 backups carry no
+    `pinColor`, and the start-up backfill only runs at cold start, so
+    restored trips stayed fallback gray until the next launch. Restore
+    now assigns `TripPinColor.nextDefault` inline as it inserts, seeded
+    with the colors the backup already uses. It doesn't use
+    `TripRepository.upsert`, whose auto-pick collects a DAO Flow that
+    must not run inside the transaction.
+  - Restore and undo-restore cancel a live tracked-charge notification
+    once the transaction commits (see Charging log → Orphan cleanup).
 - **CSV export/import** (kept for spreadsheet analysis use case):
   flat session table with columns including `trip_name`,
   `vehicle_name`, `latitude`, `longitude`, `continues_previous`,
@@ -837,7 +1031,14 @@ of years where they have data) and recomputes the recap on each pick.
     process or single bad row after the wipe rolls back instead of
     leaving a half-populated database. Trip/vehicle name lookups are
     read outside the transaction (Flow `.first()`) to match the
-    `BackupIo.restore` pattern.
+    `BackupIo.restore` pattern. Replace-import also cancels a live
+    tracked-charge notification after it commits.
+  - **Import size cap** (PR #75): the CSV importer read the whole file
+    with `readText()` and the XLSX importer handed POI the raw stream, so
+    a mis-picked multi-hundred-megabyte file crashed with out-of-memory.
+    Both now read through `util/BoundedInputStream`, which throws a
+    user-facing `IOException` past 64 MB (ten thousand sessions export
+    to a few MB). `BoundedInputStreamTest`.
   - **Formula injection defense**: any field that would start with
     `=`, `+`, `-`, `@`, tab, or CR is prefixed with `'` on export.
     Import strips a leading `'` only when followed by a trigger char,
@@ -911,6 +1112,35 @@ of years where they have data) and recomputes the recap on each pick.
   Stored as `themeMode` in `AppPreferences`; read at the top of
   `MainActivity` and threaded into `EvsctTheme` so the override
   applies everywhere including dialogs.
+- **Every color role is named** (PR #52). An unset M3 role doesn't fall
+  back to something neutral: it takes Material's baseline, toned off
+  the baseline *purple*. `surfaceContainer` was unset, which put a
+  lavender `#F3EDF7` strip under the gesture pill (`NavigationBar`) and
+  tinted every default `Card`, `AlertDialog`, `DropdownMenu`,
+  `ModalBottomSheet`, and filled `TextField`. The inverse roles were
+  baseline too, which made the whole `Snackbar` purple-grey. Both
+  schemes now set the surface-container family, the inverse roles, and
+  `scrim` from the app's green-tinted neutral. The dark `surfaceContainer`
+  is `#17231A`, slightly greener than its Material tone, because at
+  near-black the tonal value still read as grey. It's capped by the
+  selected-tab pill, which must stay distinguishable from the bar.
+  `ColorSchemeTest` asserts properties rather than hex values: no
+  tint-carrying role is blue-dominant, both container ramps are
+  monotonic, `surfaceContainer` stays on its side of the 0.5 luminance
+  line, plus contrast floors including the dark pill at 1.5:1.
+- **System bar icons** (`ui/theme/SystemBars.kt`, PR #50): polarity is
+  derived from the color actually behind each bar — `background` behind
+  the status bar (the root Scaffold consumes the status-bar inset, so
+  each screen's top bar starts *below* it) and `surfaceContainer` behind
+  the gesture pill — and re-applied on scheme change, so the in-app theme
+  override no longer disagrees with the system night setting that bare
+  `enableEdgeToEdge()` reads. The first attempt keyed off `primary` (the
+  top bar color) and inverted the icons in both schemes.
+- **No launch flash**: `Theme.EVSCT` sets a night-qualified
+  `windowBackground` (`values-night/`), so a dark-mode cold start no
+  longer shows a white first frame. A theme override that disagrees
+  with the system still gets the system's polarity for that one frame,
+  because DataStore can't be read before the window draws.
 
 ### Soft-keyboard (IME) handling
 
@@ -948,6 +1178,71 @@ out of the keyboard's way unless each screen handles
   the keyboard while the field column scrolls inside the remaining
   height.
 
+### Adaptive layout & large text
+
+July 2026 (PRs #50, #53, #55, #57). Deliberately partial: two-pane
+layouts, card grids, and tablet work were struck because nothing in the
+app's real usage justifies them (the reasoning lives in
+`ui/AdaptiveLayout.kt`). What shipped fixes "looks silly sideways" and
+"breaks at 2× font":
+
+- **Navigation rail in wide windows**: `isWideWindow()` is
+  `screenWidthDp >= 600` (`WIDE_WINDOW_MIN_DP`, Material's compact-width
+  breakpoint), read from `LocalConfiguration` rather than the
+  window-size-class library because previews and Robolectric can both
+  steer it, and it ignores font scale so growing text never moves the
+  navigation. The nav graph wraps its Scaffold in a Row: rail on the
+  start edge when wide, bottom bar otherwise, both fed by one
+  destination list and one tab-selection lambda
+  (`EvsctNavigationBar` / `EvsctNavigationRail`). The rail unions
+  `displayCutout` on its start side into its insets, because the
+  default insets ignore cutouts and a hole-punch camera covered it in
+  landscape. Only a real phone caught that; previews and Robolectric
+  don't simulate cutouts. `AdaptiveLayoutTest` pins the switch to the
+  *width* field.
+- **Capped form widths**: the session, vehicle, and Settings scroll
+  columns use `Modifier.readableFormWidth()`, capping at 640dp
+  (`READABLE_FORM_MAX_WIDTH`) and centering. Below the cap it resolves to
+  plain `fillMaxWidth`, so portrait phones render exactly as before. List
+  screens (Log, Trips, Vehicles) stay full-width on purpose.
+- **`StatColumns`** (`ui/StatStacking.kt`): the Log summary card, Stats
+  headline, and Trip detail stats lay out side by side while they fit
+  and stack one per line past `STACK_STATS_FONT_SCALE = 1.5f` (an
+  Android accessibility step boundary). A wrapping `FlowRow` was not
+  enough: breaking 2-then-1 with `SpaceAround` centers the orphan under
+  the *gap* above it, lining up with nothing. The `FlowRow` stays as the
+  fallback for what font scale can't predict (a long mixed-currency
+  total at 1×). The composable hands its stats their modifier so the
+  container and the stats can't disagree.
+- **`BarList` text columns scale with `fontScale`**: `labelWidth` /
+  `valueWidth` are dp while the text inside them is sp, so at 2× the
+  values broke mid-number (`$148.2` / `0 CAD`). The bar track absorbs
+  the difference, so bars stay comparable. The default `valueWidth` also
+  rose 82 → 96dp so `$1,284.50 CAD` fits on one line at 1×.
+- **Previews as the review loop** (PRs #53–#57): about three dozen
+  `@Preview`s cover states that are a nuisance to reach on a device (2×
+  font rows and cards, dark mode, empty states, a folded group's badge,
+  overflowing tab strips, long recap scope names). They're how the stat-line and
+  `StatColumns` fixes were found. CI can only prove they compile, not
+  that they render.
+
+### Strings
+
+PR #59 moved every user-facing string the composable layer renders into
+`res/values/strings.xml` (431 strings, 13 plurals, 2 arrays; names are
+`<screen>_<meaning>`, with shared copy under `common_`), so a translation
+is one `values-<lang>/` file. Hand-rolled "1 session / N sessions" logic
+became plural resources. Enums and top-level labels (sort options, nav
+destinations, map types, pin colors, charging type / pricing model)
+carry `@StringRes` ids. Strings needed in non-composable scopes
+(snackbar coroutines, semantics blocks, `LazyListScope` builders) are
+hoisted into composition. Vehicle tab test tags use a locale-stable
+token rather than the label. The strings.xml header records the phase-2
+boundary that is still inline in code: ViewModel-authored text
+(validation hints, operation feedback, export labels), the TalkBack
+sentence builders, `Format` unit suffixes, the CSV/PDF/HTML exporters,
+and notification text.
+
 ## Settings screen
 
 Cards (top to bottom):
@@ -969,7 +1264,9 @@ Cards (top to bottom):
 8. **One-time XLSX import** — for the legacy log.
 9. **About** — running build version + git commit (the commit line
    links to the matching GitHub commit on clean builds), plus View on
-   GitHub and Privacy-policy links.
+   GitHub and Privacy-policy links. All three go through an `openUrl`
+   helper that shows a toast instead of crashing when no browser is
+   installed (PR #75).
 
 Wrapped in `verticalScroll` so the bottom card never falls off (a
 bug we hit early when the list was too tall for some screens).
@@ -1033,6 +1330,27 @@ the unit pref as a parameter; aggregates pass the default-currency to
   nulls for all four pairs and the rows hide. A `polylinesAvailable: Boolean`
   parameter (true by default) lets the screen gray the Trip-routes row
   out when heatmap mode owns the canvas.
+- **`VehicleScope` / `VehicleScopeTabs`** (`ui/`) — the All / one
+  vehicle / Unassigned bucket type, its `matches` predicate, the
+  `needsVehiclePicker` rule, the nav-arg token round-trip, and the tab
+  strip the Log and Stats share (optional trailing car icon to Vehicles).
+- **`StatColumns`** (`ui/StatStacking.kt`) — stat row that stacks past
+  1.5× font; see "Adaptive layout & large text".
+- **`AdaptiveLayout.kt`** — `isWideWindow()` and
+  `Modifier.readableFormWidth()`.
+- **`CollapsibleSection`** (`SessionEditScreen.kt`, `internal` for its
+  test) — the session form's folding group with the fill / badge /
+  sticky-collapse / `demandsAttention` rules.
+- **`EvsctBarTitle`** — brand lockup + title (+ optional subtitle) for
+  the five top-level app bars. The lockup is two vector layers: the base
+  takes `titleContentColor`, and the amber V + bolt accent is drawn with
+  `Color.Unspecified` so the tint skips it.
+- **`util/SessionAverages.kt`** — per-session-paired avg power and avg
+  $/kWh for Stats and Vehicle detail.
+- **`util/BoundedInputStream.kt`** — throws a caller-built `IOException`
+  past a byte limit; used by the CSV and XLSX importers.
+- **`util/ExportNaming.kt`** — the single owner of backup / CSV export
+  filenames (see Backup & export).
 - **`util/Tags.kt`** — comma-joined-string parsing for the new tags
   column. `parse` / `serialize` / `add` / `remove` / `sanitize` handle
   case-insensitive dedupe and strip the delimiter from user input so
@@ -1102,17 +1420,80 @@ the unit pref as a parameter; aggregates pass the default-currency to
 - **`util/EfficiencyAnalysisTest.kt`** also grew interleave-exclusion
   cases (sweep #6) and the trip-anchor suite (start/end/whole-trip
   legs, anchor interleave guards).
+- **`util/DurationFormatTest.kt`** also covers overflow (PR #75): a
+  digit run near `Long.MAX_VALUE` used to wrap negative and get saved as
+  a charging duration; the arithmetic is now overflow-checked, and a
+  pretty-form group too long for a `Long` is rejected instead of reading
+  as zero.
+- **`util/SessionAveragesTest.kt`** — per-session pairing for avg power
+  and avg $/kWh (missing durations, cost without kWh, free sessions).
+- **`util/BoundedInputStreamTest.kt`** — passes through under the limit,
+  throws one byte past it, counts single-byte reads and `skip`, refuses
+  `mark`.
+- **`util/ExportNamingTest.kt`** — the export filename contract:
+  timestamp directly after the prefix (so name-sorting stays
+  chronological), build tag trailing, no path separators; the clock,
+  zone, and build tag are all passed in.
+- **`data/backup/BackupProvenanceTest.kt`** (Robolectric, for real
+  `org.json`) — `appVersionName` / `appVersionCode` / `gitSha` in
+  `backup.json`.
+- **`data/backup/SanitizedBasenameTest.kt`** — path stripping, and `.`,
+  `..`, and blank names rejected (a real dotfile name survives).
+- **`data/csv/CsvFormatTest.kt`** — `wait_seconds` export, `wait_minutes`
+  import compatibility.
+- **`data/csv/CsvFormatDateTest.kt`** — impossible dates ("2023-2-29")
+  skip the row instead of clamping.
+- **`data/db/VehicleDaoDefaultTest.kt`** — `saveEnsuringSingleDefault`
+  keeps at most one default, run against an in-memory fake.
+- **`ui/sessions/RecentStopsTest.kt`** — recent-stop grouping and the
+  three sourcing rules (identity from latest, pricing set whole, coords
+  from newest full pair).
+- **`ui/sessions/SessionRowDescriptionTest.kt`** — the row's TalkBack
+  sentence: optional parts, pluralization, spoken rates, and the
+  time-rate preference mapping.
+- **`ui/stats/YearRecapHtmlTest.kt`** — the self-contained HTML recap:
+  escaping of user-controlled names, dot decimals under comma locales,
+  the monthly table, and the map section (basemap, pins, routes, legend,
+  and its absence when nothing is located).
+- **`ui/VehicleScopeTest.kt`** — bucket membership, `needsVehiclePicker`,
+  fallbacks, and token round-trips.
+- **`ui/theme/ColorSchemeTest.kt`** — palette properties (see Theme).
+- **Compose UI suites (Robolectric, PR #54)**:
+  `ui/sessions/CollapsibleSectionTest.kt` (the seven fold guarantees),
+  `ui/VehicleScopeTabsTest.kt` (tabs per bucket, clicks report the right
+  scope, car icon present/absent and never scrolled away, overflow
+  behavior), and `ui/AdaptiveLayoutTest.kt` (rail-vs-bar switch reads
+  width, boundary at `WIDE_WINDOW_MIN_DP`). Tests find nodes by tags
+  like `sectionHeader:<title>` and `scopeTab:Unassigned` (the tab tags
+  don't change with the device language).
 
 Run from Android Studio (Right-click → Run 'tests') or
 `./gradlew :app:testDebugUnitTest` from the terminal once
-`JAVA_HOME` is set.
+`JAVA_HOME` points at a JDK 21 (the Robolectric suites simulate SDK 36
+and fail on 17). CI runs the same task on every PR.
 
 ## Notable design decisions
 
 - **Local-only**: no cloud, no accounts. Backups go through the user's
   storage of choice (Drive, local, etc.) via SAF.
-- **Single-vehicle setup is uncluttered**: vehicle tabs and the
-  vehicle pill on rows only appear when there are ≥ 2 vehicles.
+- **Single-vehicle setup is uncluttered**: the vehicle pill on rows only
+  appears when there are ≥ 2 vehicles, and the vehicle tabs only when
+  there's more than one bucket to choose between — one car plus some
+  unassigned sessions *does* get tabs (All | car | Unassigned), because
+  otherwise those orphans have no heading and no way to be listed.
+- **Unassigned is a scope, not a sentinel**: `VehicleScope` replaced the
+  `Long?` / `-1L` vehicle filters on the Log, Stats, and Map and in the
+  Recap and brand drill-down nav args (as a token), so the "no vehicle"
+  bucket can't be misread as a vehicle id or silently widen to All on
+  the way to another screen.
+- **A recent stop pre-fills the station, never the visit**: pricing,
+  type, currency, and location are properties of the sign on the
+  charger; energy, cost, duration, battery, and odometer belong to the
+  visit and stay blank.
+- **Folding never hides data**: a group holding a value always opens,
+  and a validation hint beats even a manual collapse.
+- **Adaptive layout stops at the rail**: a landscape rail and capped
+  form widths, but no two-pane or tablet layouts.
 - **Replace-only restore**: full-backup restore wipes existing data.
   Merge mode was deferred unless requested.
 - **Schema-versioned backups**: a `settings` block in `backup.json` is
@@ -1303,6 +1684,43 @@ Run from Android Studio (Right-click → Run 'tests') or
   user input, test the raw string (digits-only) rather than properties
   of the parsed result — the parse can normalize away exactly the
   evidence you're checking for.
+- **An average of two sums must pair per row**: summing kWh over every
+  session but hours over only the sessions with a duration inflates avg
+  power without bound. Only let a row into the ratio when it carries
+  both sides, and keep one shared helper so two screens can't each fix
+  (or not fix) their own copy.
+- **`actions/checkout` is a shallow clone by default**: anything derived
+  from `git rev-list --count HEAD` (our `versionCode`) reads 1 in CI
+  unless the step sets `fetch-depth: 0`. It only showed up once the
+  count went into export filenames.
+- **Action version tags are mutable**: `@v4` runs whatever the tag
+  points at today, with the workflow's token. Pin to a commit SHA with
+  the release in a trailing comment.
+- **An exported launcher activity's extras are untrusted input**: any
+  installed app can send them. Gate deep-link extras on app state the
+  sender can't forge (here, the live tracked-charge id), not on the
+  extra being present.
+- **Report partial restores**: swallowing per-file copy errors turned a
+  full disk into silent data loss once the missing-media sweep ran. A
+  restore needs roughly three copies of the media on disk at once.
+- **An unset Material 3 color role is baseline purple, not neutral**:
+  it's invisible in a theme file that otherwise names every role. Set
+  the surface-container and inverse families explicitly and test the
+  property (no blue-dominant tinted roles), not the hex values.
+- **The status bar sits over `background`, not the top app bar**, when
+  the root Scaffold consumes the status-bar inset. Derive icon polarity
+  from what's actually behind each bar.
+- **`NavigationRail`'s default insets ignore the display cutout**: in
+  landscape a hole-punch camera sits exactly where the rail goes. Union
+  `displayCutout` on the start side. No preview or Robolectric run
+  simulates it.
+- **dp-width columns holding sp text break at large font**: scale the
+  column by `fontScale` or the text wraps mid-number. And a `Row` can't
+  wrap at all, while a `FlowRow` with `SpaceAround` wraps into
+  misaligned orphans — past a font threshold, stack instead.
+- **`clearAndSetSemantics` beats `mergeDescendants` for a spoken row**:
+  merging appends descendants' content descriptions after the parent's
+  sentence.
 
 ## Audit closeouts
 
@@ -1313,8 +1731,80 @@ audit (M1 + M2 + Mn1–Mn5), and a later second-pass bug audit. In June
 In July 2026 a fourth-pass pre-release sweep (`BUG_HUNT_REPORT.md`, 29
 findings) closed out the entire report. A follow-on **UI/UX polish
 sweep** (Phases 1–7) then reworked the app's surface for correctness,
-feedback, navigation, motion, and accessibility. Highlights of what got
-fixed and built (newest first):
+feedback, navigation, motion, and accessibility, and a **second UI/UX
+round** (PRs #50–#59) followed at the end of July. In September a
+**review pass** closed out a batch of restore, import, security, and
+stats edges (PRs #72–#77). Highlights of what got fixed and built
+(newest first):
+
+- **September 2026 review fixes** (PRs #72–#77, branch
+  `claude/sweet-meitner-4cd0mz`, restarted from `main` between PRs):
+  - **Stats averages** (#72): avg power and avg $/kWh pair per session
+    via the shared `SessionAverages` (see Stats screen).
+  - **Tracked charge vs. wipes** (#73): restore, undo-restore, and CSV
+    replace-import cancel the in-progress notification; the edit screen
+    cancels tracking for a row that no longer exists.
+  - **Restore media reporting** (#74): copy failures and files missing
+    from the backup are counted and spelled out in the restore/undo
+    dialog instead of "Restore complete" followed by a silent sweep.
+  - **Low-severity edges** (#75): 64 MB `BoundedInputStream` cap on CSV
+    and XLSX import; `sanitizedBasename` rejects `.`/`..`; one default
+    vehicle on restore; About-card links survive a missing browser;
+    overflow-checked `DurationFormat.parse`.
+  - **Leftovers** (#76): the notification deep link is gated on the
+    tracked charge for every delivery (the launcher activity is
+    exported); restored pre-v6 trips get pin colors immediately; CI
+    actions pinned to commit SHAs.
+  - **Data-safety notes** (#77): `docs/play-data-safety.md` now lists
+    all six paths that send location data to Google and marks which are
+    automatic: map-open forward geocoding of typed addresses (which
+    needs no location permission), the post-save re-geocode, and tile
+    loads. The Play form answers don't change, only the justification.
+    `docs/privacy-policy.html` still has the same gap (see Outstanding
+    ideas).
+  - Just before this, PR #70 stamped the producing build on backups and
+    CSV exports (see Backup & export) and gave CI full-depth checkouts,
+    and PR #71 fixed trip-detail rows colliding with the cost at large
+    font sizes.
+
+- **UI/UX round 2** (July 2026; PRs #46 and #50–#59, most on branch
+  `claude/ui-ux-improvements-yuqbc9`):
+  - **#46** — "View on map" from trip detail (Map view → Trip focus).
+  - **#50** — the session form's folding groups and bottom Save (Session
+    entry form); system-bar icon polarity and the dark-mode launch flash
+    (Theme); the one-sentence TalkBack row (Charging log); `FlowRow`
+    stat rows. A 48dp minimum on tappable `BarList` rows was tried and
+    reverted on the owner's call, because it doubled the Top brands card
+    (see Outstanding ideas).
+  - **#51** — the Unassigned bucket on the Log, Stats, and Map, carried
+    into the Year recap and brand drill-down as a `VehicleScope` token;
+    shared `VehicleScopeTabs`; empty states with a way forward on the
+    Log, Trips, and Vehicles.
+  - **#52** — surface-container and inverse color roles named in both
+    schemes; greener dark nav bar; `ColorSchemeTest`.
+  - **#53** — spoken effective rates on the row; the Log stat line and
+    separators; `StatColumns` shared by the Log summary and Stats
+    headline; the first `@Preview`s.
+  - **#54** — Robolectric Compose UI tests inside `testDebugUnitTest`
+    (`CollapsibleSectionTest`, `VehicleScopeTabsTest`) and the remaining
+    previews.
+  - **#55** — `BarList` columns scale with font; tab-strip overflow
+    tests.
+  - **#56** — "Use a recent stop" carries the station's pricing context
+    (`RecentStopsTest`).
+  - **#57** — landscape navigation rail (clear of the camera cutout) and
+    capped form widths.
+  - **#58** — two more ways into Vehicles: the tab-strip car icon and
+    the welcome state's "Add a vehicle".
+  - **#59** — composable-layer strings extracted to `strings.xml`. Its
+    first CI build failed on 22 resource names that a crashed batch
+    script had referenced in code but never added to the XML, plus a few
+    `stringResource` calls in non-composable scopes; the follow-up
+    commit restored the names and hoisted those calls.
+  - **Verification pattern**: still no Android SDK in the cloud
+    container, so CI was the first compile; the owner's previews and
+    on-device checks caught what review couldn't (the 2× font wrapping,
+    the cutout, the grey-reading dark nav bar).
 
 - **UI/UX polish sweep** (July 2026; Phases 1-7, PRs #36-#41 on branch `claude/ui-ux-suggestions-otvkm1`):
   - **Phase 1 — correctness quick wins** (#36): real loading states so
@@ -1649,9 +2139,9 @@ fixed and built (newest first):
       have to stay because Kotlin Gradle plugin 2.2.10 still casts
       the AGP extension to the legacy `BaseExtension`. Removing
       either fails the build (`extension already registered` /
-      `cannot be cast to BaseExtension`). Latest Kotlin (2.3.21,
-      April 2026) doesn't fix this; planning to revisit only when
-      something else in the chain forces a Kotlin bump.
+      `cannot be cast to BaseExtension`). *(Resolved July 30, 2026 by
+      `5c53ecf`: moving to Kotlin 2.3.21 and AGP's built-in Kotlin
+      dropped the `kotlin-android` plugin and both flags.)*
     - `android.uniquePackageNames=false`,
       `android.dependency.useConstraints=true`,
       `android.r8.strictFullModeForKeepRules=false` — pre-AGP-9
@@ -1686,9 +2176,27 @@ fixed and built (newest first):
 - ~~Per-vehicle lifetime stats by month / year (rolling charts).~~ — **shipped** (Phase 5): the Stats tab scopes to a single vehicle via the All / per-vehicle tab row, and a **Last 12 months / All years** window selector above the cost/energy charts drives them as rolling per-month buckets or per-year buckets across every year with data.
 - Search through Stats / Trips, not just the log.
 - Merge-mode restore (current is replace-only).
-- "View on map" entry from the trip detail screen, filtered to that
-  trip's pins (the data and the filter mechanism already exist; just
-  needs a nav route + button).
+- ~~"View on map" entry from the trip detail screen, filtered to that
+  trip's pins~~ — **shipped** (PR #46): see Map view → Trip focus.
+- **Privacy policy geocoding wording**: `docs/privacy-policy.html` still
+  says location is read only when the user asks and describes only
+  coordinates → address lookups. It needs the same correction
+  `docs/play-data-safety.md` got in PR #77: opening the map
+  forward-geocodes typed addresses automatically (no location
+  permission involved), saving an edited address re-geocodes it, and
+  tiles load whenever a map is on screen. The data-safety notes'
+  judgment call #4 has the details.
+- **Tappable `BarList` row targets**: the Stats brand rows are about a
+  third of the 48dp touch-target minimum, with 6dp between neighbours,
+  so a mis-tap drills into the wrong brand. Growing the rows was reverted
+  (it doubled the card's height); a fix needs the target without the
+  height, such as capping the row count or making the card itself the
+  affordance.
+- **Strings phase 2**: ViewModel-authored text, the TalkBack sentence
+  builders, `Format` unit suffixes, the exporters, and notifications are
+  still inline (listed in the `strings.xml` header). They need
+  resource-aware seams, not find-and-replace, and only matter if a
+  translation actually ships.
 - Reminders by location ("you're at a station you've been to;
   log a session?") — nice-to-have but adds geofencing complexity.
 - **Configurable gas-card constants**: $/L, L/100 km, and the
@@ -1698,9 +2206,9 @@ fixed and built (newest first):
   share the same `FALLBACK_KM_PER_KWH` so any new pref should drive
   both.
 - **Year recap polish**: include the scoped vehicle's name in the
-  PDF title block and the screen subtitle (right now it only shows
-  up in the filename); pro-rate cross-year trips for "longest trip"
-  rather than overclaiming the whole-trip distance; multi-page PDF
+  PDF title block (the screen's scope line, the HTML title, and the
+  filename already carry it); pro-rate cross-year trips for "longest
+  trip" rather than overclaiming the whole-trip distance; multi-page PDF
   when top-brands or trips overflow.
 - ~~Bump backup `SCHEMA_VERSION` past 5~~ — **decided against**
   (2026-07 sweep): we touched `BackupIo.kt` repeatedly (findings #4,
@@ -1712,12 +2220,16 @@ fixed and built (newest first):
   newer backups outright, which costs real users (restore-on-old-build
   after a bad update) and buys only a version-marker convention.
   Revisit only if a future format change is genuinely breaking.
-- **Drop the last AGP-9 conservative-mode flags**: five flags remain
-  in `gradle.properties` after the cleanup pass (see "Audit
-  closeouts" → AGP 9 upgrade). Two are pinned by Kotlin Gradle
-  plugin 2.2.10's BaseExtension cast and need a Kotlin bump to lift;
-  the other three are pre-AGP-9 transitive-dep / R8 behaviors not
-  yet flagged as deprecated. Revisit when we next bump Kotlin.
+- **Drop the last AGP-9 conservative-mode flags**: the two Kotlin-pinned
+  flags (`android.builtInKotlin=false`, `android.newDsl=false`) are gone
+  — Kotlin 2.3 retired the `kotlin-android` plugin and AGP's built-in
+  Kotlin compiles the sources now (`5c53ecf`, July 2026). Three remain
+  in `gradle.properties` (`android.uniquePackageNames=false`,
+  `android.dependency.useConstraints=true`,
+  `android.r8.strictFullModeForKeepRules=false`), plus the
+  `generateSyncIssueWhenLibraryConstraintsAreEnabled=false` suppression.
+  They're pre-AGP-9 transitive-dep / R8 behaviors not yet flagged as
+  deprecated. Revisit on the next AGP bump.
 
 ## Repo conventions
 
@@ -1731,8 +2243,14 @@ fixed and built (newest first):
   merged. The fourth-pass sweep reused one branch
   (`claude/evsct-bug-hunt-faxgag`) restarted from `main` between
   batches: PRs #31 (#1–#5), #32 (restore error messages), #33
-  (#6–#17 + features), #34 (#18–#29 + rate toggle). Everything lives
-  on `r2205/evsct` on GitHub.
+  (#6–#17 + features), #34 (#18–#29 + rate toggle). The second UI/UX
+  round reused `claude/ui-ux-improvements-yuqbc9` the same way (PRs
+  #50–#59), as did the September review fixes on
+  `claude/sweet-meitner-4cd0mz` (PRs #72–#77). Everything lives on
+  `r2205/evsct` on GitHub.
+- CI actions in `.github/workflows/ci.yml` are pinned to commit SHAs.
+  When bumping one, update both the SHA and its trailing `# vX.Y.Z`
+  comment.
 - **History rewrite**: `DC Fast Charging.xlsx` was originally
   committed to `main` early in the project, but contained somewhat
   personal data. We later purged it from history with `git
