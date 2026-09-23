@@ -880,16 +880,22 @@ private fun SessionRow(
     // — including staying silent when the user has the time rate switched off.
     val effPrice = Derived.effectiveEnergyPricePerKwh(session)
     val timeRate = cardTimeRate(session, units.cardTimeRate)
+    // What the payment pill says, resolved here so the sentence can say it too.
+    // A blank detail (hand-edited backup) falls back to the method's name
+    // rather than rendering an empty pill.
+    val paymentLabel = session.paymentMethod?.let { method ->
+        session.paymentDetail?.takeIf { it.isNotBlank() } ?: stringResource(method.labelRes())
+    }
     // timeRate has to be a key: it depends on the user's card preference, which
     // `session` says nothing about, so keying on the session alone would leave
     // the old rate spoken after a toggle in Settings. effPrice is implied by
     // the session and keyed anyway, so the list doesn't have to be read as a
     // claim about which inputs matter.
     val rowDescription = remember(
-        session, tripName, vehicleName, hasReceipt, tags, effPrice, timeRate,
+        session, tripName, vehicleName, hasReceipt, tags, effPrice, timeRate, paymentLabel,
     ) {
         sessionRowDescription(
-            session, tripName, vehicleName, hasReceipt, tags, effPrice, timeRate,
+            session, tripName, vehicleName, hasReceipt, tags, effPrice, timeRate, paymentLabel,
         )
     }
     Card(
@@ -1041,7 +1047,10 @@ private fun SessionRow(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                if (effPrice != null || timeRate != null || tripName != null || vehicleName != null) {
+                val paymentMethod = session.paymentMethod
+                if (effPrice != null || timeRate != null || tripName != null ||
+                    vehicleName != null || paymentMethod != null
+                ) {
                     Spacer(Modifier.height(6.dp))
                     // FlowRow (not Row) so the rate chips and pills wrap to a
                     // second line instead of clipping when several are shown at
@@ -1074,6 +1083,9 @@ private fun SessionRow(
                         }
                         if (tripName != null) {
                             TripPill(tripName)
+                        }
+                        if (paymentMethod != null && paymentLabel != null) {
+                            PaymentPill(paymentMethod, paymentLabel)
                         }
                     }
                 }
@@ -1275,6 +1287,9 @@ internal fun sessionRowDescription(
     tags: List<String>,
     effectiveEnergyRate: Double?,
     effectiveTimeRate: CardTimeRateValue?,
+    /** The payment pill's text — passed in because the method's label is a
+     *  string resource, which this plain function can't resolve. */
+    paymentLabel: String? = null,
 ): String {
     val parts = mutableListOf<String>()
     parts += session.brand ?: "Unknown brand"
@@ -1294,6 +1309,7 @@ internal fun sessionRowDescription(
     effectiveTimeRate?.let { parts += spokenTimeRate(it) }
     vehicleName?.let { parts += it }
     tripName?.let { parts += "trip $it" }
+    paymentLabel?.let { parts += "paid with $it" }
     if (hasReceipt) parts += "receipt attached"
     if (tags.isNotEmpty()) {
         parts += if (tags.size == 1) "tag ${tags.first()}"

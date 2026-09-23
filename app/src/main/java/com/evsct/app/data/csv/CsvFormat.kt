@@ -2,6 +2,7 @@ package com.evsct.app.data.csv
 
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
+import com.evsct.app.data.entity.PaymentMethod
 import com.evsct.app.data.entity.PricingModel
 import java.time.Instant
 import java.time.LocalDateTime
@@ -41,6 +42,11 @@ object CsvFormat {
         "latitude",
         "longitude",
         "continues_previous",
+        // Appended rather than slotted in beside currency: imports read
+        // columns by name, but a spreadsheet built on an older export may
+        // address them by position.
+        "payment_method",
+        "payment_detail",
     )
 
     // DateTimeFormatter is thread-safe (unlike the SimpleDateFormats these
@@ -95,6 +101,8 @@ object CsvFormat {
             session.latitude?.toString(),
             session.longitude?.toString(),
             if (session.continuesPrevious) "true" else "false",
+            session.paymentMethod?.name,
+            session.paymentDetail,
         )
     }
 
@@ -123,6 +131,9 @@ object CsvFormat {
 
         val type = get("charging_type")?.let { runCatching { ChargingType.valueOf(it) }.getOrNull() } ?: ChargingType.DC_FAST
         val pricing = get("pricing_model")?.let { runCatching { PricingModel.valueOf(it) }.getOrNull() } ?: PricingModel.PER_KWH
+        val paymentMethod = get("payment_method")?.let { raw ->
+            PaymentMethod.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        }
 
         val session = ChargingSession(
             id = 0,
@@ -156,6 +167,11 @@ object CsvFormat {
             latitude = get("latitude")?.toDoubleOrNull(),
             longitude = get("longitude")?.toDoubleOrNull(),
             continuesPrevious = get("continues_previous")?.equals("true", ignoreCase = true) ?: false,
+            // Case-insensitive so a hand-typed "credit_card" still lands; an
+            // unrecognized method leaves the pair unrecorded, since a detail
+            // is never stored without its method.
+            paymentMethod = paymentMethod,
+            paymentDetail = paymentMethod?.let { get("payment_detail") },
         )
         // Hand-edited CSVs can carry physically impossible values (battery
         // 8500%, negative odometer, latitude 400). Nobody sees advisory

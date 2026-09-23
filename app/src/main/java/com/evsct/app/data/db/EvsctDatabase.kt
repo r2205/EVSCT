@@ -12,7 +12,7 @@ import com.evsct.app.data.entity.Vehicle
 
 @Database(
     entities = [ChargingSession::class, SessionReceipt::class, Trip::class, Vehicle::class],
-    version = 13,
+    version = 14,
     // Schema JSONs land in app/schemas/ (see room.schemaLocation in
     // build.gradle.kts) and are committed, so future schema changes diff
     // visibly in review and MigrationTestHelper can verify the chain.
@@ -331,6 +331,16 @@ abstract class EvsctDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS `index_charging_sessions_sessionStart` " +
                         "ON `charging_sessions` (`sessionStart`)"
                 )
+            }
+        }
+
+        /** Adds how a session was paid: a method category plus free-text
+         *  detail ("TD Visa"). Both nullable, so existing sessions read as
+         *  "not recorded" — no backfill, no behavior change. */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `charging_sessions` ADD COLUMN `paymentMethod` TEXT")
+                db.execSQL("ALTER TABLE `charging_sessions` ADD COLUMN `paymentDetail` TEXT")
             }
         }
     }

@@ -45,8 +45,10 @@ class SessionRowDescriptionTest {
         tags: List<String> = emptyList(),
         effectiveEnergyRate: Double? = null,
         effectiveTimeRate: CardTimeRateValue? = null,
+        paymentLabel: String? = null,
     ) = sessionRowDescription(
         s, tripName, vehicleName, hasReceipt, tags, effectiveEnergyRate, effectiveTimeRate,
+        paymentLabel,
     )
 
     @Test
@@ -72,6 +74,7 @@ class SessionRowDescriptionTest {
         assertFalse("trip" in bare, bare)
         assertFalse("receipt" in bare, bare)
         assertFalse("tag" in bare, bare)
+        assertFalse("paid" in bare, bare)
     }
 
     @Test
@@ -109,6 +112,20 @@ class SessionRowDescriptionTest {
     fun `a missing brand still names the row`() {
         val text = describe(session(brand = null, locationCity = null))
         assertTrue(text.startsWith("Unknown brand"), text)
+    }
+
+    // The payment pill sits after the trip pill, so the sentence says it there.
+    @Test
+    fun `the payment is spoken with the pills, after the trip`() {
+        val text = describe(
+            session(),
+            tripName = "Gaspé loop",
+            hasReceipt = true,
+            paymentLabel = "TD Visa",
+        )
+        assertTrue("paid with TD Visa" in text, text)
+        assertTrue(text.indexOf("trip Gaspé loop") < text.indexOf("paid with"), text)
+        assertTrue(text.indexOf("paid with") < text.indexOf("receipt attached"), text)
     }
 
     /* ---------------------------- Effective rates --------------------------- */

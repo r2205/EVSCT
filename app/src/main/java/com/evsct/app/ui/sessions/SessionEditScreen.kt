@@ -501,6 +501,24 @@ fun SessionEditScreen(
             }
 
             CollapsibleSection(
+                title = stringResource(R.string.form_payment),
+                startExpanded = enteringCharge,
+                filledCount = listOf(
+                    state.paymentMethod != null,
+                    state.paymentDetail.isNotBlank(),
+                ).count { it },
+            ) {
+                PaymentFields(
+                    method = state.paymentMethod,
+                    detail = state.paymentDetail,
+                    history = state.paymentHistory,
+                    onMethodChange = { m -> viewModel.setPaymentMethod(m) },
+                    onDetailChange = { v -> viewModel.update { it.copy(paymentDetail = v) } },
+                    onUseAgain = { use -> viewModel.applyPaymentUse(use) },
+                )
+            }
+
+            CollapsibleSection(
                 title = stringResource(R.string.form_more_station_detail),
                 startExpanded = enteringCharge,
                 // Coordinates count as a filled field even though no text
@@ -749,7 +767,7 @@ fun SessionEditScreen(
  *  selected chip — the canonical leading check has to be passed in
  *  explicitly, or selection reads as a subtle color change. Shared by
  *  every single-select chip row on this form. */
-private fun selectedCheck(selected: Boolean): (@Composable () -> Unit)? =
+internal fun selectedCheck(selected: Boolean): (@Composable () -> Unit)? =
     if (!selected) null else {
         {
             Icon(
@@ -776,7 +794,7 @@ private fun SectionLabel(text: String) {
  * Folding is tuned to the two different jobs this screen does.
  *
  * **Entering a charge** ([startExpanded]) opens everything. The user is about
- * to decide what this charge needs recording, and making them unfold seven
+ * to decide what this charge needs recording, and making them unfold eight
  * groups to find out is worse than a long scroll — entry behaves like the flat
  * form it replaced, except now anything irrelevant can be folded out of the
  * way.
@@ -849,7 +867,7 @@ internal fun CollapsibleSection(
                 //
                 // The testTag is how CollapsibleSectionTest folds and unfolds
                 // the group; the title suffix keeps it addressable once the
-                // form's seven sections are on screen together.
+                // form's eight sections are on screen together.
                 .testTag("sectionHeader:$title")
                 .semantics(mergeDescendants = true) {
                     stateDescription = if (expanded) expandedDesc else collapsedDesc
