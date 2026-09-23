@@ -1,5 +1,6 @@
 package com.evsct.app.util
 
+import java.math.RoundingMode
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.time.Instant
@@ -36,8 +37,12 @@ object Format {
     private val kmFmt = ThreadLocal.withInitial {
         DecimalFormat("#,##0.#", DecimalFormatSymbols(Locale.US))
     }
+    // One decimal is plenty to read at a glance; stored values keep their
+    // full precision, and the edit screens seed from the raw Double. Half-up
+    // so a receipt's "48.25" reads as 48.3, not the half-even 48.2.
     private val kwhFmt = ThreadLocal.withInitial {
-        DecimalFormat("#,##0.###", DecimalFormatSymbols(Locale.US))
+        DecimalFormat("#,##0.#", DecimalFormatSymbols(Locale.US))
+            .apply { roundingMode = RoundingMode.HALF_UP }
     }
 
     private fun zonedAt(epoch: Long) =

@@ -24,7 +24,7 @@ class FormatLocaleTest {
     fun `rates and units render US separators under a comma-decimal locale`() {
         assertEquals("\$0.385/kWh", underLocale(Locale.GERMANY) { Format.moneyRate(0.385, "kWh") })
         assertEquals("1,234.5 km", underLocale(Locale.GERMANY) { Format.km(1234.5) })
-        assertEquals("48.25 kWh", underLocale(Locale.GERMANY) { Format.kwh(48.25) })
+        assertEquals("1,234.6 kWh", underLocale(Locale.GERMANY) { Format.kwh(1234.56) })
     }
 
     @Test
