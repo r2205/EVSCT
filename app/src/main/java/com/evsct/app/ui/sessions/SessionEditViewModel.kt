@@ -7,6 +7,7 @@ import androidx.room.withTransaction
 import com.evsct.app.data.db.EvsctDatabase
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
+import com.evsct.app.data.entity.PaymentMethod
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
@@ -26,6 +27,8 @@ import com.evsct.app.util.DurationFormat
 import com.evsct.app.util.Format
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.LocationAutofill
+import com.evsct.app.util.PaymentHistory
+import com.evsct.app.util.PaymentUse
 import com.evsct.app.util.ReceiptImageStore
 import com.evsct.app.util.TagSuggestions
 import com.evsct.app.util.Tags
@@ -139,6 +142,10 @@ data class SessionEditUi(
     val energyText: String = "",
     val costText: String = "",
     val currency: String = "CAD",
+    val paymentMethod: PaymentMethod? = null,
+    /** Which card, app or account. Only shown — and only saved — while
+     *  [paymentMethod] is set; clearing the method clears this too. */
+    val paymentDetail: String = "",
     /** Mirror of the user pref so the form can render the odometer label and
      *  convert input to canonical km on save. */
     val useMiles: Boolean = false,
@@ -185,6 +192,9 @@ data class SessionEditUi(
      *  as one-tap chips, so a tag is re-used rather than re-typed (and
      *  re-typed slightly differently). */
     val tagHistory: List<String> = emptyList(),
+    /** Every payment used on any session, most recently used first — the
+     *  Payment group's one-tap chips. */
+    val paymentHistory: List<PaymentUse> = emptyList(),
     val recentStops: List<RecentStop> = emptyList(),
     val trips: List<Trip> = emptyList(),
     val vehicles: List<Vehicle> = emptyList(),
@@ -346,6 +356,7 @@ class SessionEditViewModel @Inject constructor(
                     it.copy(
                         recentStops = computeRecentStops(sessions),
                         tagHistory = TagSuggestions.history(sessions),
+                        paymentHistory = PaymentHistory.uses(sessions),
                     ).let(::withHints)
                 }
             }
@@ -522,6 +533,8 @@ class SessionEditViewModel @Inject constructor(
                 energyText = s.energyKwh?.toString().orEmpty(),
                 costText = s.totalCost?.toString().orEmpty(),
                 currency = s.currency,
+                paymentMethod = s.paymentMethod,
+                paymentDetail = s.paymentDetail.orEmpty(),
                 postedEnergyPriceText = s.postedEnergyPricePerKwh?.toString().orEmpty(),
                 postedTimeRateText = s.postedTimeRatePerMin?.toString().orEmpty(),
                 // A stored rate is echoed in its canonical $/min form, so
@@ -577,6 +590,7 @@ class SessionEditViewModel @Inject constructor(
         brandSuggestions = emptyList(),
         citySuggestions = emptyList(),
         tagHistory = emptyList(),
+        paymentHistory = emptyList(),
         recentStops = emptyList(),
         trips = emptyList(),
         vehicles = emptyList(),
@@ -829,6 +843,17 @@ class SessionEditViewModel @Inject constructor(
     }
 
 
+    /** Pick or clear the payment method. Clearing drops the detail with it:
+     *  "TD Visa" with no method would be hidden from the form yet saved. */
+    fun setPaymentMethod(method: PaymentMethod?) = update {
+        it.copy(paymentMethod = method, paymentDetail = if (method == null) "" else it.paymentDetail)
+    }
+
+    /** One tap on a recently used payment fills both halves. */
+    fun applyPaymentUse(use: PaymentUse) = update {
+        it.copy(paymentMethod = use.method, paymentDetail = use.detail.orEmpty())
+    }
+
     /** Resolve the current odometer reading in km. When the user hasn't
      *  edited the displayed text, return the loaded km verbatim — converting
      *  display→km lossily would silently rewrite the stored value (and skew
@@ -898,6 +923,16 @@ class SessionEditViewModel @Inject constructor(
                 energyKwh = Format.parseDecimal(s.energyText),
                 totalCost = Format.parseDecimal(s.costText),
                 currency = s.currency.ifBlank { "CAD" },
+                paymentMethod = s.paymentMethod,
+                // Re-cased against what this method has used before, like
+                // tags: "td visa" joins the existing "TD Visa" rather than
+                // becoming a second spelling that search and the chips would
+                // treat as a different card.
+                paymentDetail = s.paymentMethod?.let { method ->
+                    s.paymentDetail.trim().takeIf { it.isNotEmpty() }?.let {
+                        TagSuggestions.canonical(it, PaymentHistory.details(s.paymentHistory, method))
+                    }
+                },
                 postedEnergyPricePerKwh = Format.parseDecimal(s.postedEnergyPriceText),
                 // Storage is canonical $/min; a $/hr entry converts here so
                 // nothing downstream (hints, CSV, XLSX, backup) changes.

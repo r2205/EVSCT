@@ -9,6 +9,23 @@ enum class ChargingType { DC_FAST, AC_L2, AC_L1 }
 
 enum class PricingModel { PER_KWH, PER_MINUTE, FLAT, FREE, HYBRID }
 
+/** How a session was paid for. The broad category only — which card, app
+ *  or account lives in [ChargingSession.paymentDetail]. Stored by [name],
+ *  so constants can be added but must never be renamed. */
+enum class PaymentMethod {
+    CREDIT_CARD,
+    DEBIT_CARD,
+    /** Tapping a phone or watch wallet (Google Pay, Apple Pay, …). */
+    MOBILE_WALLET,
+    /** The network's own app or account (FLO, Electrify Canada, …). */
+    APP,
+    /** A network membership card or fob tapped on the charger. */
+    RFID_CARD,
+    /** Billed automatically when the cable connects (Tesla, ISO 15118). */
+    PLUG_AND_CHARGE,
+    OTHER,
+}
+
 @Entity(
     tableName = "charging_sessions",
     foreignKeys = [
@@ -48,6 +65,13 @@ data class ChargingSession(
     /** Total amount paid in [currency]. Null when unrecorded; 0.0 means free. */
     val totalCost: Double? = null,
     val currency: String = "CAD",
+
+    /** Null when not recorded. */
+    val paymentMethod: PaymentMethod? = null,
+    /** Which card, app or account within [paymentMethod] — free text such
+     *  as "TD Visa". Only meaningful alongside a method; the edit screen
+     *  never saves one without the other. */
+    val paymentDetail: String? = null,
 
     val postedEnergyPricePerKwh: Double? = null,
     val postedTimeRatePerMin: Double? = null,

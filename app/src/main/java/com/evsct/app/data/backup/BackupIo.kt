@@ -8,6 +8,7 @@ import com.evsct.app.data.db.EvsctDatabase
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.entity.ChargingSession
 import com.evsct.app.data.entity.ChargingType
+import com.evsct.app.data.entity.PaymentMethod
 import com.evsct.app.data.entity.PricingModel
 import com.evsct.app.data.entity.SessionReceipt
 import com.evsct.app.data.entity.Trip
@@ -485,6 +486,8 @@ class BackupIo @Inject constructor(
                         energyKwh = raw.energyKwh,
                         totalCost = raw.totalCost,
                         currency = raw.currency,
+                        paymentMethod = raw.paymentMethod,
+                        paymentDetail = raw.paymentDetail,
                         postedEnergyPricePerKwh = raw.postedEnergyPricePerKwh,
                         postedTimeRatePerMin = raw.postedTimeRatePerMin,
                         postedMaxPowerKw = raw.postedMaxPowerKw,
@@ -660,6 +663,10 @@ class BackupIo @Inject constructor(
         putOptDouble("energyKwh", energyKwh)
         putOptDouble("totalCost", totalCost)
         put("currency", currency)
+        // Optional keys, like the trip battery anchors: backups that predate
+        // payment tracking simply lack them, and older builds ignore them.
+        putOptString("paymentMethod", paymentMethod?.name)
+        putOptString("paymentDetail", paymentDetail)
         putOptDouble("postedEnergyPricePerKwh", postedEnergyPricePerKwh)
         putOptDouble("postedTimeRatePerMin", postedTimeRatePerMin)
         putOptDouble("postedMaxPowerKw", postedMaxPowerKw)
@@ -776,6 +783,13 @@ class BackupIo @Inject constructor(
                     energyKwh = s.optDoubleOrNull("energyKwh"),
                     totalCost = s.optDoubleOrNull("totalCost"),
                     currency = s.optString("currency", "CAD"),
+                    // An unknown method (written by a newer build) restores
+                    // as unrecorded rather than failing the whole restore —
+                    // detail included, since the app never stores a detail
+                    // without its method (same rule as CSV import).
+                    paymentMethod = s.paymentMethodOrNull(),
+                    paymentDetail = s.paymentMethodOrNull()
+                        ?.let { s.optStringOrNull("paymentDetail") },
                     postedEnergyPricePerKwh = s.optDoubleOrNull("postedEnergyPricePerKwh"),
                     postedTimeRatePerMin = s.optDoubleOrNull("postedTimeRatePerMin"),
                     postedMaxPowerKw = s.optDoubleOrNull("postedMaxPowerKw"),
@@ -950,6 +964,8 @@ private data class RawSession(
     val energyKwh: Double?,
     val totalCost: Double?,
     val currency: String,
+    val paymentMethod: PaymentMethod?,
+    val paymentDetail: String?,
     val postedEnergyPricePerKwh: Double?,
     val postedTimeRatePerMin: Double?,
     val postedMaxPowerKw: Double?,
@@ -1023,6 +1039,11 @@ private fun JSONObject.putOptDouble(key: String, value: Double?) {
 
 private fun JSONObject.optStringOrNull(key: String): String? =
     if (isNull(key) || !has(key)) null else optString(key, "").takeIf { it.isNotEmpty() }
+
+private fun JSONObject.paymentMethodOrNull(): PaymentMethod? =
+    optStringOrNull("paymentMethod")?.let { name ->
+        PaymentMethod.entries.firstOrNull { it.name == name }
+    }
 
 private fun JSONObject.optLongOrNull(key: String): Long? =
     if (isNull(key) || !has(key)) null else optLong(key)

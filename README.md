@@ -63,8 +63,8 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   (per-kWh, per-minute, flat, free, hybrid).
 - **A form that folds** — the essentials (date, vehicle, type, pricing,
   odometer, energy, cost, duration, brand and city) stay at the top, and
-  seven optional groups fold beneath them: battery & wait, posted rates,
-  more station detail, trip, receipts, tags, and notes. Everything is
+  eight optional groups fold beneath them: battery & wait, posted rates,
+  payment, more station detail, trip, receipts, tags, and notes. Everything is
   open while you enter a charge; reopening a saved one folds the empty
   groups out of the way. A group holding a value always opens, a group
   you fold by hand shows an "n set" badge, and a validation warning
@@ -92,6 +92,14 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   when a station charges differently than advertised. The time rate has
   a **$/min ⇄ $/hr toggle** — enter whichever unit the station
   advertises and flipping the toggle converts the value in place.
+- **Payment** — how you paid: credit card, debit card, phone / watch,
+  app / account, RFID card, Plug & Charge, or other. Pick one and a
+  second field asks which one — "TD Visa", "FLO", "Google Pay · Amex" —
+  with the cards and apps you've used before under that method offered
+  as one-tap chips (matching as you type, and re-cased to your existing
+  spelling on save). Before a method is picked, your most recent
+  payments are offered whole, so a repeat is a single tap. Tap the
+  selected method again to clear it.
 - **Free-form tags** — type "work charge", "winter test", "kid's hockey
   trip"; press Enter or comma to commit, or tap one of the suggestions
   under the field (see below). Tags appear as `#pill` chips on the row
@@ -147,9 +155,9 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
 
 ### The Charging log
 - Cards per session with a colored leading bar (amber DC fast, blue AC L2,
-  purple AC L1), brand, city, cost in primary green, eff. $/kWh, vehicle and
-  trip pills, a receipt icon when a photo or PDF is attached, and a row of
-  `#tag` chips when the session is tagged.
+  purple AC L1), brand, city, cost in primary green, eff. $/kWh, vehicle,
+  trip and payment pills, a receipt icon when a photo or PDF is attached,
+  and a row of `#tag` chips when the session is tagged.
 - **Add a charge** — an extended **Add session** button floats over the
   list and collapses to a bare `+` once you scroll. It opens a chooser to
   either track a charge live (a running timer plus a persistent
@@ -160,7 +168,8 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   choose between. New sessions started from a vehicle tab pre-select that
   vehicle. A car icon at the end of the tabs opens the Vehicles list.
 - **Search** — free-text matching brand, city, prov, address, station,
-  notes, and tag names.
+  notes, tag names, and the payment card / app — search "TD Visa" and the
+  summary card totals what that card paid, handy against a statement.
 - **Filter sheet** — by brand, by date range with quick presets (This
   month / Last 3 mo. / Last year / custom from-to via date picker), and by
   **tags** (multi-select chips, OR semantics, case-insensitive).
@@ -356,8 +365,8 @@ _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming]
   it starts nudging once you have five sessions' worth of data.
 - **Backup (CSV)** — **Save** every session to a flat CSV for Excel /
   Google Sheets analysis, or **Share** the CSV out via Drive / email /
-  Messages / etc. Every logged field is included — tags and wait time
-  round-trip too.
+  Messages / etc. Every logged field is included — tags, wait time and
+  payment round-trip too.
 - **Import (CSV)** — Round-trips with the CSV export, with a "replace
   existing" toggle.
 - **One-time XLSX import** — for the legacy `DC Fast Charging.xlsx`

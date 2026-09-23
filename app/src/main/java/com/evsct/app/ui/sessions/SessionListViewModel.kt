@@ -434,9 +434,11 @@ private fun ChargingSession.matches(f: SessionFilters): Boolean {
     }
     if (f.query.isNotBlank()) {
         val q = f.query.trim()
+        // paymentDetail makes a card statement easy to reconcile: search
+        // "TD Visa" and the summary above the list totals what it paid.
         val haystack = listOfNotNull(
             brand, locationCity, locationProvince, locationAddress,
-            stationName, stallName, notes, tags,
+            stationName, stallName, notes, tags, paymentDetail,
         ).joinToString(" ")
         if (!haystack.contains(q, ignoreCase = true)) return false
     }
