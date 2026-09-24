@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EVSCT Promo</title>
+<!--
+  EVSCT promo video composition — 1920×1080.
+  Every frame is a pure function of time: render.py calls seek(t) once per
+  frame and screenshots the page, so nothing here uses CSS animations or
+  timers. Open this file in a browser to scrub it live (space = play/pause,
+  ←/→ = ±1 s, or add #t=12.5 to the URL to jump to a moment).
+-->
+<link rel="stylesheet" href="fonts.css">
+<style>
+  :root {
+    --ink: #EFFFF4;
+    --muted: rgba(214, 240, 224, .70);
+    --mint: #A8F5BF;
+    --mint2: #5BC489;
+    --route: #3FB372;
+    --amber: #FFB22E;
+    --deep: #0C3A2A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  body { font-family: 'Inter', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  /* fixed 1920×1080 canvas, scaled to fit the window (scale 1 when rendering) */
+  #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0; background: #04100B; }
+
+  /* ---------- background ---------- */
+  #bg { position: absolute; inset: 0;
+    background: radial-gradient(120% 90% at 30% 20%, #0F3F2D 0%, #072319 45%, #03100B 100%); }
+  .glow { position: absolute; border-radius: 50%; filter: blur(90px); will-change: transform; }
+  #glowA { width: 900px; height: 900px; background: rgba(91, 196, 137, .22); }
+  #glowB { width: 700px; height: 700px; background: rgba(255, 160, 0, .10); }
+  #grid { position: absolute; inset: -80px;
+    background-image: radial-gradient(rgba(168, 245, 191, .16) 1.4px, transparent 1.6px);
+    background-size: 44px 44px; opacity: .35;
+    -webkit-mask-image: radial-gradient(70% 70% at 50% 50%, #000 30%, transparent 100%);
+            mask-image: radial-gradient(70% 70% at 50% 50%, #000 30%, transparent 100%); }
+  #mapBackdrop { position: absolute; inset: 0; background: url(../screenshots/map.webp) center 40% / 2400px auto no-repeat;
+    opacity: 0; filter: saturate(.8) brightness(.55) blur(1.5px); }
+  #mapBackdrop::after { content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, #03100B 0%, rgba(3, 16, 11, .82) 38%, rgba(3, 16, 11, .35) 70%, rgba(3, 16, 11, .75) 100%); }
+  #vignette { position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(0, 0, 0, .55) 100%); }
+
+  /* ---------- scenes ---------- */
+  .scene { position: absolute; inset: 0; display: none; perspective: 2200px; }
+  .kicker { font: 600 22px/1 'Inter'; letter-spacing: .24em; text-transform: uppercase; color: var(--mint); display: flex; align-items: center; gap: 18px; }
+  .kicker::before { content: ''; width: 44px; height: 3px; border-radius: 2px; background: var(--amber); }
+  .headline { font: 700 108px/0.98 'Space Grotesk'; letter-spacing: -.035em; margin-top: 30px; }
+  .headline .line { display: block; overflow: hidden; padding-bottom: .08em; }
+  .headline .line > span { display: inline-block; }
+  .hl { color: var(--amber); }
+  .mint { color: var(--mint); }
+  .body { font: 400 30px/1.42 'Inter'; color: var(--muted); margin-top: 30px; max-width: 640px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 40px; max-width: 700px; }
+  .chip { font: 600 23px/1 'Inter'; padding: 15px 24px; border-radius: 999px; color: var(--ink);
+    background: rgba(168, 245, 191, .08); border: 1.5px solid rgba(168, 245, 191, .28); display: inline-flex; align-items: center; gap: 10px; }
+  .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .stats { display: flex; gap: 64px; margin-top: 48px; }
+  .stat .n { font: 700 72px/1 'Space Grotesk'; letter-spacing: -.03em; color: var(--mint); font-variant-numeric: tabular-nums; }
+  .stat .l { font: 500 22px/1 'Inter'; color: var(--muted); margin-top: 12px; letter-spacing: .02em; }
+  .copy { position: absolute; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; }
+
+  /* ---------- phone ---------- */
+  .phone { position: absolute; width: 428px; height: 918px; padding: 14px; border-radius: 64px;
+    background: linear-gradient(145deg, #1d2723, #080b0a 40%, #141b18);
+    box-shadow: 0 0 0 2px #2c3833, 0 0 0 3px #050706, 0 70px 140px -20px rgba(0, 0, 0, .75), 0 30px 60px rgba(0, 0, 0, .35);
+    transform-style: preserve-3d; will-change: transform; }
+  .phone .screen { position: relative; width: 400px; height: 890px; border-radius: 50px; overflow: hidden; background: #111814; }
+  .phone .screen img { position: absolute; left: 0; top: 0; width: 100%; height: auto; display: block; will-change: transform; }
+  .phone .glare { position: absolute; inset: 14px; border-radius: 50px; pointer-events: none;
+    background: linear-gradient(115deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, 0) 32%); }
+
+  /* ---------- lens (a crop of a screenshot that pops out) ---------- */
+  .lens { position: absolute; border-radius: 26px; background-repeat: no-repeat;
+    box-shadow: 0 0 0 1.5px rgba(168, 245, 191, .35), 0 40px 90px -10px rgba(0, 0, 0, .7), 0 0 60px rgba(91, 196, 137, .18);
+    will-change: transform; }
+
+  /* ---------- notification toast (scene 3) ---------- */
+  .notif { position: absolute; left: 14px; right: 14px; top: 16px; padding: 20px 22px; border-radius: 28px;
+    background: rgba(38, 48, 44, .97); box-shadow: 0 18px 40px rgba(0, 0, 0, .5); display: flex; gap: 16px; align-items: center; }
+  .notif .ic { width: 50px; height: 50px; border-radius: 50%; background: #FFA000; display: grid; place-items: center; flex: none; }
+  .notif .meta { font: 500 16px/1 'Inter'; color: rgba(230, 245, 236, .6); }
+  .notif .title { font: 600 20px/1.2 'Inter'; margin-top: 7px; white-space: nowrap; }
+  .notif .clock { font: 700 24px/1 'Space Grotesk'; color: var(--mint); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  /* ---------- route / chapter bar ---------- */
+  #chapters { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; }
+  #chapters text { font: 600 15px 'Inter'; letter-spacing: .2em; text-transform: uppercase; }
+
+  /* ---------- intro / outro ---------- */
+  #logoWrap { position: absolute; left: 50%; top: 50%; width: 1100px; transform: translate(-50%, -58%); }
+  #logoWrap svg { width: 100%; height: auto; overflow: visible; }
+  #tagline { position: absolute; left: 0; right: 0; top: 740px; text-align: center; font: 500 34px/1 'Inter'; letter-spacing: .32em; text-transform: uppercase; color: var(--muted); }
+  .priv { position: absolute; left: 0; right: 0; text-align: center; font: 700 150px/1 'Space Grotesk'; letter-spacing: -.04em; }
+  .priv s { text-decoration: none; position: relative; }
+  #privSub { position: absolute; left: 0; right: 0; top: 800px; text-align: center; font: 400 36px/1.4 'Inter'; color: var(--muted); }
+  #outroLogo { position: absolute; left: 150px; top: 250px; width: 640px; }
+  #outroLogo svg { width: 100%; height: auto; overflow: visible; }
+  .outroLine { position: absolute; left: 160px; font: 500 28px/1.3 'Inter'; color: var(--muted); }
+  #outroUrl { font: 700 40px/1 'Space Grotesk'; color: var(--ink); letter-spacing: -.01em; }
+  #fade { position: absolute; inset: 0; background: #000; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div class="glow" id="glowA"></div>
+  <div class="glow" id="glowB"></div>
+  <div id="grid"></div>
+  <div id="mapBackdrop"></div>
+
+  <!-- 1 · Intro -->
+  <section class="scene" id="s-intro">
+    <div id="logoWrap"></div>
+    <div id="tagline">EV Session &amp; Charging Tracker</div>
+  </section>
+
+  <!-- 2 · Charging log -->
+  <section class="scene" id="s-log">
+    <div class="copy" style="left:150px">
+      <div class="kicker">The charging log</div>
+      <h1 class="headline"><span class="line"><span>Every charge,</span></span><span class="line"><span class="hl">logged.</span></span></h1>
+      <p class="body">DC fast on the road, AC at home or the hotel. Energy, cost, duration and rates, all in one place.</p>
+      <div class="stats">
+        <div class="stat"><div class="n" data-count="160" data-dec="0">0</div><div class="l">sessions</div></div>
+        <div class="stat"><div class="n" data-count="7905.1" data-dec="1" data-suffix=" kWh">0</div><div class="l">delivered</div></div>
+      </div>
+    </div>
+    <div class="phone" data-src="log.webp" style="left:1310px;top:62px"></div>
+    <div class="lens" data-img="log" data-crop="29,455,1017,212" data-w="600" style="left:930px;top:190px"></div>
+    <div class="lens" data-img="log" data-crop="29,817,1017,348" data-w="560" style="left:960px;top:560px"></div>
+  </section>
+
+  <!-- 3 · Live tracking + entry form -->
+  <section class="scene" id="s-track">
+    <div class="phone" data-src="entry-full.webp" style="left:330px;top:62px">
+      <div class="notif">
+        <div class="ic"><svg width="26" height="30" viewBox="544 347 60 90"><path d="M584 347 L544 403 L570 403 L560 437 L604 385 L578 385 Z" fill="#fff"/></svg></div>
+        <div><div class="meta">EVSCT · now</div><div class="title">Charging in progress</div></div>
+        <div class="clock">00:00</div>
+      </div>
+    </div>
+    <div class="copy" style="left:960px">
+      <div class="kicker">Track it live</div>
+      <h1 class="headline"><span class="line"><span>Plug in.</span></span><span class="line"><span class="hl">Tap start.</span></span></h1>
+      <p class="body">A stopwatch runs in your notification shade. Unplug, add cost and kWh, and the duration fills itself in.</p>
+      <div class="chips">
+        <span class="chip"><i style="background:#FFA000"></i>DC Fast</span>
+        <span class="chip"><i style="background:#5BC489"></i>AC L2</span>
+        <span class="chip"><i style="background:#6FA8FF"></i>AC L1</span>
+        <span class="chip">per kWh</span><span class="chip">per minute</span><span class="chip">flat</span><span class="chip">free</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · Map -->
+  <section class="scene" id="s-map">
+    <div class="copy" style="left:150px">
+      <div class="kicker">Map view</div>
+      <h1 class="headline"><span class="line"><span>Every stop.</span></span><span class="line"><span class="hl">On the map.</span></span></h1>
+      <p class="body">Trip-colored pins, geodesic route lines and a heatmap of where you actually charge.</p>
+      <div class="chips">
+        <span class="chip"><i style="background:#E53935"></i>Cross-Canada</span>
+        <span class="chip"><i style="background:#FDD835"></i>Florida winter escape</span>
+        <span class="chip"><i style="background:#26C6DA"></i>Chicago via Michigan</span>
+        <span class="chip"><i style="background:#8E24AA"></i>Nashville &amp; the Smokies</span>
+      </div>
+    </div>
+    <div class="phone" data-src="map.webp" style="left:1310px;top:62px"></div>
+  </section>
+
+  <!-- 5 · Stats -->
+  <section class="scene" id="s-stats">
+    <div class="copy" style="left:150px">
+      <div class="kicker">Stats</div>
+      <h1 class="headline"><span class="line"><span>Know what every</span></span><span class="line"><span class="hl">kWh costs.</span></span></h1>
+      <div class="stats">
+        <div class="stat"><div class="n" data-count="0.298" data-dec="3" data-prefix="$">0</div><div class="l">avg effective / kWh</div></div>
+        <div class="stat"><div class="n" data-count="17.6" data-dec="1" data-suffix=" kW">0</div><div class="l">avg power</div></div>
+      </div>
+      <p class="body">Cost trends, top brands, a DC vs AC split, and when-you-charge heatmaps.</p>
+    </div>
+    <div class="phone" data-src="stats-full.webp" style="left:1310px;top:62px"></div>
+    <div class="lens" data-img="stats" data-crop="36,1165,1272,390" data-w="590" style="left:960px;top:600px"></div>
+  </section>
+
+  <!-- 6 · Vehicles + trips -->
+  <section class="scene" id="s-trips">
+    <div class="copy" style="left:150px">
+      <div class="kicker">Vehicles &amp; trips</div>
+      <h1 class="headline"><span class="line"><span>Every car.</span></span><span class="line"><span class="hl">Every road trip.</span></span></h1>
+      <p class="body">Lifetime stats per vehicle, totals per trip, and measured km/kWh for every leg of the drive.</p>
+    </div>
+    <div class="phone" data-src="vehicle-full.webp" style="left:1060px;top:62px"></div>
+    <div class="phone" data-src="trips.webp" style="left:1390px;top:62px"></div>
+    <div class="lens" data-img="vehicle" data-crop="29,337,1017,272" data-w="520" style="left:860px;top:700px"></div>
+  </section>
+
+  <!-- 7 · Year recap -->
+  <section class="scene" id="s-recap">
+    <div class="phone" data-src="recap-full.webp" style="left:330px;top:62px"></div>
+    <div class="lens" data-img="recap" data-crop="29,455,1017,351" data-w="470" style="left:600px;top:120px"></div>
+    <div class="copy" style="left:1110px">
+      <div class="kicker">Year recap</div>
+      <h1 class="headline"><span class="line"><span>Your year,</span></span><span class="line"><span class="hl">recapped.</span></span></h1>
+      <p class="body">Totals, a charging map of every trip, and top brands. Share it as a PDF or an offline HTML report.</p>
+      <div class="chips"><span class="chip">PDF</span><span class="chip">HTML</span><span class="chip">Works offline</span></div>
+    </div>
+  </section>
+
+  <!-- 8 · Privacy -->
+  <section class="scene" id="s-priv">
+    <div class="priv" style="top:250px"><span>No account.</span></div>
+    <div class="priv" style="top:430px"><span>No server.</span></div>
+    <div class="priv" style="top:610px"><span class="mint">No analytics.</span></div>
+    <div id="privSub">Your log lives on your phone. Back it up to a single .zip whenever you like.</div>
+  </section>
+
+  <!-- 9 · Outro -->
+  <section class="scene" id="s-outro">
+    <div id="outroLogo"></div>
+    <div class="outroLine" id="ol1" style="top:590px">For Android 11+ · Kotlin &amp; Jetpack Compose</div>
+    <div class="outroLine" id="ol2" style="top:650px">Open source · Apache 2.0</div>
+    <div class="outroLine" id="ol3" style="top:760px"><span id="outroUrl">github.com/r2205/EVSCT</span></div>
+    <div class="phone" data-src="log.webp"></div>
+    <div class="phone" data-src="map.webp"></div>
+    <div class="phone" data-src="stats.webp"></div>
+    <div class="phone" data-src="trips.webp"></div>
+    <div class="phone" data-src="recap.webp"></div>
+  </section>
+
+  <svg id="chapters" viewBox="0 0 1920 1080"></svg>
+  <div id="vignette"></div>
+  <div id="fade"></div>
+</div>
+
+<script>
+/* =================== timing helpers =================== */
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const E = {
+  lin: x => x,
+  outCubic: x => 1 - Math.pow(1 - x, 3),
+  inCubic: x => x * x * x,
+  inOutCubic: x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2,
+  outExpo: x => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x),
+  outQuint: x => 1 - Math.pow(1 - x, 5),
+  outBack: x => { const c1 = 1.55, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+};
+// progress of t through [a, b], eased
+const P = (t, a, b, e = E.outCubic) => e(clamp((t - a) / (b - a)));
+
+const IMG = {  // natural sizes, used for lens math and scroll ranges
+  'log': [1075, 2393], 'entry': [1075, 2393], 'map': [1075, 2393], 'stats': [1344, 2992],
+  'vehicle': [1075, 2393], 'trips': [1075, 2393], 'recap': [1075, 2393], 'settings': [1075, 2393],
+  'entry-full': [1344, 6984], 'stats-full': [1344, 6030], 'vehicle-full': [1344, 5052],
+  'recap-full': [1344, 5603], 'settings-full': [1344, 7104],
+};
+const SHOTS = '../screenshots/';
+const SCREEN_W = 400, SCREEN_H = 890;
+
+/* =================== logo (built from docs/branding/evsct-banner.svg) =================== */
+function logoSVG(id) {
+  return `<svg viewBox="0 0 980 470" id="${id}">
+  <defs>
+    <linearGradient id="${id}m" x1="0" y1="120" x2="0" y2="300" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#A8F5BF"/><stop offset="1" stop-color="#5BC489"/></linearGradient>
+    <linearGradient id="${id}a" x1="0" y1="120" x2="0" y2="300" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFD27A"/><stop offset="1" stop-color="#FFA000"/></linearGradient>
+    <filter id="${id}g" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+  </defs>
+  <g class="bars" fill="url(#${id}m)">
+    <rect x="70" y="120" width="150" height="44" rx="22"/><rect x="70" y="188" width="116" height="44" rx="22"/><rect x="70" y="256" width="150" height="44" rx="22"/>
+  </g>
+  <path class="vee" d="M268,142 L310,278 L352,142" fill="none" stroke="url(#${id}a)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <g class="sct"><path fill="url(#${id}m)" d="${SCT_PATH}"/></g>
+  <path class="route" d="M92,392 C200,392 240,356 310,356 C440,356 470,392 560,392 C700,392 760,384 888,384" fill="none" stroke="#3FB372" stroke-width="14" stroke-linecap="round"/>
+  <circle class="start" cx="92" cy="392" r="17" fill="none" stroke="#3FB372" stroke-width="11"/>
+  <g class="pin"><path d="M888,384 C872.2,370.4 866.0,355.8 866.0,342.2 A22,22 0 1 1 910.0,342.2 C910.0,355.8 903.8,370.4 888,384 Z" fill="#3FB372"/><circle cx="888" cy="342.2" r="9.2" fill="#0C3A2A"/></g>
+  <circle class="pulse" cx="574" cy="392" r="51" fill="none" stroke="#FFA000" stroke-width="6"/>
+  <circle class="nodeglow" cx="574" cy="392" r="60" fill="#FFA000" filter="url(#${id}g)" opacity="0"/>
+  <g class="node"><circle cx="574" cy="392" r="51" fill="#0C3A2A" stroke="#FFA000" stroke-width="8"/>
+    <path d="M584.0,347.0 L544.0,403.0 L570.0,403.0 L560.0,437.0 L604.0,385.0 L578.0,385.0 Z" fill="#FFA000"/></g>
+</svg>`;
+}
+</script>
+<script src="sct-path.js"></script>
+<script>
+/* =================== build =================== */
+document.getElementById('logoWrap').innerHTML = logoSVG('L1');
+document.getElementById('outroLogo').innerHTML = logoSVG('L2');
+
+document.querySelectorAll('.phone').forEach(ph => {
+  const src = ph.dataset.src;
+  const screen = document.createElement('div'); screen.className = 'screen';
+  const img = document.createElement('img'); img.src = SHOTS + src;
+  screen.appendChild(img);
+  // keep any overlay children (e.g. the notification) inside the screen, above the image
+  [...ph.children].forEach(c => screen.appendChild(c));
+  ph.appendChild(screen);
+  const glare = document.createElement('div'); glare.className = 'glare'; ph.appendChild(glare);
+  const key = src.replace('.webp', '');
+  const [w, h] = IMG[key];
+  ph._scrollMax = Math.max(0, h * SCREEN_W / w - SCREEN_H);
+  ph._img = img;
+});
+
+document.querySelectorAll('.lens').forEach(l => {
+  const [x, y, w, h] = l.dataset.crop.split(',').map(Number);
+  const [iw] = IMG[l.dataset.img];
+  const W = +l.dataset.w, s = W / w;
+  l.style.width = W + 'px'; l.style.height = (h * s) + 'px';
+  l.style.backgroundImage = `url(${SHOTS}${l.dataset.img}.webp)`;
+  l.style.backgroundSize = (iw * s) + 'px auto';
+  l.style.backgroundPosition = `${-x * s}px ${-y * s}px`;
+});
+
+/* chapter bar: a route line across the bottom, one charge stop per chapter */
+const CH = [['Log', 4.2], ['Track', 9.8], ['Map', 15.6], ['Stats', 21.2], ['Trips', 26.8], ['Recap', 32.4], ['Private', 38.0]];
+const CH_X0 = 360, CH_X1 = 1560, CH_Y = 1026;
+(function buildChapters() {
+  const svg = document.getElementById('chapters');
+  let s = `<line id="chBase" x1="${CH_X0}" y1="${CH_Y}" x2="${CH_X1}" y2="${CH_Y}" stroke="rgba(168,245,191,.14)" stroke-width="3" stroke-linecap="round"/>
+           <line id="chFill" x1="${CH_X0}" y1="${CH_Y}" x2="${CH_X0}" y2="${CH_Y}" stroke="#3FB372" stroke-width="3" stroke-linecap="round"/>`;
+  CH.forEach(([name], i) => {
+    const x = lerp(CH_X0, CH_X1, i / (CH.length - 1));
+    s += `<circle class="chN" cx="${x}" cy="${CH_Y}" r="7" fill="#07231A" stroke="rgba(168,245,191,.35)" stroke-width="2.5"/>
+          <text class="chT" x="${x}" y="${CH_Y + 34}" text-anchor="middle" fill="rgba(214,240,224,.4)">${name}</text>`;
+  });
+  svg.innerHTML = s;
+})();
+
+/* headline line-reveal + counters */
+function revealLines(scene, lt, start, stagger = .12, dur = .8) {
+  scene.querySelectorAll('.headline .line > span').forEach((s, i) => {
+    const k = P(lt, start + i * stagger, start + i * stagger + dur, E.outExpo);
+    s.style.transform = `translateY(${(1 - k) * 110}%)`;
+  });
+}
+function rise(el, lt, a, b, dist = 40) {
+  const k = P(lt, a, b, E.outQuint);
+  el.style.opacity = k; el.style.transform = `translateY(${(1 - k) * dist}px)`;
+}
+function popChips(scene, lt, start, stagger = .07) {
+  scene.querySelectorAll('.chip').forEach((c, i) => {
+    const k = P(lt, start + i * stagger, start + i * stagger + .5, E.outBack);
+    c.style.opacity = clamp(k * 1.5); c.style.transform = `scale(${lerp(.6, 1, k)})`;
+  });
+}
+function counters(scene, lt, a, b) {
+  scene.querySelectorAll('[data-count]').forEach(n => {
+    const k = P(lt, a, b, E.outExpo), v = +n.dataset.count * k, d = +n.dataset.dec;
+    n.textContent = (n.dataset.prefix || '') + v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) + (n.dataset.suffix || '');
+  });
+}
+// phone transform: enter from a side with a 3D swing, idle float, scroll its screenshot
+function phone(ph, lt, o) {
+  const { enter = 0, from = 1, ry = -12, rx = 4, rz = 0, scroll = null, float = 1, dist = 700 } = o;
+  const k = P(lt, enter, enter + 1.1, E.outExpo);
+  const bob = Math.sin((lt + enter) * 1.3) * 8 * float;
+  ph.style.opacity = clamp(k * 2);
+  ph.style.transform = `translate3d(${(1 - k) * dist * from}px, ${bob}px, 0) rotateY(${ry + (1 - k) * 30 * from}deg) rotateX(${rx}deg) rotateZ(${rz}deg)`;
+  if (scroll) {
+    const s = P(lt, scroll[0], scroll[1], E.inOutCubic);
+    ph._img.style.transform = `translateY(${-s * ph._scrollMax * (scroll[2] ?? 1)}px)`;
+  }
+}
+function lens(l, lt, a, o = {}) {
+  const { dx = -80, rot = -2, zoomFrom = .55 } = o;
+  const k = P(lt, a, a + .9, E.outBack);
+  const bob = Math.sin(lt * 1.7 + a) * 6;
+  l.style.opacity = clamp(P(lt, a, a + .3) * 1);
+  l.style.transform = `translate(${(1 - k) * -dx}px, ${bob}px) scale(${lerp(zoomFrom, 1, k)}) rotate(${rot * k}deg)`;
+  l.style.transformOrigin = 'right center';
+}
+
+/* =================== scenes =================== */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+const SCENES = [
+  { id: 's-intro', a: 0, b: 4.6, fn(lt, sc) {
+      const svg = $('#L1', sc);
+      $$('.bars rect', svg).forEach((r, i) => {
+        const k = P(lt, .25 + i * .09, .95 + i * .09, E.outExpo);
+        r.style.transformBox = 'fill-box'; r.style.transformOrigin = 'left center';
+        r.style.transform = `scaleX(${k})`; r.style.opacity = clamp(k * 3);
+      });
+      const vee = $('.vee', svg), vl = vee.getTotalLength();
+      vee.style.strokeDasharray = vl; vee.style.strokeDashoffset = vl * (1 - P(lt, .55, 1.15, E.inOutCubic));
+      const sk = P(lt, .85, 1.5, E.outExpo);
+      $('.sct', svg).style.transform = `translateY(${(1 - sk) * 60}px)`; $('.sct', svg).style.opacity = sk;
+      const st = P(lt, 1.2, 1.55, E.outBack);
+      const start = $('.start', svg); start.style.transformBox = 'fill-box'; start.style.transformOrigin = 'center'; start.style.transform = `scale(${st})`;
+      const route = $('.route', svg), rl = route.getTotalLength();
+      route.style.strokeDasharray = rl; route.style.strokeDashoffset = rl * (1 - P(lt, 1.3, 2.4, E.inOutCubic));
+      const nk = P(lt, 1.8, 2.25, E.outBack);
+      const node = $('.node', svg); node.style.transformBox = 'fill-box'; node.style.transformOrigin = 'center'; node.style.transform = `scale(${nk})`;
+      const pl = P(lt, 1.95, 2.9, E.outCubic), pulse = $('.pulse', svg);
+      pulse.style.transformBox = 'fill-box'; pulse.style.transformOrigin = 'center';
+      pulse.style.transform = `scale(${1 + pl * 1.3})`; pulse.style.opacity = lt > 1.95 ? (1 - pl) : 0;
+      $('.nodeglow', svg).setAttribute('opacity', (P(lt, 1.9, 2.3) * (.55 + .2 * Math.sin(lt * 4))).toFixed(3));
+      const pk = P(lt, 2.25, 2.8, E.outBack), pin = $('.pin', svg);
+      pin.style.transform = `translateY(${(1 - pk) * -90}px)`; pin.style.opacity = clamp(pk * 3);
+      rise($('#tagline', sc), lt, 2.5, 3.3, 24);
+      const out = P(lt, 3.9, 4.6, E.inCubic);
+      $('#logoWrap', sc).style.transform = `translate(-50%, -58%) scale(${1 + lt * .012 - out * .15})`;
+      sc.style.opacity = 1 - out;
+      sc.style.filter = out > 0 ? `blur(${out * 10}px)` : '';
+  } },
+
+  { id: 's-log', a: 4.2, b: 10.2, fn(lt, sc) {
+      rise($('.kicker', sc), lt, .25, .9, 20);
+      revealLines(sc, lt, .35);
+      rise($('.body', sc), lt, .8, 1.5, 30);
+      rise($('.stats', sc), lt, 1.0, 1.7, 30);
+      counters(sc, lt, 1.0, 2.6);
+      phone($('.phone', sc), lt, { enter: .1, from: 1, ry: -14 });
+      const [l1, l2] = $$('.lens', sc);
+      lens(l1, lt, 1.6); lens(l2, lt, 2.5, { rot: 2 });
+  } },
+
+  { id: 's-track', a: 9.8, b: 16.0, fn(lt, sc) {
+      const ph = $('.phone', sc);
+      phone(ph, lt, { enter: .1, from: -1, ry: 14, scroll: [2.6, 5.9, .55] });
+      const nk = P(lt, 1.0, 1.7, E.outBack), nOut = P(lt, 2.8, 3.3, E.inCubic);
+      const notif = $('.notif', ph);
+      notif.style.transform = `translateY(${(1 - nk) * -160 - nOut * 160}px)`;
+      notif.style.opacity = clamp(nk * 2) * (1 - nOut);
+      const secs = 1834 + Math.max(0, lt - 1) * 1; // ticks in real time from 30:34
+      $('.clock', notif).textContent = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+      rise($('.kicker', sc), lt, .35, 1.0, 20);
+      revealLines(sc, lt, .45);
+      rise($('.body', sc), lt, .9, 1.6, 30);
+      popChips(sc, lt, 1.5);
+  } },
+
+  { id: 's-map', a: 15.6, b: 21.6, fn(lt, sc) {
+      rise($('.kicker', sc), lt, .25, .9, 20);
+      revealLines(sc, lt, .35);
+      rise($('.body', sc), lt, .8, 1.5, 30);
+      popChips(sc, lt, 1.3, .1);
+      phone($('.phone', sc), lt, { enter: .1, from: 1, ry: -14 });
+  } },
+
+  { id: 's-stats', a: 21.2, b: 27.2, fn(lt, sc) {
+      rise($('.kicker', sc), lt, .25, .9, 20);
+      revealLines(sc, lt, .35);
+      rise($('.stats', sc), lt, .8, 1.5, 30);
+      counters(sc, lt, .8, 2.4);
+      rise($('.body', sc), lt, 1.1, 1.8, 30);
+      phone($('.phone', sc), lt, { enter: .1, from: 1, ry: -14, scroll: [2.2, 5.6, .5] });
+      lens($('.lens', sc), lt, 1.5);
+  } },
+
+  { id: 's-trips', a: 26.8, b: 32.8, fn(lt, sc) {
+      rise($('.kicker', sc), lt, .25, .9, 20);
+      revealLines(sc, lt, .35);
+      rise($('.body', sc), lt, .8, 1.5, 30);
+      const [veh, trips] = $$('.phone', sc);
+      phone(veh, lt, { enter: .05, from: 1, ry: -10, rz: -3, scroll: [2.0, 5.6, .45], float: .8 });
+      phone(trips, lt, { enter: .3, from: 1, ry: -16, rz: 3, float: 1.2 });
+      lens($('.lens', sc), lt, 1.7);
+  } },
+
+  { id: 's-recap', a: 32.4, b: 38.0, fn(lt, sc) {
+      phone($('.phone', sc), lt, { enter: .1, from: -1, ry: 14, scroll: [2.0, 5.2, .42] });
+      const l = $('.lens', sc);
+      lens(l, lt, 1.3, { dx: 80, rot: 2 }); l.style.transformOrigin = 'left center';
+      rise($('.kicker', sc), lt, .35, 1.0, 20);
+      revealLines(sc, lt, .45);
+      rise($('.body', sc), lt, .9, 1.6, 30);
+      popChips(sc, lt, 1.4);
+  } },
+
+  { id: 's-priv', a: 38.0, b: 42.0, fn(lt, sc) {
+      $$('.priv', sc).forEach((p, i) => {
+        const k = P(lt, .2 + i * .42, .75 + i * .42, E.outExpo);
+        p.style.opacity = clamp(k * 2);
+        p.style.transform = `translateY(${(1 - k) * 80}px) scale(${lerp(1.25, 1, k)})`;
+        p.style.filter = k < 1 ? `blur(${(1 - k) * 14}px)` : '';
+      });
+      rise($('#privSub', sc), lt, 1.7, 2.4, 24);
+  } },
+
+  { id: 's-outro', a: 41.6, b: 48.0, fn(lt, sc) {
+      const svg = $('#L2', sc);
+      // the outro logo arrives fully drawn, with the route re-drawing across it
+      const lk = P(lt, .2, 1.1, E.outExpo);
+      $('#outroLogo', sc).style.opacity = lk; $('#outroLogo', sc).style.transform = `translateY(${(1 - lk) * 40}px)`;
+      const route = $('.route', svg), rl = route.getTotalLength();
+      route.style.strokeDasharray = rl; route.style.strokeDashoffset = rl * (1 - P(lt, .4, 1.4, E.inOutCubic));
+      const pl = P(lt, 1.2, 2.2, E.outCubic), pulse = $('.pulse', svg);
+      pulse.style.transformBox = 'fill-box'; pulse.style.transformOrigin = 'center';
+      pulse.style.transform = `scale(${1 + pl * 1.3})`; pulse.style.opacity = lt > 1.2 ? (1 - pl) : 0;
+      $('.nodeglow', svg).setAttribute('opacity', (P(lt, 1.1, 1.5) * (.5 + .2 * Math.sin(lt * 4))).toFixed(3));
+      rise($('#ol1', sc), lt, .9, 1.6, 24); rise($('#ol2', sc), lt, 1.05, 1.75, 24); rise($('#ol3', sc), lt, 1.4, 2.1, 24);
+      // fan of phones
+      $$('.phone', sc).forEach((ph, i) => {
+        const n = 5, c = (i - (n - 1) / 2);
+        const k = P(lt, .3 + i * .08, 1.6 + i * .08, E.outExpo);
+        const ang = c * 8 * k, x = 1410 + c * 112 * k - 214, y = -40 + Math.abs(c) * 22 * k + (1 - k) * 500;
+        ph.style.left = x + 'px'; ph.style.top = y + 'px'; ph.style.zIndex = 10 - Math.abs(c) * 2;
+        ph.style.opacity = clamp(k * 2);
+        const bob = Math.sin(lt * 1.2 + i) * 6;
+        ph.style.transform = `translateY(${bob}px) rotate(${ang}deg) scale(.78)`;
+        ph.style.transformOrigin = '50% 110%';
+      });
+  } },
+];
+SCENES.forEach(s => s.el = document.getElementById(s.id));
+const DURATION = 48.0;
+const XFADE = .45;
+
+function seek(t) {
+  // background drift
+  $('#glowA').style.transform = `translate(${-200 + Math.sin(t * .23) * 180}px, ${-250 + Math.cos(t * .19) * 120}px)`;
+  $('#glowB').style.transform = `translate(${1300 + Math.cos(t * .17) * 200}px, ${500 + Math.sin(t * .21) * 140}px)`;
+  $('#grid').style.transform = `translate(${(t * 6) % 44}px, ${(t * 3) % 44}px)`;
+  const mk = P(t, 15.4, 16.4) * (1 - P(t, 21.2, 21.8));
+  $('#mapBackdrop').style.opacity = mk;
+  $('#mapBackdrop').style.backgroundPosition = `${50 + (t - 15.6) * .6}% ${40 - (t - 15.6) * .8}%`;
+
+  for (const s of SCENES) {
+    if (t < s.a || t > s.b) { s.el.style.display = 'none'; continue; }
+    s.el.style.display = 'block';
+    const lt = t - s.a;
+    if (s.id !== 's-intro') {
+      const inK = P(t, s.a, s.a + XFADE, E.outCubic);
+      const outK = s.id === 's-outro' ? 0 : P(t, s.b - XFADE, s.b, E.inCubic);
+      s.el.style.opacity = inK * (1 - outK);
+      s.el.style.transform = `scale(${1 + outK * .04})`;
+      s.el.style.filter = outK > 0 ? `blur(${outK * 8}px)` : '';
+    }
+    s.fn(lt, s.el);
+  }
+
+  // chapter bar
+  const barIn = P(t, 4.2, 5.0) * (1 - P(t, 41.4, 42.0));
+  const bar = $('#chapters'); bar.style.opacity = barIn;
+  const segs = CH.length - 1;
+  let prog = 0;
+  for (let i = 0; i < segs; i++) prog += P(t, CH[i][1] + .2, CH[i + 1][1] + .2, E.inOutCubic);
+  $('#chFill').setAttribute('x2', lerp(CH_X0, CH_X1, prog / segs));
+  $$('.chN').forEach((c, i) => {
+    const on = t >= CH[i][1] + .2;
+    const active = on && (i === CH.length - 1 || t < CH[i + 1][1] + .2);
+    c.setAttribute('fill', on ? '#FFA000' : '#07231A');
+    c.setAttribute('stroke', on ? '#FFD27A' : 'rgba(168,245,191,.35)');
+    c.setAttribute('r', active ? 9 + Math.sin(t * 5) * 1.2 : 7);
+  });
+  $$('.chT').forEach((tx, i) => {
+    const active = t >= CH[i][1] + .2 && (i === CH.length - 1 || t < CH[i + 1][1] + .2);
+    tx.setAttribute('fill', active ? '#EFFFF4' : 'rgba(214,240,224,.38)');
+  });
+
+  // global fade in / out
+  $('#fade').style.opacity = 1 - P(t, 0, .5) + P(t, DURATION - .8, DURATION);
+}
+
+/* ready: fonts + images decoded (render.py waits on this) */
+window.__ready = (async () => {
+  await document.fonts.ready;
+  await Promise.all([...document.images].map(i => i.decode().catch(() => {})));
+  // lens backgrounds use the same URLs; make sure they're decoded too
+  await Promise.all(Object.keys(IMG).filter(k => !k.includes('-full')).map(k => { const i = new Image(); i.src = SHOTS + k + '.webp'; return i.decode().catch(() => {}); }));
+  seek(0);
+  return true;
+})();
+window.seek = seek; window.DURATION = DURATION;
+
+/* letterbox the canvas into whatever window it's opened in */
+function fit() {
+  const k = Math.min(innerWidth / 1920, innerHeight / 1080);
+  $('#stage').style.transform = `translate(${(innerWidth - 1920 * k) / 2}px, ${(innerHeight - 1080 * k) / 2}px) scale(${k})`;
+}
+fit(); addEventListener('resize', fit);
+
+/* live preview controls when opened directly in a browser */
+if (!navigator.webdriver) {
+  let t = parseFloat((location.hash.match(/t=([\d.]+)/) || [])[1] || 0), playing = true, last = 0;
+  const loop = now => { if (playing) { t = (t + (now - last) / 1000) % DURATION; } last = now; seek(t); requestAnimationFrame(loop); };
+  window.__ready.then(() => requestAnimationFrame(now => { last = now; loop(now); }));
+  addEventListener('click', () => { playing = !playing; });  // tap to pause on phones
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') playing = !playing;
+    if (e.code === 'ArrowRight') t = Math.min(DURATION, t + 1);
+    if (e.code === 'ArrowLeft') t = Math.max(0, t - 1);
+  });
+}
+</script>
+</body>
+</html>
