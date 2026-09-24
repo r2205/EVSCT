@@ -19,7 +19,7 @@ Compose + Room + Hilt.
 _Shown in dark mode — EVSCT also ships a hand-tuned light theme (see [Theming](#theming))._
 
 **▶ [Watch the 48-second promo video](docs/promo-video/evsct-promo.mp4)**, a
-motion-graphics tour built from these screenshots, or
+motion-graphics tour built from these screenshots with an original score, or
 [play it in the browser](https://r2205.github.io/EVSCT/promo-video/)
 ([source and re-render steps](docs/promo-video)).
 
