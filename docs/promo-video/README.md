@@ -24,8 +24,11 @@ time (`seek(t)`), with no CSS animations or timers, so `render.py` can step
 through it frame by frame in headless Chromium and pipe PNGs straight into
 ffmpeg (H.264, `yuv420p`, `+faststart`).
 
-Open `index.html` in a browser to preview it live: space plays and pauses,
-←/→ jump a second, and `index.html#t=21` starts at 21 s.
+It's also a regular web page that plays in a loop and scales to fit any
+window. GitHub Pages serves `docs/`, so from the default branch it's live at
+**https://r2205.github.io/EVSCT/promo-video/**, or open `index.html` locally.
+Space (or a tap) plays and pauses, ←/→ jump a second, and `#t=21` on the URL
+starts at 21 s.
 
 ## Re-rendering
 

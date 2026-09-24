@@ -22,9 +22,10 @@
     --deep: #0C3A2A;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #04100B; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
   body { font-family: 'Inter', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
-  #stage { position: absolute; inset: 0; overflow: hidden; }
+  /* fixed 1920×1080 canvas, scaled to fit the window (scale 1 when rendering) */
+  #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0; background: #04100B; }
 
   /* ---------- background ---------- */
   #bg { position: absolute; inset: 0;
@@ -570,11 +571,19 @@ window.__ready = (async () => {
 })();
 window.seek = seek; window.DURATION = DURATION;
 
+/* letterbox the canvas into whatever window it's opened in */
+function fit() {
+  const k = Math.min(innerWidth / 1920, innerHeight / 1080);
+  $('#stage').style.transform = `translate(${(innerWidth - 1920 * k) / 2}px, ${(innerHeight - 1080 * k) / 2}px) scale(${k})`;
+}
+fit(); addEventListener('resize', fit);
+
 /* live preview controls when opened directly in a browser */
 if (!navigator.webdriver) {
-  let t = parseFloat((location.hash.match(/t=([\d.]+)/) || [])[1] || 0), playing = true, last = performance.now();
+  let t = parseFloat((location.hash.match(/t=([\d.]+)/) || [])[1] || 0), playing = true, last = 0;
   const loop = now => { if (playing) { t = (t + (now - last) / 1000) % DURATION; } last = now; seek(t); requestAnimationFrame(loop); };
-  window.__ready.then(() => requestAnimationFrame(loop));
+  window.__ready.then(() => requestAnimationFrame(now => { last = now; loop(now); }));
+  addEventListener('click', () => { playing = !playing; });  // tap to pause on phones
   addEventListener('keydown', e => {
     if (e.code === 'Space') playing = !playing;
     if (e.code === 'ArrowRight') t = Math.min(DURATION, t + 1);
