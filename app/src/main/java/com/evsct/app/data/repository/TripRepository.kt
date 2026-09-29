@@ -61,6 +61,8 @@ class TripRepository @Inject constructor(
 
     suspend fun delete(trip: Trip) = tripDao.delete(trip)
 
+    suspend fun setVehicle(tripId: Long, vehicleId: Long?) = tripDao.setVehicle(tripId, vehicleId)
+
     /**
      * Assign a default pin color to any trip whose [Trip.pinColor] is null.
      * Trips created before the v6 schema migration kept null pinColor forever

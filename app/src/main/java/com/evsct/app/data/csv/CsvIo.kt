@@ -165,6 +165,10 @@ object Csv {
  *  rows: trimmed and lowercased with locale-independent rules. */
 private fun nameKey(name: String): String = name.trim().lowercase()
 
+/** A trip as CSV import tracks it while matching rows: [vehicleId] changes
+ *  when a trip with no car yet is settled by the rows imported into it. */
+private class CsvTrip(val id: Long, var vehicleId: Long?)
+
 data class CsvImportResult(val imported: Int, val skipped: Int)
 
 /** Successful prepare-for-share. The CSV lives in [file], and [sessions] is
@@ -313,21 +317,54 @@ class CsvIo @Inject constructor(
         //
         // Names match case-insensitively (CSV fields arrive trimmed): an
         // existing "summer 2025" must absorb a row tagged "Summer 2025"
-        // instead of spawning a duplicate trip. Existing DB rows fill the
-        // map first, and first-in wins, so imports attach to real rows
-        // even if the DB somehow holds two names differing only by case.
-        // Known format limitation, unchanged here: the CSV carries only
-        // the trip NAME, so two genuinely distinct trips that share one
-        // name collapse into a single trip on import.
-        val tripIdByName = mutableMapOf<String, Long>()
+        // instead of spawning a duplicate trip. Existing DB rows are listed
+        // first, and first-in wins, so imports attach to real rows even if
+        // the DB somehow holds two names differing only by case.
+        // A trip belongs to one vehicle, so a row matches by name AND its
+        // vehicle — two cars' "Summer 2025" stay two trips — and see
+        // tripIdFor below for rows and trips that don't name one. Known
+        // format limitation, unchanged here: the CSV carries only the trip
+        // NAME, so two distinct trips one car took under the same name
+        // still collapse into a single trip on import.
+        val tripsByName = mutableMapOf<String, MutableList<CsvTrip>>()
         val usedPinColors = mutableListOf<String>()
         tripRepository.observeAll().first().forEach { trip ->
-            tripIdByName.getOrPut(nameKey(trip.name)) { trip.id }
+            tripsByName.getOrPut(nameKey(trip.name)) { mutableListOf() } += CsvTrip(trip.id, trip.vehicleId)
             trip.pinColor?.let { usedPinColors += it }
         }
         val vehicleIdByName = mutableMapOf<String, Long>()
         vehicleRepository.observeAll().first().forEach {
             vehicleIdByName.getOrPut(nameKey(it.name)) { it.id }
+        }
+
+        // The trip a row tagged [name] on [vehicleId] joins: that name's
+        // trip on the same car; else one of that name with no car yet,
+        // which takes this row's car (a trip's first sessions settle its
+        // car, as MIGRATION_14_15 settled older trips'); for a row naming
+        // no car, any trip of that name; else a new trip on the row's car.
+        suspend fun tripIdFor(name: String, vehicleId: Long?): Long {
+            val sameName = tripsByName.getOrPut(nameKey(name)) { mutableListOf() }
+            val match = sameName.firstOrNull { it.vehicleId == vehicleId }
+                ?: if (vehicleId != null) {
+                    sameName.firstOrNull { it.vehicleId == null }?.also { unsettled ->
+                        tripRepository.setVehicle(unsettled.id, vehicleId)
+                        unsettled.vehicleId = vehicleId
+                    }
+                } else {
+                    sameName.firstOrNull()
+                }
+            if (match != null) return match.id
+            // Assign the pin color here from the pre-read list rather than
+            // letting TripRepository.upsert auto-pick: its auto-pick
+            // collects a DAO Flow, which must not run inside withTransaction
+            // (the exact pattern the comment above avoids) — and its read of
+            // committed state would hand several new trips in one import the
+            // same color. New trips keep the CSV's original casing.
+            val color = TripPinColor.nextDefault(usedPinColors).name
+            usedPinColors += color
+            val id = tripRepository.upsert(Trip(name = name, pinColor = color, vehicleId = vehicleId))
+            sameName += CsvTrip(id, vehicleId)
+            return id
         }
 
         var imported = 0
@@ -352,25 +389,13 @@ class CsvIo @Inject constructor(
                 if (row.all { it.isBlank() }) continue
                 val parsed = CsvFormat.fromRow(headers, row)
                 if (parsed == null) { skipped++; continue }
-                val tripId = parsed.tripName?.takeIf { it.isNotBlank() }?.let { name ->
-                    // Keyed by the normalized name; newly created rows keep
-                    // the CSV's original casing as their display name.
-                    tripIdByName.getOrPut(nameKey(name)) {
-                        // Assign the pin color here from the pre-read list
-                        // rather than letting TripRepository.upsert auto-pick:
-                        // its auto-pick collects a DAO Flow, which must not run
-                        // inside withTransaction (the exact pattern the comment
-                        // above avoids) — and its read of committed state would
-                        // hand several new trips in one import the same color.
-                        val color = TripPinColor.nextDefault(usedPinColors).name
-                        usedPinColors += color
-                        tripRepository.upsert(Trip(name = name, pinColor = color))
-                    }
-                }
                 val vehicleId = parsed.vehicleName?.takeIf { it.isNotBlank() }?.let { name ->
                     vehicleIdByName.getOrPut(nameKey(name)) {
                         vehicleRepository.upsert(Vehicle(name = name))
                     }
+                }
+                val tripId = parsed.tripName?.takeIf { it.isNotBlank() }?.let { name ->
+                    tripIdFor(name, vehicleId)
                 }
                 sessionRepository.upsert(parsed.session.copy(tripId = tripId, vehicleId = vehicleId))
                 imported++
