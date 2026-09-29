@@ -16,6 +16,7 @@ import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.EfficiencyAnalysis
 import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.TripAnchor
+import com.evsct.app.util.TripDistance
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,7 +73,7 @@ class TripDetailViewModel @Inject constructor(
                     sessionCount = sessions.size,
                     totalCostByCurrency = CurrencyTotals.from(sessions),
                     totalEnergyKwh = sessions.sumOf { s -> s.energyKwh ?: 0.0 },
-                    totalDistanceKm = TripRepository.computeTripDistance(it, sessions),
+                    totalDistanceKm = TripDistance.km(it, sessions),
                 )
             }
             val analysis = analyzeLegs(trip, sessions, allSessions, vehicles)

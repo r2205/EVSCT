@@ -5,6 +5,7 @@ import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.TripWithStats
 import com.evsct.app.ui.map.TripPinColor
 import com.evsct.app.util.CurrencyTotals
+import com.evsct.app.util.TripDistance
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +28,7 @@ class TripRepository @Inject constructor(
                     sessionCount = tripSessions.size,
                     totalCostByCurrency = CurrencyTotals.from(tripSessions),
                     totalEnergyKwh = tripSessions.sumOf { it.energyKwh ?: 0.0 },
-                    totalDistanceKm = computeTripDistance(trip, tripSessions),
+                    totalDistanceKm = TripDistance.km(trip, tripSessions),
                 )
             }
         }
@@ -75,27 +76,6 @@ class TripRepository @Inject constructor(
             val color = TripPinColor.nextDefault(used).name
             tripDao.update(trip.copy(pinColor = color))
             used += color
-        }
-    }
-
-    companion object {
-        /**
-         * If the user filled in both trip-level start and end odometer values,
-         * use that (covers free home charging where session odometers under-report).
-         * Otherwise fall back to the spread of session odometer readings.
-         */
-        fun computeTripDistance(
-            trip: Trip,
-            sessions: List<com.evsct.app.data.entity.ChargingSession>,
-        ): Double {
-            val s = trip.startOdometerKm
-            val e = trip.endOdometerKm
-            if (s != null && e != null && e >= s) return e - s
-
-            val odometers = sessions.mapNotNull { it.odometerKm }
-            if (odometers.size < 2) return 0.0
-            val sorted = odometers.sorted()
-            return sorted.last() - sorted.first()
         }
     }
 }
