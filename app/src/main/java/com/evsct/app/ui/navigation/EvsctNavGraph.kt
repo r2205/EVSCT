@@ -385,6 +385,7 @@ fun EvsctNavGraph(navController: NavHostController) {
                 onOpenTrip = { id ->
                     entry.ifResumed { navController.navigate(Routes.tripDetail(id)) }
                 },
+                onOpenVehicles = { entry.ifResumed { navController.navigate(Routes.VEHICLE_LIST) } },
             )
         }
         composable(

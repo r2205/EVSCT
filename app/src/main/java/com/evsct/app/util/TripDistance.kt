@@ -11,13 +11,13 @@ import com.evsct.app.data.entity.Trip
  * covers the drive to the first stop and home from the last, which no pair
  * of session readings can (and free home charging the log never sees).
  *
- * Otherwise the distance comes from the session odometers, one car at a
- * time. Two cars' odometers have nothing to do with each other, so taking
- * the highest minus the lowest across every session let one session logged
- * on the other car stretch the trip across the whole gap between them — a
- * 45,000 km car and a 12,000 km car read as a 33,000 km trip. Each car now
- * contributes the spread of its own readings, and a lone stray session
- * contributes nothing.
+ * Otherwise the distance comes from the session odometers of the trip's own
+ * car — see [TripReport.isOnTripCar]. Another car's odometer has nothing to
+ * do with this trip: taking the highest minus the lowest across every
+ * session let one session logged on the other car stretch the trip across
+ * the whole gap between two odometers (a 45,000 km car and a 12,000 km car
+ * read as a 33,000 km trip). A trip with no car yet has none to prefer, so
+ * each car its sessions name contributes the spread of its own readings.
  */
 object TripDistance {
 
@@ -26,7 +26,12 @@ object TripDistance {
         val end = trip.endOdometerKm
         if (start != null && end != null && end >= start) return end - start
 
-        return sessions.groupBy { it.vehicleId }.values.sumOf { carSessions ->
+        val perCar = if (trip.vehicleId != null) {
+            listOf(sessions.filter { TripReport.isOnTripCar(trip, it) })
+        } else {
+            sessions.groupBy { it.vehicleId }.values
+        }
+        return perCar.sumOf { carSessions ->
             val odometers = carSessions.mapNotNull { it.odometerKm }
             if (odometers.size < 2) 0.0 else odometers.max() - odometers.min()
         }

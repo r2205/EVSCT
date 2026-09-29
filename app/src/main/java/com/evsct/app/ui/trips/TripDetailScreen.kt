@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -114,12 +115,21 @@ fun TripDetailScreen(
                 val distUnit = Units.distanceUnit(units.useMiles)
                 Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        tripDateLabel(st.trip)?.let { dates ->
-                            Text(
-                                dates,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        // "EV6 · Jul 3, 2026 – Jul 12, 2026": the trip's car
+                        // leads, since every reading below is that car's.
+                        listOfNotNull(state.vehicle?.name, tripDateLabel(st.trip))
+                            .joinToString(" · ")
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { subtitle ->
+                                Text(
+                                    subtitle,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                            }
+                        if (state.vehicle == null && state.vehicles.isNotEmpty()) {
+                            MissingVehiclePrompt(onChoose = { showEdit = true })
                             Spacer(Modifier.height(12.dp))
                         }
                         // StatColumns rather than a plain SpaceBetween Row: three
@@ -165,6 +175,23 @@ fun TripDetailScreen(
                                 Stat(stringResource(R.string.common_cost_per_kwh), Format.moneyRate(st.costPerKwh, "kWh"), statModifier)
                             }
                         }
+                        val otherCar = state.otherCarSessionIds.size
+                        if (otherCar > 0) {
+                            HeaderNote(
+                                pluralStringResource(R.plurals.trip_sessions_on_other_vehicle, otherCar, otherCar),
+                                isWarning = true,
+                            )
+                        }
+                        val unassigned = state.unassignedSessionCount
+                        val tripCarName = state.vehicle?.name
+                        if (unassigned > 0 && tripCarName != null) {
+                            HeaderNote(
+                                pluralStringResource(
+                                    R.plurals.trip_sessions_without_vehicle, unassigned, unassigned, tripCarName,
+                                ),
+                                isWarning = false,
+                            )
+                        }
                     }
                 }
             }
@@ -208,6 +235,15 @@ fun TripDetailScreen(
                                 )
                                 Text(Format.dateTime(s.sessionStart), style = MaterialTheme.typography.bodySmall)
                                 Text("${Format.kwh(s.energyKwh)} · ${Format.duration(s.durationSeconds)}", style = MaterialTheme.typography.bodySmall)
+                                if (s.id in state.otherCarSessionIds) {
+                                    state.vehicles.firstOrNull { it.id == s.vehicleId }?.let { car ->
+                                        Text(
+                                            stringResource(R.string.trip_session_logged_on, car.name),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
                             }
                             Spacer(Modifier.width(12.dp))
                             Text(Format.money(s.totalCost, s.currency))
@@ -231,6 +267,7 @@ fun TripDetailScreen(
         state.trip?.let { trip ->
             TripEditDialog(
                 trip = trip,
+                vehicles = state.vehicles,
                 onDismiss = { showEdit = false },
                 onSave = {
                     viewModel.updateTrip(it)
@@ -239,6 +276,36 @@ fun TripDetailScreen(
             )
         }
     }
+}
+
+/** Shown in the header when the trip has no car yet (one from before trips
+ *  carried a vehicle whose sessions didn't settle it, or whose car was
+ *  deleted): its own readings can't be measured until one is picked. */
+@Composable
+private fun MissingVehiclePrompt(onChoose: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            stringResource(R.string.trip_vehicle_missing),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        TextButton(onClick = onChoose) { Text(stringResource(R.string.trip_choose_vehicle)) }
+    }
+}
+
+/** A full-width note under the header stats — full width for the same
+ *  large-font reason as the missing-duration note. */
+@Composable
+private fun HeaderNote(text: String, isWarning: Boolean) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (isWarning) MaterialTheme.colorScheme.error
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+    )
 }
 
 @Composable

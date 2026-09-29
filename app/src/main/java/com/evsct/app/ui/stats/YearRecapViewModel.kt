@@ -195,7 +195,10 @@ class YearRecapViewModel @Inject constructor(
             VehicleScope.Unassigned -> "Unassigned"
             is VehicleScope.One -> vehicles.firstOrNull { it.id == scope.id }?.name
         }
-        recapFor(scoped, trips, year, units).copy(vehicleName = scopeLabel)
+        // Trips are scoped by their own car: a vehicle's recap crowns one
+        // of that vehicle's trips. The map still colors stops by any trip.
+        val scopedTrips = trips.filter { vehicleScope.matchesVehicleId(it.trip.vehicleId) }
+        recapFor(scoped, trips, scopedTrips, year, units).copy(vehicleName = scopeLabel)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearRecapUi(isLoading = true))
 
     /** Final state merges the computed snapshot with transient flags
@@ -390,6 +393,7 @@ class YearRecapViewModel @Inject constructor(
     private fun recapFor(
         sessions: List<ChargingSession>,
         trips: List<TripWithStats>,
+        scopedTrips: List<TripWithStats>,
         year: Int,
         units: UserUnits,
     ): YearRecapUi {
@@ -419,7 +423,7 @@ class YearRecapViewModel @Inject constructor(
         val monthCount = recapMonthCount(effectiveYear, inYear)
         val monthlyCost = monthlySeries(costSessions, effectiveYear, monthCount) { it.totalCost ?: 0.0 }
         val monthlyKwh = monthlySeries(inYear, effectiveYear, monthCount) { it.energyKwh ?: 0.0 }
-        val longest = longestTripIn(trips, effectiveYear, sessions)
+        val longest = longestTripIn(scopedTrips, effectiveYear, sessions)
         val map = recapMapData(inYear, trips)
 
         return YearRecapUi(

@@ -3,6 +3,7 @@ package com.evsct.app.ui.trips
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -48,8 +50,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.evsct.app.R
 import com.evsct.app.data.entity.Trip
+import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.ui.map.TripPinColor
+import com.evsct.app.ui.sessions.selectedCheck
 import com.evsct.app.util.Format
 import com.evsct.app.util.Units
 import java.util.Calendar
@@ -59,12 +63,19 @@ import java.util.TimeZone
 /**
  * Shared dialog for creating or editing a trip. When [trip] is null the
  * dialog acts as create; otherwise edit.
+ *
+ * A trip belongs to one of [vehicles], and saving needs one picked whenever
+ * any exist. A new trip starts on [newTripVehicleId] (the caller's choice:
+ * the Trips tab's vehicle, else the default one); any trip still without a
+ * car starts on the only vehicle when there's just one.
  */
 @Composable
 fun TripEditDialog(
     trip: Trip?,
+    vehicles: List<Vehicle>,
     onDismiss: () -> Unit,
     onSave: (Trip) -> Unit,
+    newTripVehicleId: Long? = null,
 ) {
     val units = LocalUserUnits.current
     val unitLabel = Units.distanceUnit(units.useMiles)
@@ -99,6 +110,17 @@ fun TripEditDialog(
     var endDateMillis by rememberSaveable { mutableStateOf(trip?.endDate ?: NO_TRIP_DATE) }
     var pickingStartDate by rememberSaveable { mutableStateOf(false) }
     var pickingEndDate by rememberSaveable { mutableStateOf(false) }
+    // Same -1 sentinel as the dates. Resolved against [vehicles] below, so an
+    // id whose vehicle has since been deleted reads as "none picked".
+    var vehicleIdChoice by rememberSaveable {
+        mutableStateOf(
+            (if (trip == null) newTripVehicleId else trip.vehicleId)
+                ?: vehicles.singleOrNull()?.id
+                ?: NO_TRIP_VEHICLE,
+        )
+    }
+    val selectedVehicle = vehicles.firstOrNull { it.id == vehicleIdChoice }
+    val vehicleMissing = vehicles.isNotEmpty() && selectedVehicle == null
 
     val resolvedColor = TripPinColor.fromKey(pinColorKey)
     val startDate = startDateMillis.takeIf { it > 0 }
@@ -158,6 +180,14 @@ fun TripEditDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (vehicles.isNotEmpty()) {
+                    TripVehiclePicker(
+                        vehicles = vehicles,
+                        selectedId = selectedVehicle?.id,
+                        missing = vehicleMissing,
+                        onPick = { vehicleIdChoice = it },
+                    )
+                }
                 Text(
                     stringResource(R.string.tripedit_optional_dates_label_the),
                     style = MaterialTheme.typography.bodySmall,
@@ -291,10 +321,12 @@ fun TripEditDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = name.isNotBlank() && !odometerError && !batteryError && !dateError,
+                enabled = name.isNotBlank() && !odometerError && !batteryError && !dateError &&
+                    !vehicleMissing,
                 onClick = {
                     val merged = (trip ?: Trip(name = name.trim())).copy(
                         name = name.trim(),
+                        vehicleId = selectedVehicle?.id,
                         startDate = startDate,
                         endDate = endDate,
                         startOdometerKm = startKm,
@@ -376,6 +408,51 @@ private fun TripDatePickerDialog(
 
 /** Sentinel for "no date set" so the saveable state stays a plain Long. */
 private const val NO_TRIP_DATE = -1L
+
+/** Sentinel for "no vehicle picked", for the same reason. */
+private const val NO_TRIP_VEHICLE = -1L
+
+/** One chip per vehicle — the same single-select chip row the session form
+ *  uses — with no "none" chip: a trip is always one car. [missing] flags
+ *  that one still has to be picked before the trip can be saved. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TripVehiclePicker(
+    vehicles: List<Vehicle>,
+    selectedId: Long?,
+    missing: Boolean,
+    onPick: (Long) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            stringResource(R.string.tripedit_vehicle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            vehicles.forEach { vehicle ->
+                FilterChip(
+                    selected = vehicle.id == selectedId,
+                    onClick = { onPick(vehicle.id) },
+                    label = { Text(vehicle.name) },
+                    leadingIcon = selectedCheck(vehicle.id == selectedId),
+                )
+            }
+        }
+        if (missing) {
+            Text(
+                stringResource(R.string.tripedit_vehicle_required),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
 
 /* Trip dates are stored as epoch millis at LOCAL midnight (session
  * timestamps are local instants, and TripAnchor compares the two), while

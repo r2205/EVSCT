@@ -5,7 +5,8 @@ import com.evsct.app.data.entity.Vehicle
 
 /**
  * Which bucket of the log a screen is scoped to. Shared by the Log, Stats, and
- * the Map, all of which filter the same sessions by vehicle.
+ * the Map, all of which filter the same sessions by vehicle, and by the Trips
+ * tab, which filters trips by their own vehicle.
  *
  * [Unassigned] earns its place because a session's vehicle is nullable —
  * sessions imported from CSV, or logged before any vehicle was set up, carry
@@ -25,10 +26,14 @@ sealed interface VehicleScope {
     data class One(val id: Long) : VehicleScope
 
     /** Does [session] belong in this bucket? */
-    fun matches(session: ChargingSession): Boolean = when (this) {
+    fun matches(session: ChargingSession): Boolean = matchesVehicleId(session.vehicleId)
+
+    /** Does a row that belongs to [vehicleId] (null = none) belong in this
+     *  bucket? The Trips tab buckets trips by their own vehicle this way. */
+    fun matchesVehicleId(vehicleId: Long?): Boolean = when (this) {
         All -> true
-        Unassigned -> session.vehicleId == null
-        is One -> session.vehicleId == id
+        Unassigned -> vehicleId == null
+        is One -> vehicleId == id
     }
 }
 

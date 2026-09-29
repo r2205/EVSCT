@@ -52,6 +52,26 @@ class TripDistanceTest {
     }
 
     @Test
+    fun `a trip with a car measures only that car`() {
+        val sessions = listOf(
+            session(id = 1, odo = 45_000.0, vehicleId = 1),
+            session(id = 2, odo = 45_300.0, vehicleId = 1),
+            session(id = 3, odo = 12_000.0, vehicleId = 2),
+            session(id = 4, odo = 12_500.0, vehicleId = 2),
+        )
+        assertEquals(300.0, TripDistance.km(trip(vehicleId = 1), sessions), 1e-9)
+    }
+
+    @Test
+    fun `sessions with no vehicle count as the trip's car`() {
+        val sessions = listOf(
+            session(id = 1, odo = 45_000.0, vehicleId = 1),
+            session(id = 2, odo = 45_300.0, vehicleId = null),
+        )
+        assertEquals(300.0, TripDistance.km(trip(vehicleId = 1), sessions), 1e-9)
+    }
+
+    @Test
     fun `reversed trip readings fall back to the sessions`() {
         // The edit dialog blocks start > end, but a restored or imported
         // trip can still carry one; a negative distance is never right.
@@ -73,11 +93,12 @@ class TripDistanceTest {
         )
     }
 
-    private fun trip(startOdo: Double? = null, endOdo: Double? = null) = Trip(
+    private fun trip(startOdo: Double? = null, endOdo: Double? = null, vehicleId: Long? = null) = Trip(
         id = 7,
         name = "Trip",
         startOdometerKm = startOdo,
         endOdometerKm = endOdo,
+        vehicleId = vehicleId,
     )
 
     private fun session(id: Long, odo: Double?, vehicleId: Long?) = ChargingSession(

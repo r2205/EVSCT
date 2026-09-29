@@ -22,9 +22,10 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.theme.EvsctTheme
 
 /**
- * The vehicle tab strip shared by the Log and Stats. One tab per bucket that
- * holds sessions, plus "All"; guard the call with [needsVehiclePicker] so it
- * only appears when there's more than one bucket to choose between.
+ * The vehicle tab strip shared by the Log, Stats and Trips. One tab per bucket
+ * that holds sessions (trips, on the Trips tab), plus "All"; guard the call
+ * with [needsVehiclePicker] so it only appears when there's more than one
+ * bucket to choose between.
  *
  * Previously each screen kept its own private copy of this row. They were
  * identical, and adding [VehicleScope.Unassigned] would have meant editing the

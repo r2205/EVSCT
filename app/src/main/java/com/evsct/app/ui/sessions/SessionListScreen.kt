@@ -601,9 +601,30 @@ fun SessionListScreen(
     }
 
     if (showTripPicker) {
+        // A trip belongs to one car: offer the selection's car's trips (and
+        // any with no car yet), every trip when no selected session names a
+        // car, and none when the selection spans cars — the sheet says why.
+        val selectedCars = state.sessions.asSequence()
+            .filter { it.id in state.selectedIds }
+            .mapNotNull { it.vehicleId }
+            .toSet()
+        val offeredTrips = when (selectedCars.size) {
+            0 -> state.trips
+            1 -> state.trips.filter { it.vehicleId == null || it.vehicleId == selectedCars.single() }
+            else -> emptyList()
+        }
+        val notice = when {
+            selectedCars.size > 1 -> stringResource(R.string.log_trip_needs_one_vehicle)
+            offeredTrips.isEmpty() && state.trips.isNotEmpty() -> stringResource(
+                R.string.log_no_trips_for_vehicle,
+                state.vehicleNamesById[selectedCars.single()].orEmpty(),
+            )
+            else -> null
+        }
         TripPickerSheet(
-            trips = state.trips,
+            trips = offeredTrips,
             selectedCount = state.selectedIds.size,
+            notice = notice,
             onPick = { tripId ->
                 viewModel.assignTripToSelection(tripId)
                 showTripPicker = false
@@ -765,6 +786,8 @@ private fun AddSessionChooserRow(
 private fun TripPickerSheet(
     trips: List<com.evsct.app.data.entity.Trip>,
     selectedCount: Int,
+    /** Why no trip is offered, when that isn't simply "no trips yet". */
+    notice: String?,
     onPick: (Long?) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -786,7 +809,7 @@ private fun TripPickerSheet(
             HorizontalDivider()
             if (trips.isEmpty()) {
                 Text(
-                    stringResource(R.string.log_no_trips_yet_create),
+                    notice ?: stringResource(R.string.log_no_trips_yet_create),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(24.dp),

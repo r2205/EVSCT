@@ -49,8 +49,8 @@ data class Trip(
      * what the trip-level readings above describe, and its battery capacity
      * turns them into energy. Sessions tagged to the trip are expected to be
      * on this car (the trip pickers only offer a session its own car's
-     * trips); one logged on another car is left out of the trip's distance
-     * and efficiency and flagged on the trip detail.
+     * trips); see [com.evsct.app.util.TripReport] for how one logged on
+     * another car, or on none, is handled.
      *
      * Null only when there's no car to name: no vehicles set up, the trip's
      * car was deleted (ON DELETE SET NULL), or a trip from before DB v15
