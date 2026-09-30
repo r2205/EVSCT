@@ -98,7 +98,8 @@ object EfficiencyAnalysis {
      * the first session and from the last session to the trip's end. With
      * both anchors and zero sessions the whole trip is a single leg (a
      * drive with no charging stops at all). The caller is responsible for
-     * only passing anchors when the trip's sessions belong to one vehicle.
+     * only passing anchors along with sessions on the car they describe —
+     * [TripReport] passes the trip car's own.
      */
     fun analyze(
         sessions: List<ChargingSession>,
