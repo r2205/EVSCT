@@ -110,10 +110,11 @@ is one car).
   enforcement. The backfill gives each trip the one car
   its sessions name, else the only vehicle in a one-car garage, else
   null for the user to pick (`TripVehicleInference` applies the same rule
-  to trips restored from older backups). Checked against SQLite: the
-  migrated schema matches a fresh v15 install table-for-table, and
-  15.json's identity hash comes from a re-implementation of Room's hash
-  that reproduces the committed 11–14 hashes.
+  to trips restored from older backups). `Migration14To15Test` runs it
+  through Room itself: a database built from 14.json, opened at v15,
+  must pass Room's post-migration schema check. The same test fails with
+  Room's "Migration didn't properly handle: trips" if the REFERENCES
+  clause or the index is left out.
 
 `fallbackToDestructiveMigration` was **removed** in the 2026-07 bug
 sweep (finding #3): the migration chain is complete, so the only paths
@@ -1483,6 +1484,11 @@ the unit pref as a parameter; aggregates pass the default-currency to
   trips restored from older backups.
 - **`util/LongestTripTest.kt`** — the recap's pick, including trips with
   no charging dated into the year.
+- **`data/db/Migration14To15Test.kt`** (Robolectric) — the v15 migration
+  through Room: a database built from the committed 14.json is opened at
+  v15, passes Room's schema check, gets the right car on each trip, and
+  keeps its sessions' trip tags; deleting a car afterwards clears its
+  trips' car.
 - **`util/DurationFormatTest.kt`** also covers overflow (PR #75): a
   digit run near `Long.MAX_VALUE` used to wrap negative and get saved as
   a charging duration; the arithmetic is now overflow-checked, and a
