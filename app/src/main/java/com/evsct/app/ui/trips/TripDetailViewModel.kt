@@ -11,7 +11,6 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
-import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.DrivingLeg
 import com.evsct.app.util.ExcludedPair
 import com.evsct.app.util.TripReport
@@ -47,6 +46,9 @@ data class TripDetailUi(
     val otherCarSessionIds: Set<Long> = emptySet(),
     /** How many tagged sessions have no vehicle set (counted as the trip's car). */
     val unassignedSessionCount: Int = 0,
+    /** Distance the measured legs cover, for the "energy used covers X of
+     *  Y" note when not every drive could be measured. */
+    val measuredDistanceKm: Double = 0.0,
 )
 
 @HiltViewModel
@@ -75,15 +77,7 @@ class TripDetailViewModel @Inject constructor(
             vehicleRepository.observeAll(),
         ) { trip, sessions, allSessions, vehicles ->
             val report = trip?.let { TripReport.of(it, sessions, allSessions, vehicles) }
-            val stats = trip?.let {
-                TripWithStats(
-                    trip = it,
-                    sessionCount = sessions.size,
-                    totalCostByCurrency = CurrencyTotals.from(sessions),
-                    totalEnergyKwh = sessions.sumOf { s -> s.energyKwh ?: 0.0 },
-                    totalDistanceKm = report?.distanceKm ?: 0.0,
-                )
-            }
+            val stats = if (trip != null && report != null) TripWithStats.of(trip, sessions, report) else null
             val totalChargeSeconds = sessions.sumOf { it.durationSeconds ?: 0L }
             val sessionsWithoutDuration = sessions.count { it.durationSeconds == null }
             TripDetailUi(
@@ -99,6 +93,7 @@ class TripDetailViewModel @Inject constructor(
                 vehicle = report?.vehicle,
                 otherCarSessionIds = report?.otherCarSessions.orEmpty().mapTo(mutableSetOf()) { it.id },
                 unassignedSessionCount = report?.unassignedSessions?.size ?: 0,
+                measuredDistanceKm = report?.measuredDistanceKm ?: 0.0,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUi())
     }

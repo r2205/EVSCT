@@ -35,7 +35,31 @@ data class TripReport(
         return if (km > 0 && kwh > 0) km / kwh else null
     }
 
+    /**
+     * Estimated energy the drive took out of the battery: each measured
+     * leg's battery drop × the car's capacity, summed. Not the same thing
+     * as the energy charged, which is what the chargers put in (a trip with
+     * no charging stops charged nothing but still used energy). Null when
+     * no leg could be measured.
+     */
+    val energyUsedKwh: Double? get() = legs.takeIf { it.isNotEmpty() }?.sumOf { it.energyUsedKwh }
+
+    /** How far the measured legs cover — all of [distanceKm] when every
+     *  drive between readings could be measured. */
+    val measuredDistanceKm: Double get() = legs.sumOf { it.distanceKm }
+
+    /** True when [energyUsedKwh] covers only part of the trip: some drive
+     *  between two readings couldn't be measured, so the total understates
+     *  the whole trip. The ratio in [avgKmPerKwh] is still sound. */
+    val energyUsedIsPartial: Boolean
+        get() = energyUsedKwh != null && measuredDistanceKm < distanceKm - DISTANCE_SLACK_KM
+
     companion object {
+
+        /** Legs are differences of the same odometer readings the distance
+         *  uses, so full coverage matches it to rounding error; anything
+         *  short of it by more than this means a drive went unmeasured. */
+        private const val DISTANCE_SLACK_KM = 0.1
 
         /**
          * Whether [session], tagged to [trip], counts as driven in the

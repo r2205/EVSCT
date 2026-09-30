@@ -132,47 +132,95 @@ fun TripDetailScreen(
                             MissingVehiclePrompt(onChoose = { showEdit = true })
                             Spacer(Modifier.height(12.dp))
                         }
-                        // StatColumns rather than a plain SpaceBetween Row: three
-                        // stats across only works while all three fit, and at the
-                        // larger accessibility font sizes a "$834.84 CAD" or
-                        // "1,651.76 kWh" column ran into its neighbours. Same
-                        // helper the Log summary and Stats headline use; see
-                        // ui/StatStacking.kt for why wrapping alone wasn't enough.
-                        StatColumns(modifier = Modifier.fillMaxWidth()) { statModifier ->
-                            Stat(stringResource(R.string.common_sessions), st.sessionCount.toString(), statModifier)
-                            MoneyStat(stringResource(R.string.common_total_cost), st.totalCostByCurrency, statModifier)
-                            Stat(stringResource(R.string.common_energy), Format.kwh(st.totalEnergyKwh), statModifier)
-                        }
-                        val missing = state.sessionsWithoutDuration
-                        val timeText = Format.duration(state.totalChargeSeconds) +
-                            if (missing > 0) "*" else ""
-                        StatColumns(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { statModifier ->
-                            Stat(stringResource(R.string.common_charge_time), timeText, statModifier)
-                        }
-                        if (missing > 0) {
-                            // Under the stat rather than beside it: beside, the
-                            // note shared its line with the stat and squeezed to a
-                            // sliver at large font scale. Full width, it wraps.
-                            val sCount = st.sessionCount
-                            Text(
-                                text = pluralStringResource(
-                                    R.plurals.common_missing_duration, sCount, missing, sCount,
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                            )
-                        }
-                        if (st.totalDistanceKm > 0) {
+                        // A trip with no charging stops has nothing to say about
+                        // sessions, cost or charge time — only its drive, below.
+                        val charged = st.sessionCount > 0
+                        if (charged) {
+                            // StatColumns rather than a plain SpaceBetween Row: three
+                            // stats across only works while all three fit, and at the
+                            // larger accessibility font sizes a "$834.84 CAD" or
+                            // "1,651.76 kWh" column ran into its neighbours. Same
+                            // helper the Log summary and Stats headline use; see
+                            // ui/StatStacking.kt for why wrapping alone wasn't enough.
+                            StatColumns(modifier = Modifier.fillMaxWidth()) { statModifier ->
+                                Stat(stringResource(R.string.common_sessions), st.sessionCount.toString(), statModifier)
+                                MoneyStat(stringResource(R.string.common_total_cost), st.totalCostByCurrency, statModifier)
+                                // "charged", not just "Energy": the drive's own use
+                                // is its own stat below, and they differ.
+                                Stat(stringResource(R.string.trip_energy_charged), Format.kwh(st.totalEnergyKwh), statModifier)
+                            }
+                            val missing = state.sessionsWithoutDuration
+                            val timeText = Format.duration(state.totalChargeSeconds) +
+                                if (missing > 0) "*" else ""
                             StatColumns(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { statModifier ->
-                                Stat(stringResource(R.string.common_distance), Format.distance(st.totalDistanceKm, units.useMiles), statModifier)
-                                Stat(
-                                    stringResource(R.string.common_cost_per_distance, distUnit),
-                                    Format.moneyRatePerDistance(st.costPerKm, units.useMiles),
-                                    statModifier,
+                                Stat(stringResource(R.string.common_charge_time), timeText, statModifier)
+                            }
+                            if (missing > 0) {
+                                // Under the stat rather than beside it: beside, the
+                                // note shared its line with the stat and squeezed to a
+                                // sliver at large font scale. Full width, it wraps.
+                                val sCount = st.sessionCount
+                                Text(
+                                    text = pluralStringResource(
+                                        R.plurals.common_missing_duration, sCount, missing, sCount,
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                                 )
-                                Stat(stringResource(R.string.common_cost_per_kwh), Format.moneyRate(st.costPerKwh, "kWh"), statModifier)
+                            }
+                            if (st.totalDistanceKm > 0) {
+                                StatColumns(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { statModifier ->
+                                    Stat(stringResource(R.string.common_distance), Format.distance(st.totalDistanceKm, units.useMiles), statModifier)
+                                    Stat(
+                                        stringResource(R.string.common_cost_per_distance, distUnit),
+                                        Format.moneyRatePerDistance(st.costPerKm, units.useMiles),
+                                        statModifier,
+                                    )
+                                    Stat(stringResource(R.string.common_cost_per_kwh), Format.moneyRate(st.costPerKwh, "kWh"), statModifier)
+                                }
+                            }
+                        }
+                        // The drive: energy it used, estimated from the battery
+                        // % readings and the car's capacity, and how far each
+                        // kWh went. Without charging, the distance joins them.
+                        val energyUsed = st.energyUsedKwh
+                        val distanceHere = !charged && st.totalDistanceKm > 0
+                        if (energyUsed != null || distanceHere) {
+                            StatColumns(
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(top = if (charged) 12.dp else 0.dp),
+                            ) { statModifier ->
+                                if (distanceHere) {
+                                    Stat(stringResource(R.string.common_distance), Format.distance(st.totalDistanceKm, units.useMiles), statModifier)
+                                }
+                                if (energyUsed != null) {
+                                    Stat(
+                                        stringResource(R.string.trip_energy_used),
+                                        Format.kwh(energyUsed) + if (st.energyUsedIsPartial) "*" else "",
+                                        statModifier,
+                                    )
+                                    Stat(
+                                        stringResource(R.string.trip_efficiency),
+                                        st.avgKmPerKwh?.let { formatKmPerKwh(it, units.useMiles) } ?: "—",
+                                        statModifier,
+                                    )
+                                }
+                            }
+                            if (st.energyUsedIsPartial) {
+                                // Same footnote treatment as the charge time's.
+                                Text(
+                                    text = stringResource(
+                                        R.string.trip_energy_used_partial,
+                                        Format.distance(state.measuredDistanceKm, units.useMiles),
+                                        Format.distance(st.totalDistanceKm, units.useMiles),
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                )
                             }
                         }
                         val otherCar = state.otherCarSessionIds.size
@@ -202,12 +250,24 @@ fun TripDetailScreen(
                 // trip != null distinguishes "loaded and genuinely empty"
                 // from the pre-load frame, same idea as the other screens'
                 // isLoading gates.
-                if (state.trip != null && state.sessions.isEmpty()) {
+                val loadedTrip = state.trip
+                if (loadedTrip != null && state.sessions.isEmpty()) {
+                    // A trip carrying its own start/end readings is measured
+                    // without sessions: it's a trip with no charging, not one
+                    // still waiting for its sessions to be tagged.
+                    val noCharging = loadedTrip.startOdometerKm != null ||
+                        loadedTrip.endOdometerKm != null ||
+                        loadedTrip.startBatteryPct != null ||
+                        loadedTrip.endBatteryPct != null
                     item {
                         com.evsct.app.ui.EmptyState(
                             icon = Icons.Default.Bolt,
-                            title = stringResource(R.string.trip_no_sessions_in_this),
-                            body = stringResource(R.string.trip_tag_sessions_from_the),
+                            title = stringResource(
+                                if (noCharging) R.string.trip_no_charging else R.string.trip_no_sessions_in_this,
+                            ),
+                            body = stringResource(
+                                if (noCharging) R.string.trip_no_charging_body else R.string.trip_tag_sessions_from_the,
+                            ),
                             modifier = Modifier.fillParentMaxWidth().padding(24.dp),
                         )
                     }

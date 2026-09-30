@@ -292,6 +292,54 @@ class EfficiencyAnalysisTest {
     }
 
     @Test
+    fun `a trip start or end names the trip's own missing reading`() {
+        val startNoOdo = EfficiencyAnalysis.analyze(
+            sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battStart = 30, tripId = 7)),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = null, batteryPct = 100, atMillis = null),
+        )
+        assertEquals("Add the trip's start odometer", startNoOdo.excluded.single().reason)
+
+        val sessionNoEndPct = EfficiencyAnalysis.analyze(
+            sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battEnd = null, tripId = 7)),
+            vehicle = vehicle,
+            tripEnd = TripAnchor(odometerKm = 1480.0, batteryPct = 40, atMillis = null),
+        )
+        assertEquals("Add this session's end battery %", sessionNoEndPct.excluded.single().reason)
+
+        val wholeTripNoEnd = EfficiencyAnalysis.analyze(
+            sessions = emptyList(),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 90, atMillis = null),
+            tripEnd = TripAnchor(odometerKm = 1200.0, batteryPct = null, atMillis = null),
+        )
+        assertEquals("Add the trip's end battery %", wholeTripNoEnd.excluded.single().reason)
+    }
+
+    @Test
+    fun `session pairs keep their wording`() {
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = null, battEnd = 80, tripId = 7),
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertEquals("Add odometer on both sessions", report.excluded.single().reason)
+    }
+
+    @Test
+    fun `a trip whose battery rose is flagged as a drive, not between sessions`() {
+        val report = EfficiencyAnalysis.analyze(
+            sessions = emptyList(),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 40, atMillis = null),
+            tripEnd = TripAnchor(odometerKm = 1200.0, batteryPct = 60, atMillis = null),
+        )
+        assertEquals("Battery didn't drop over this drive", report.excluded.single().reason)
+    }
+
+    @Test
     fun `anchor with no data at all is ignored`() {
         val report = EfficiencyAnalysis.analyze(
             sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battStart = 30, tripId = 7)),

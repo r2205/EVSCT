@@ -18,6 +18,7 @@ import com.evsct.app.ui.VehicleScope
 import com.evsct.app.ui.vehicleScopeFromToken
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.BrandSpend
+import com.evsct.app.util.LongestTrip
 import com.evsct.app.util.OdometerDistance
 import com.evsct.app.util.StopKey
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -108,8 +109,9 @@ data class YearRecapUi(
     /** Jan onward; (label, kWh). Same trimming and length as
      *  [monthlyCost]. */
     val monthlyKwh: List<Pair<String, Double>> = emptyMonthly(),
-    /** Trip with the highest distance among trips with at least one
-     *  session in [selectedYear]. Whole-trip distance, not in-year only. */
+    /** Trip with the highest distance among the trips of [selectedYear] —
+     *  see [com.evsct.app.util.LongestTrip.inYear]. Whole-trip distance,
+     *  not in-year only. */
     val longestTrip: LongestTripSummary? = null,
     /** Distinct located charging stops in the period, deduped + trip-colored
      *  like the live map. Empty when no in-year session has coordinates. */
@@ -198,7 +200,7 @@ class YearRecapViewModel @Inject constructor(
         // Trips are scoped by their own car: a vehicle's recap crowns one
         // of that vehicle's trips. The map still colors stops by any trip.
         val scopedTrips = trips.filter { vehicleScope.matchesVehicleId(it.trip.vehicleId) }
-        recapFor(scoped, trips, scopedTrips, year, units).copy(vehicleName = scopeLabel)
+        recapFor(scoped, sessions, trips, scopedTrips, year, units).copy(vehicleName = scopeLabel)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearRecapUi(isLoading = true))
 
     /** Final state merges the computed snapshot with transient flags
@@ -392,6 +394,7 @@ class YearRecapViewModel @Inject constructor(
 
     private fun recapFor(
         sessions: List<ChargingSession>,
+        allSessions: List<ChargingSession>,
         trips: List<TripWithStats>,
         scopedTrips: List<TripWithStats>,
         year: Int,
@@ -423,7 +426,7 @@ class YearRecapViewModel @Inject constructor(
         val monthCount = recapMonthCount(effectiveYear, inYear)
         val monthlyCost = monthlySeries(costSessions, effectiveYear, monthCount) { it.totalCost ?: 0.0 }
         val monthlyKwh = monthlySeries(inYear, effectiveYear, monthCount) { it.energyKwh ?: 0.0 }
-        val longest = longestTripIn(scopedTrips, effectiveYear, sessions)
+        val longest = longestTripIn(scopedTrips, effectiveYear, allSessions)
         val map = recapMapData(inYear, trips)
 
         return YearRecapUi(
@@ -560,14 +563,7 @@ class YearRecapViewModel @Inject constructor(
         year: Int,
         allSessions: List<ChargingSession>,
     ): LongestTripSummary? {
-        val tripIdsInYear = allSessions
-            .filter { yearOf(it.sessionStart) == year }
-            .mapNotNull { it.tripId }
-            .toSet()
-        if (tripIdsInYear.isEmpty()) return null
-        val candidate = trips
-            .filter { it.trip.id in tripIdsInYear && it.totalDistanceKm > 0 }
-            .maxByOrNull { it.totalDistanceKm } ?: return null
+        val candidate = LongestTrip.inYear(trips, allSessions, year, ::yearOf) ?: return null
         return LongestTripSummary(
             name = candidate.trip.name,
             distanceKm = candidate.totalDistanceKm,

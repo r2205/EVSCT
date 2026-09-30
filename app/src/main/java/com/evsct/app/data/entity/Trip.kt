@@ -5,6 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.evsct.app.util.CurrencyTotals
+import com.evsct.app.util.TripReport
 
 @Entity(
     tableName = "trips",
@@ -66,8 +67,17 @@ data class TripWithStats(
     /** Costs grouped by per-session currency. Renderers should show the
      *  multi-currency breakdown when mixed and suppress derived rates. */
     val totalCostByCurrency: CurrencyTotals,
+    /** Energy the trip's charging sessions delivered — what the chargers
+     *  put in, not what the drive used (see [energyUsedKwh]). */
     val totalEnergyKwh: Double,
     val totalDistanceKm: Double,
+    /** Estimated energy the drive used, from battery % × the car's
+     *  capacity; null when no drive could be measured. */
+    val energyUsedKwh: Double? = null,
+    /** [energyUsedKwh] covers only the measured part of the trip. */
+    val energyUsedIsPartial: Boolean = false,
+    /** Kilometres per kWh over the measured drives. */
+    val avgKmPerKwh: Double? = null,
 ) {
     /** Cost per km. Only meaningful when sessions share a single currency;
      *  null when mixed (or when distance is zero). */
@@ -80,5 +90,21 @@ data class TripWithStats(
     val costPerKwh: Double? get() {
         val total = totalCostByCurrency.singleTotal ?: return null
         return if (totalEnergyKwh > 0) total / totalEnergyKwh else null
+    }
+
+    companion object {
+        /** The trip's totals from its own [sessions] and the [report] of its
+         *  drive — one recipe for the Trips list, the trip detail and the
+         *  year recap. */
+        fun of(trip: Trip, sessions: List<ChargingSession>, report: TripReport) = TripWithStats(
+            trip = trip,
+            sessionCount = sessions.size,
+            totalCostByCurrency = CurrencyTotals.from(sessions),
+            totalEnergyKwh = sessions.sumOf { it.energyKwh ?: 0.0 },
+            totalDistanceKm = report.distanceKm,
+            energyUsedKwh = report.energyUsedKwh,
+            energyUsedIsPartial = report.energyUsedIsPartial,
+            avgKmPerKwh = report.avgKmPerKwh,
+        )
     }
 }

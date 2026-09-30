@@ -93,6 +93,46 @@ class TripReportTest {
     }
 
     @Test
+    fun `energy used adds up every measured drive`() {
+        // start → 1: 200 km, 100% → 60% = 32 kWh; 1 → end: 250 km, 90% → 40% = 40 kWh.
+        val trip = trip(vehicleId = 1, startOdo = 10_000.0, endOdo = 10_450.0, startPct = 100, endPct = 40)
+        val sessions = listOf(session(id = 1, t = 10, odo = 10_200.0, battStart = 60, battEnd = 90, vehicleId = 1))
+
+        val report = TripReport.of(trip, sessions, sessions, garage)
+
+        assertEquals(72.0, report.energyUsedKwh!!, 1e-9)
+        assertEquals(450.0, report.measuredDistanceKm, 1e-9)
+        assertEquals(false, report.energyUsedIsPartial)
+    }
+
+    @Test
+    fun `energy used is partial when a drive between readings can't be measured`() {
+        // The drive home has no end battery %, so only the first 200 of the
+        // trip's 450 km are measured.
+        val trip = trip(vehicleId = 1, startOdo = 10_000.0, endOdo = 10_450.0, startPct = 100, endPct = null)
+        val sessions = listOf(session(id = 1, t = 10, odo = 10_200.0, battStart = 60, battEnd = 90, vehicleId = 1))
+
+        val report = TripReport.of(trip, sessions, sessions, garage)
+
+        assertEquals(32.0, report.energyUsedKwh!!, 1e-9)
+        assertEquals(200.0, report.measuredDistanceKm, 1e-9)
+        assertTrue(report.energyUsedIsPartial)
+        assertEquals(200.0 / 32.0, report.avgKmPerKwh!!, 1e-9)
+    }
+
+    @Test
+    fun `nothing measurable means no energy figure at all`() {
+        val trip = trip(vehicleId = 1, startOdo = 10_000.0, endOdo = 10_180.0)
+
+        val report = TripReport.of(trip, emptyList(), emptyList(), garage)
+
+        assertNull(report.energyUsedKwh)
+        assertEquals(false, report.energyUsedIsPartial)
+        // The reason names the trip's own missing fields.
+        assertEquals("Add the trip's start and end battery %", report.excluded.single().reason)
+    }
+
+    @Test
     fun `an untagged charge during the trip still blocks the leg it falls in`() {
         val trip = trip(vehicleId = 1)
         val tagged = listOf(

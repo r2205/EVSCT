@@ -431,7 +431,9 @@
     <string name="trips_delete">Delete</string>
     <string name="trips_delete_confirm_title">Delete \"%1$s\"?</string>
     <string name="trips_delete_trip">Delete trip</string>
+    <string name="trips_energy_used">≈%1$s used</string>
     <string name="trips_new_trip">New trip</string>
+    <string name="trips_no_sessions_yet">No sessions yet</string>
     <string name="trips_no_trips_yet">No trips yet</string>
     <string name="trips_sessions_tagged_with_this">Sessions tagged with this trip will keep their data but be untagged.</string>
     <string name="trips_trips_group_sessions_for">Trips group sessions for road-trip totals and color-coded map pins.</string>
@@ -446,9 +448,15 @@
     <string name="trip_collapse">Collapse</string>
     <string name="trip_driving_efficiency">Driving efficiency</string>
     <string name="trip_edit_trip">Edit trip</string>
+    <string name="trip_efficiency">Efficiency</string>
     <string name="trip_end">Trip end</string>
+    <string name="trip_energy_charged">Energy charged</string>
+    <string name="trip_energy_used">Energy used (est.)</string>
+    <string name="trip_energy_used_partial">* Covers the drives with readings: %1$s of %2$s</string>
     <string name="trip_expand">Expand</string>
     <string name="trip_fallback_title">Trip</string>
+    <string name="trip_no_charging">No charging on this trip</string>
+    <string name="trip_no_charging_body">Its distance and energy come from the trip\'s own start and end readings. Charged along the way after all? Tag those sessions from the Log: tap Select (or long-press a session), choose them, then Assign to trip.</string>
     <string name="trip_no_sessions_in_this">No sessions in this trip yet</string>
     <string name="trip_session_logged_on">Logged on %1$s</string>
     <plurals name="trip_sessions_on_other_vehicle">
@@ -460,7 +468,7 @@
         <item quantity="other">%1$d sessions have no vehicle set, so they\'re counted as %2$s.</item>
     </plurals>
     <string name="trip_start">Trip start</string>
-    <string name="trip_tag_sessions_from_the">Tag sessions from the Log: tap Select (or long-press a session), choose the ones from this trip, then Assign to trip. A session\'s edit form can also pick this trip directly.</string>
+    <string name="trip_tag_sessions_from_the" formatted="false">Tag sessions from the Log: tap Select (or long-press a session), choose the ones from this trip, then Assign to trip. A session\'s edit form can also pick this trip directly. No charging on this trip? Add its start and end odometer and battery % with Edit trip to estimate the energy it used.</string>
     <string name="trip_vehicle_missing">Which vehicle was this trip in?</string>
     <string name="trip_view_on_map">View on map</string>
 

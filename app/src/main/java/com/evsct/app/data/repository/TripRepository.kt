@@ -4,8 +4,7 @@ import com.evsct.app.data.db.TripDao
 import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.TripWithStats
 import com.evsct.app.ui.map.TripPinColor
-import com.evsct.app.util.CurrencyTotals
-import com.evsct.app.util.TripDistance
+import com.evsct.app.util.TripReport
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -16,20 +15,23 @@ import kotlinx.coroutines.flow.first
 class TripRepository @Inject constructor(
     private val tripDao: TripDao,
     private val sessionRepository: SessionRepository,
+    private val vehicleRepository: VehicleRepository,
 ) {
     fun observeAll(): Flow<List<Trip>> = tripDao.observeAll()
 
+    /** Every trip with its totals, including the energy its drive used —
+     *  which needs each trip's car (for battery capacity) and the whole log
+     *  (to catch charges between two of its readings). */
     fun observeAllWithStats(): Flow<List<TripWithStats>> =
-        combine(tripDao.observeAll(), sessionRepository.observeAll()) { trips, sessions ->
+        combine(
+            tripDao.observeAll(),
+            sessionRepository.observeAll(),
+            vehicleRepository.observeAll(),
+        ) { trips, sessions, vehicles ->
+            val sessionsByTrip = sessions.groupBy { it.tripId }
             trips.map { trip ->
-                val tripSessions = sessions.filter { it.tripId == trip.id }
-                TripWithStats(
-                    trip = trip,
-                    sessionCount = tripSessions.size,
-                    totalCostByCurrency = CurrencyTotals.from(tripSessions),
-                    totalEnergyKwh = tripSessions.sumOf { it.energyKwh ?: 0.0 },
-                    totalDistanceKm = TripDistance.km(trip, tripSessions),
-                )
+                val tripSessions = sessionsByTrip[trip.id].orEmpty()
+                TripWithStats.of(trip, tripSessions, TripReport.of(trip, tripSessions, sessions, vehicles))
             }
         }
 

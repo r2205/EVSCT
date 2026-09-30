@@ -213,22 +213,36 @@ private fun TripRow(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                Text(
-                    pluralStringResource(
-                        R.plurals.trips_summary,
-                        tws.sessionCount,
-                        tws.sessionCount,
-                        Money.format(tws.totalCostByCurrency),
-                        Format.kwh(tws.totalEnergyKwh),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (tws.totalDistanceKm > 0) {
+                if (tws.sessionCount == 0) {
+                    // No charging: "0 sessions · — · 0.0 kWh" said nothing.
+                    // What the trip has is its drive — distance and the
+                    // energy its own readings put on it.
+                    val drive = listOfNotNull(
+                        tws.totalDistanceKm.takeIf { it > 0 }?.let { Format.distance(it, units.useMiles) },
+                        tws.energyUsedKwh?.let { stringResource(R.string.trips_energy_used, Format.kwh(it)) },
+                    )
                     Text(
-                        "${Format.distance(tws.totalDistanceKm, units.useMiles)} · " +
-                            Format.moneyRatePerDistance(tws.costPerKm, units.useMiles),
+                        drive.joinToString(" · ").ifEmpty { stringResource(R.string.trips_no_sessions_yet) },
                         style = MaterialTheme.typography.bodySmall,
                     )
+                } else {
+                    Text(
+                        pluralStringResource(
+                            R.plurals.trips_summary,
+                            tws.sessionCount,
+                            tws.sessionCount,
+                            Money.format(tws.totalCostByCurrency),
+                            Format.kwh(tws.totalEnergyKwh),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (tws.totalDistanceKm > 0) {
+                        Text(
+                            "${Format.distance(tws.totalDistanceKm, units.useMiles)} · " +
+                                Format.moneyRatePerDistance(tws.costPerKm, units.useMiles),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
             IconButton(onClick = onDelete) {

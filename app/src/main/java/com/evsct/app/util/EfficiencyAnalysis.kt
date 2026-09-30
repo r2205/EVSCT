@@ -235,7 +235,9 @@ object EfficiencyAnalysis {
         val prevOdo = prev.odometerKm
         val currOdo = curr.odometerKm
         if (prevOdo == null || currOdo == null) {
-            return PairResult.Excluded("Add odometer on both sessions")
+            return PairResult.Excluded(
+                missingReason(prev, curr, prevOdo == null, currOdo == null, Reading.ODOMETER),
+            )
         }
         val distance = currOdo - prevOdo
         if (distance <= 0) {
@@ -249,11 +251,16 @@ object EfficiencyAnalysis {
         val endPct = prev.batteryEndPct
         val startPct = curr.batteryStartPct
         if (endPct == null || startPct == null) {
-            return PairResult.Excluded("Need end battery % on the prior session and start battery % on this one")
+            return PairResult.Excluded(
+                missingReason(prev, curr, endPct == null, startPct == null, Reading.BATTERY),
+            )
         }
         val delta = endPct - startPct
         if (delta <= 0) {
-            return PairResult.Excluded("Battery didn't drop between sessions")
+            return PairResult.Excluded(
+                if (isAnchor(prev) || isAnchor(curr)) "Battery didn't drop over this drive"
+                else "Battery didn't drop between sessions",
+            )
         }
         val energy = delta * capacity / 100.0
 
@@ -266,6 +273,59 @@ object EfficiencyAnalysis {
                 kmPerKwh = distance / energy,
             ),
         )
+    }
+
+    private fun isAnchor(s: ChargingSession): Boolean =
+        s.id == TRIP_START_ANCHOR_ID || s.id == TRIP_END_ANCHOR_ID
+
+    /** A reading a leg needs at each end: what it's called on the trip, on
+     *  the session a leg leaves from (its end reading), on the session it
+     *  arrives at (its start reading), and the long-standing wording for a
+     *  pair of sessions. */
+    private enum class Reading(
+        val onTrip: String,
+        val leavingSession: String,
+        val arrivingSession: String,
+        val betweenSessions: String,
+    ) {
+        ODOMETER("odometer", "odometer", "odometer", "Add odometer on both sessions"),
+        BATTERY(
+            "battery %", "end battery %", "start battery %",
+            "Need end battery % on the prior session and start battery % on this one",
+        ),
+    }
+
+    /** What to fill in for a leg missing [reading] at one or both ends.
+     *  Between two sessions the wording is unchanged; a trip start or end
+     *  names the trip's own field — the one to fill in with Edit trip —
+     *  instead of a session that doesn't exist. */
+    private fun missingReason(
+        prev: ChargingSession,
+        curr: ChargingSession,
+        prevMissing: Boolean,
+        currMissing: Boolean,
+        reading: Reading,
+    ): String {
+        val fromTripStart = prev.id == TRIP_START_ANCHOR_ID
+        val toTripEnd = curr.id == TRIP_END_ANCHOR_ID
+        if (!fromTripStart && !toTripEnd) return reading.betweenSessions
+        if (fromTripStart && toTripEnd) {
+            val ends = listOfNotNull("start".takeIf { prevMissing }, "end".takeIf { currMissing })
+            return "Add the trip's ${ends.joinToString(" and ")} ${reading.onTrip}"
+        }
+        val needed = listOfNotNull(
+            when {
+                !prevMissing -> null
+                fromTripStart -> "the trip's start ${reading.onTrip}"
+                else -> "this session's ${reading.leavingSession}"
+            },
+            when {
+                !currMissing -> null
+                toTripEnd -> "the trip's end ${reading.onTrip}"
+                else -> "this session's ${reading.arrivingSession}"
+            },
+        )
+        return "Add ${needed.joinToString(" and ")}"
     }
 
     /** Deterministic timeline order: sessionStart, then id. Date-only
