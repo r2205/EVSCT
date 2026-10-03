@@ -691,9 +691,20 @@ vehicle on the same trip.
   + odometer form virtual endpoints (`TripAnchor`, synthetic session
   ids −100/−101 rendered as "Trip start"/"Trip end") so the drive to
   the first charge and home from the last one produce legs. Both
-  anchors with zero sessions = one whole-trip leg. Applied only when
-  the trip's sessions are single-vehicle; same measurement rules and
+  anchors with zero sessions = one whole-trip leg. Applied on the
+  trip's own car (`TripReport`); same measurement rules and
   interleave protection as real pairs.
+- **Boundary days** (October 2026): trip dates are whole days stored at
+  local midnight, so an untagged charge on the trip's start or end day
+  is placed by its odometer against the trip's readings: at or below
+  the start reading it came before the trip left (the morning top-up at
+  home no longer blocks the first drive, or a no-charging trip's only
+  leg), below the end reading on the end day it was on the drive home
+  (the midnight end date used to miss those), and at or above the end
+  reading it came after. A charge with no odometer falls back to its
+  date: on the start day it counts as during the trip, and the reason
+  asks for its odometer; on the end day, after. A one-day trip gets
+  the check too, where before it had none.
 - **Reporting**: `EfficiencyReport` exposes measured legs and excluded
   pairs with user-facing reason strings. The UI surfaces both: average
   km/kWh + rows for unmeasurable legs so the user can see why a number
@@ -1472,7 +1483,10 @@ the unit pref as a parameter; aggregates pass the default-currency to
 - **`util/EfficiencyAnalysisTest.kt`** also grew interleave-exclusion
   cases (sweep #6) and the trip-anchor suite (start/end/whole-trip
   legs, anchor interleave guards, and the trip-field wording of anchor
-  exclusion reasons).
+  exclusion reasons), then boundary-day placement by odometer: the
+  morning top-up at home, a start-day charge with no odometer, a CSV
+  row with no time, a stop on the last day's drive home, plugging in on
+  arrival, and a one-day trip.
 - **`util/TripReportTest.kt`** — trip measurement on the trip's own car:
   a no-charging trip as one leg, the trip car used with several cars set
   up, another car's session set aside without losing the trip readings,

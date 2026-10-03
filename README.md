@@ -300,7 +300,10 @@ motion-graphics tour built from these screenshots, or
   readings these anchor the efficiency legs no session pair can measure:
   the drive from home (charged to 100%) to your first stop, and the
   drive home from your last one. A trip with **no charging stops** is
-  measured from them alone.
+  measured from them alone. A charge you didn't tag to the trip blocks
+  the drive it happened on; one on the trip's first or last day is
+  placed by its odometer reading, so topping up at home before you leave
+  or plugging in when you get back doesn't count against the trip.
 - **Map pin color** picker per trip — ten color swatches plus an explicit
   **Auto** choice (the default), which lets the app assign the least-used
   color when the trip is saved.
