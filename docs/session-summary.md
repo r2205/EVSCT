@@ -45,7 +45,9 @@ context is in the repo even if the conversation is summarized later.
 
 `charging_sessions`, `trips`, `vehicles` Room entities. FKs:
 `charging_sessions.tripId → trips.id` (ON DELETE SET NULL),
-`charging_sessions.vehicleId → vehicles.id` (ON DELETE SET NULL).
+`charging_sessions.vehicleId → vehicles.id` (ON DELETE SET NULL),
+`trips.vehicleId → vehicles.id` (ON DELETE SET NULL; since v15 — a trip
+is one car).
 
 ### Schema migrations
 
@@ -91,15 +93,36 @@ context is in the repo even if the conversation is summarized later.
   nullable) on `trips`. With the existing start/end odometer these
   anchor the trip's first and last efficiency legs (home → first
   charge, last charge → home) via virtual endpoints in
-  `EfficiencyAnalysis`. Single-vehicle trips only.
+  `EfficiencyAnalysis`. Single-vehicle trips only (until v15 gave trips a
+  vehicle of their own).
+- **v12 → v13**: `waitTimeMinutes` became `waitTimeSeconds` (× 60,
+  lossless) via the create-copy-drop-rename rebuild — minSdk 30's SQLite
+  predates DROP COLUMN.
+- **v13 → v14**: added `paymentMethod` / `paymentDetail` (TEXT, nullable)
+  on sessions.
+- **v14 → v15**: added `vehicleId` on `trips` (FK to `vehicles`, ON DELETE
+  SET NULL, indexed), in place with `ALTER TABLE … ADD COLUMN …
+  REFERENCES`. Contrary to the v1 → v2 note above, SQLite accepts a
+  REFERENCES clause on ADD COLUMN when the column defaults to NULL, and
+  reports the constraint exactly like a table-level FOREIGN KEY, which is
+  all Room's schema check compares. A rebuild was avoided because
+  dropping `trips` would put every session's trip tag at the mercy of FK
+  enforcement. The backfill gives each trip the one car
+  its sessions name, else the only vehicle in a one-car garage, else
+  null for the user to pick (`TripVehicleInference` applies the same rule
+  to trips restored from older backups). `Migration14To15Test` runs it
+  through Room itself: a database built from 14.json, opened at v15,
+  must pass Room's post-migration schema check. The same test fails with
+  Room's "Migration didn't properly handle: trips" if the REFERENCES
+  clause or the index is left out.
 
 `fallbackToDestructiveMigration` was **removed** in the 2026-07 bug
 sweep (finding #3): the migration chain is complete, so the only paths
 that could trigger the fallback are version downgrades or a forgotten
 future migration — and in both cases a crash on open is recoverable
 while a silent full-table wipe is not. Schema JSONs are exported to
-`app/schemas/` and committed (11.json, 12.json) so future changes diff
-in review.
+`app/schemas/` and committed (11.json through 15.json) so future changes
+diff in review.
 
 ## Feature inventory (organized by area)
 
@@ -668,9 +691,20 @@ vehicle on the same trip.
   + odometer form virtual endpoints (`TripAnchor`, synthetic session
   ids −100/−101 rendered as "Trip start"/"Trip end") so the drive to
   the first charge and home from the last one produce legs. Both
-  anchors with zero sessions = one whole-trip leg. Applied only when
-  the trip's sessions are single-vehicle; same measurement rules and
+  anchors with zero sessions = one whole-trip leg. Applied on the
+  trip's own car (`TripReport`); same measurement rules and
   interleave protection as real pairs.
+- **Boundary days** (October 2026): trip dates are whole days stored at
+  local midnight, so an untagged charge on the trip's start or end day
+  is placed by its odometer against the trip's readings: at or below
+  the start reading it came before the trip left (the morning top-up at
+  home no longer blocks the first drive, or a no-charging trip's only
+  leg), below the end reading on the end day it was on the drive home
+  (the midnight end date used to miss those), and at or above the end
+  reading it came after. A charge with no odometer falls back to its
+  date: on the start day it counts as during the trip, and the reason
+  asks for its odometer; on the end day, after. A one-day trip gets
+  the check too, where before it had none.
 - **Reporting**: `EfficiencyReport` exposes measured legs and excluded
   pairs with user-facing reason strings. The UI surfaces both: average
   km/kWh + rows for unmeasurable legs so the user can see why a number
@@ -711,19 +745,45 @@ vehicle on the same trip.
 
 ### Trips
 
-- **List**: rows show name, an optional date-range label (the trip's
-  start/end dates), sessions, total $, energy, distance ($/km or $/mi
-  based on pref). Rows carry `Modifier.animateItem()` so they glide to
+- **One vehicle per trip** (DB v15): `Trip.vehicleId` names the car the
+  trip was driven in; its odometer/battery readings are that car's and its
+  battery capacity turns them into energy. `util/TripReport` is the one
+  place a trip gets measured (list, detail and recap all read it): the
+  trip's start/end readings always anchor its first and last legs (and
+  the whole trip, when it has no sessions), sessions logged on another
+  car sit out the distance and efficiency (flagged on the detail, still
+  counted in the charging totals), and sessions with no vehicle count as
+  the trip's car. `util/TripDistance` is the distance rule (trip odometers,
+  else the trip car's session spread; a trip with no car sums each car's
+  own spread, so one stray session can't stretch a trip across two
+  odometers). Tagging respects the rule: the session form's trip chips
+  and the Log's Assign-to-trip sheet offer only the session's car's trips
+  (plus trips with no car yet); picking a trip for a session with no
+  vehicle sets its vehicle; a selection spanning cars gets a note instead.
+  CSV import matches trips by name + vehicle; backups carry the trip's
+  vehicle, and older ones infer it on restore.
+- **List**: the same vehicle tabs as the Log and Stats, bucketing trips by
+  their own car (Unassigned = trips with no car). Rows show name, the car
+  (under All) and an optional date-range label, then sessions, total $,
+  energy charged, distance ($/km or $/mi based on pref) — or, for a trip
+  with no charging, "180 km · ≈29.4 kWh used". Rows carry
+  `Modifier.animateItem()` so they glide to
   their new slot when a date edit re-sorts the list (newest first) or a
   trip is deleted. + FAB opens shared edit dialog. The empty state has a
   "New trip" button (PR #51) instead of body text telling the user to
   "Tap +".
-- **Detail screen**: stats card (an optional date-range label in its
-  header, sessions, total $, energy, distance, total charge time with
-  missing-duration flag, average km/kWh from the efficiency analysis
-  when available) + sessions list — or, when the trip has no sessions
-  yet, a how-to empty state ("No sessions in this trip yet" with
-  tag-from-the-Log instructions) — + driving efficiency card + pencil in
+- **Detail screen**: stats card (the car and an optional date-range label
+  in its header — or a "Which vehicle was this trip in?" prompt — then
+  sessions, total $, energy charged, charge time with missing-duration
+  flag, distance, and **energy used (est.)** with km/kWh: each measured
+  leg's battery drop × capacity, footnoted when some drive couldn't be
+  measured) + sessions list — or, when the trip has no sessions, "No
+  charging on this trip" if it has its own readings (the card then shows
+  only distance, energy used and efficiency), else a how-to empty state
+  ("No sessions in this trip yet" with tag-from-the-Log instructions and
+  a pointer at the trip's own readings) — + driving efficiency card
+  (anchor legs name the trip field to fill in, e.g. "Add the trip's end
+  battery %") + pencil in
   top bar for edit dialog, plus a "View on map" action once the trip has
   sessions (see Map view → Trip focus). Since PR #71 the stats card's
   rows use the shared `StatColumns` (side by side while they fit, one per
@@ -735,7 +795,9 @@ vehicle on the same trip.
   against the cost (`North Bay$43.93`) and wrapped "CAD" onto its own
   line.
 - **Edit dialog** (`TripEditDialog`, used for both create and edit):
-  Name, optional Start/End **date** pickers (M3 `DatePicker` dialogs
+  Name, a **Vehicle** chip row (required whenever vehicles exist; a new
+  trip starts on the Trips tab's vehicle or the default, and a trip with
+  no car on the only vehicle), optional Start/End **date** pickers (M3 `DatePicker` dialogs
   stored at local midnight — they label the trip and sort the list, with
   a "Clear dates" action and a start-after-end guard), Start/End
   odometer (unit-aware label, converts to km on save), optional
@@ -744,7 +806,8 @@ vehicle on the same trip.
   <name>", or "Auto") and opens a 5×2 swatch picker that also carries an
   **"Auto"** row — pick it to let the app assign the least-used color on
   save. When both start/end odo are filled, distance = `end − start`;
-  otherwise distance falls back to spread of session odometer readings.
+  otherwise distance falls back to the spread of the trip car's session
+  odometer readings.
 - **Auto-color**: a trip with no explicit color — a new trip, or an
   existing one reset to "Auto" in the picker — gets the least-used
   palette color on save; the trip's own row is excluded from the usage
@@ -1419,7 +1482,27 @@ the unit pref as a parameter; aggregates pass the default-currency to
 - **`util/FormatThreadSafetyTest.kt`** — concurrent formatter use.
 - **`util/EfficiencyAnalysisTest.kt`** also grew interleave-exclusion
   cases (sweep #6) and the trip-anchor suite (start/end/whole-trip
-  legs, anchor interleave guards).
+  legs, anchor interleave guards, and the trip-field wording of anchor
+  exclusion reasons), then boundary-day placement by odometer: the
+  morning top-up at home, a start-day charge with no odometer, a CSV
+  row with no time, a stop on the last day's drive home, plugging in on
+  arrival, and a one-day trip.
+- **`util/TripReportTest.kt`** — trip measurement on the trip's own car:
+  a no-charging trip as one leg, the trip car used with several cars set
+  up, another car's session set aside without losing the trip readings,
+  no-vehicle sessions counted as the trip's car, a car-less trip, energy
+  used and its partial flag.
+- **`util/TripDistanceTest.kt`** — trip odometers first, else the trip
+  car's spread; a session on another car can't stretch the distance.
+- **`util/TripVehicleInferenceTest.kt`** — the v15 backfill rule for
+  trips restored from older backups.
+- **`util/LongestTripTest.kt`** — the recap's pick, including trips with
+  no charging dated into the year.
+- **`data/db/Migration14To15Test.kt`** (Robolectric) — the v15 migration
+  through Room: a database built from the committed 14.json is opened at
+  v15, passes Room's schema check, gets the right car on each trip, and
+  keeps its sessions' trip tags; deleting a car afterwards clears its
+  trips' car.
 - **`util/DurationFormatTest.kt`** also covers overflow (PR #75): a
   digit run near `Long.MAX_VALUE` used to wrap negative and get saved as
   a charging duration; the arithmetic is now overflow-checked, and a

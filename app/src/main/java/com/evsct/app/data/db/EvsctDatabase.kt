@@ -12,7 +12,7 @@ import com.evsct.app.data.entity.Vehicle
 
 @Database(
     entities = [ChargingSession::class, SessionReceipt::class, Trip::class, Vehicle::class],
-    version = 14,
+    version = 15,
     // Schema JSONs land in app/schemas/ (see room.schemaLocation in
     // build.gradle.kts) and are committed, so future schema changes diff
     // visibly in review and MigrationTestHelper can verify the chain.
@@ -341,6 +341,56 @@ abstract class EvsctDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `charging_sessions` ADD COLUMN `paymentMethod` TEXT")
                 db.execSQL("ALTER TABLE `charging_sessions` ADD COLUMN `paymentDetail` TEXT")
+            }
+        }
+
+        /**
+         * Ties each trip to the one vehicle it was driven in.
+         *
+         * Added in place rather than by the create-copy-drop-rename rebuild
+         * MIGRATION_1_2 used: SQLite does accept a REFERENCES clause on
+         * ADD COLUMN as long as the column defaults to NULL, and it reports
+         * that constraint exactly like a table-level FOREIGN KEY, which is
+         * all Room's schema check compares. Rebuilding would mean dropping
+         * `trips`, the parent of every session's trip tag, where one
+         * enforced foreign key would untag the whole log.
+         *
+         * Existing trips get the car the app used to infer from them. When
+         * every session that names a (still existing) car names the same
+         * one, the trip gets that car. When no session names one and there
+         * is exactly one vehicle, the trip gets that vehicle. Otherwise,
+         * with mixed cars or nothing to go on, it's left null for the user
+         * to pick.
+         * [com.evsct.app.util.TripVehicleInference] applies the same rule to
+         * trips restored from a backup made before this column existed.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `trips` ADD COLUMN `vehicleId` INTEGER " +
+                        "REFERENCES `vehicles`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_trips_vehicleId` ON `trips` (`vehicleId`)"
+                )
+                db.execSQL(
+                    """
+                    UPDATE `trips` SET `vehicleId` = CASE
+                        WHEN (SELECT COUNT(DISTINCT s.vehicleId) FROM `charging_sessions` s
+                              WHERE s.tripId = `trips`.id
+                                AND s.vehicleId IN (SELECT id FROM `vehicles`)) = 1
+                        THEN (SELECT MIN(s.vehicleId) FROM `charging_sessions` s
+                              WHERE s.tripId = `trips`.id
+                                AND s.vehicleId IN (SELECT id FROM `vehicles`))
+                        WHEN (SELECT COUNT(DISTINCT s.vehicleId) FROM `charging_sessions` s
+                              WHERE s.tripId = `trips`.id
+                                AND s.vehicleId IN (SELECT id FROM `vehicles`)) = 0
+                            AND (SELECT COUNT(*) FROM `vehicles`) = 1
+                        THEN (SELECT id FROM `vehicles`)
+                        ELSE NULL
+                    END
+                    """.trimIndent()
+                )
             }
         }
     }

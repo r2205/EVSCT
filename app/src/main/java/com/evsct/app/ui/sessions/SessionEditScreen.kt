@@ -567,7 +567,14 @@ fun SessionEditScreen(
                     state.continuesPrevious,
                 ).count { it },
             ) {
-                TripPicker(state) { id -> viewModel.update { it.copy(tripId = id) } }
+                TripPicker(state) { id ->
+                    viewModel.update { s ->
+                        // A trip is one car, so picking one for a session
+                        // with no vehicle yet also says which car it was.
+                        val tripCar = s.trips.firstOrNull { it.id == id }?.vehicleId
+                        s.copy(tripId = id, vehicleId = s.vehicleId ?: tripCar)
+                    }
+                }
                 ContinuesPreviousToggle(
                     checked = state.continuesPrevious,
                     onCheckedChange = { v -> viewModel.update { it.copy(continuesPrevious = v) } },
@@ -1240,28 +1247,50 @@ private fun BrandRow(label: String, isCurrent: Boolean, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TripPicker(state: SessionEditUi, onPick: (Long?) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        // FilterChip (not AssistChip + container tint): it announces the
-        // selected state to TalkBack and adds the checkmark, so selection
-        // isn't conveyed by background color alone. Matches the charging
-        // type / pricing / currency pickers.
-        FilterChip(
-            selected = state.tripId == null,
-            onClick = { onPick(null) },
-            label = { Text(stringResource(R.string.form_none)) },
-            leadingIcon = selectedCheck(state.tripId == null),
-        )
-        state.trips.forEach { trip ->
+    // A trip belongs to one car: offer this session's car's trips (plus any
+    // trip with no car yet), or every trip while the session has no vehicle.
+    // The current pick always stays listed, so a session already tagged to
+    // another car's trip shows it — with the note below — instead of the
+    // tag silently vanishing from the row.
+    val offered = state.trips.filter { trip ->
+        trip.id == state.tripId || state.vehicleId == null ||
+            trip.vehicleId == null || trip.vehicleId == state.vehicleId
+    }
+    val selectedTrip = state.trips.firstOrNull { it.id == state.tripId }
+    val otherCarName = selectedTrip?.vehicleId
+        ?.takeIf { state.vehicleId != null && it != state.vehicleId }
+        ?.let { carId -> state.vehicles.firstOrNull { it.id == carId }?.name }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // FilterChip (not AssistChip + container tint): it announces the
+            // selected state to TalkBack and adds the checkmark, so selection
+            // isn't conveyed by background color alone. Matches the charging
+            // type / pricing / currency pickers.
             FilterChip(
-                selected = state.tripId == trip.id,
-                onClick = { onPick(trip.id) },
-                label = { Text(trip.name) },
-                leadingIcon = selectedCheck(state.tripId == trip.id),
+                selected = state.tripId == null,
+                onClick = { onPick(null) },
+                label = { Text(stringResource(R.string.form_none)) },
+                leadingIcon = selectedCheck(state.tripId == null),
+            )
+            offered.forEach { trip ->
+                FilterChip(
+                    selected = state.tripId == trip.id,
+                    onClick = { onPick(trip.id) },
+                    label = { Text(trip.name) },
+                    leadingIcon = selectedCheck(state.tripId == trip.id),
+                )
+            }
+        }
+        if (otherCarName != null) {
+            Text(
+                stringResource(R.string.form_trip_on_other_vehicle, otherCarName),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
             )
         }
     }

@@ -189,8 +189,9 @@ motion-graphics tour built from these screenshots, or
 - **Multi-select** — long-press a row, or tap the **Select** icon in the
   top bar, to enter selection mode; **Select all** grabs every row on
   screen. From the selection bar you can assign the chosen sessions to a
-  trip, or delete them in bulk — a confirmation dialog first, then an Undo
-  snackbar so a mistaken batch is reversible.
+  trip (one of their car's trips — a selection spanning two cars can't
+  share one), or delete them in bulk — a confirmation dialog first, then
+  an Undo snackbar so a mistaken batch is reversible.
 - Top bar entries: Search · **Sort** · **Select** · Settings. Log / Map / Stats /
   Trips switch via the **bottom navigation bar** (a side navigation rail in
   landscape), which preserves each tab's state (scroll position, camera,
@@ -279,24 +280,41 @@ motion-graphics tour built from these screenshots, or
 
 ### Trips
 - Manual trip tagging (one trip per session, optional).
+- **Each trip belongs to one vehicle**, chosen in the trip editor (a new
+  trip starts on the Trips tab's vehicle, else your default). Its odometer
+  and battery readings are that car's, and that car's battery capacity
+  turns them into energy. The Trips tab has the same vehicle tabs as the
+  Log and Stats, and a session can only be tagged to its own car's trips:
+  the session form and the Log's **Assign to trip** offer just those. A
+  session logged on another car is set aside from the trip's distance and
+  efficiency and flagged on its detail screen. Trips from before this got
+  their car from their sessions; one that couldn't be settled (sessions
+  from two cars, or no sessions with several cars set up) asks for one.
 - Optional **start/end dates** per trip, chosen with date pickers in the
   trip editor. When set, they label the trip on its list row and detail
   header and sort the Trips list by start date (newest first).
 - Optional start/end odometer per trip — when both are filled, distance =
-  end − start. Otherwise distance is inferred from session odometer
-  readings.
+  end − start. Otherwise distance is inferred from the trip car's session
+  odometer readings.
 - Optional **start/end battery %** per trip — together with the odometer
   readings these anchor the efficiency legs no session pair can measure:
   the drive from home (charged to 100%) to your first stop, and the
-  drive home from your last one.
+  drive home from your last one. A trip with **no charging stops** is
+  measured from them alone. A charge you didn't tag to the trip blocks
+  the drive it happened on; one on the trip's first or last day is
+  placed by its odometer reading, so topping up at home before you leave
+  or plugging in when you get back doesn't count against the trip.
 - **Map pin color** picker per trip — ten color swatches plus an explicit
   **Auto** choice (the default), which lets the app assign the least-used
   color when the trip is saved.
-- Trip detail shows total cost, energy, distance, $/km or $/mi, $/kWh,
-  plus every session in the trip and a **driving efficiency** card with
-  measured km/kWh per leg (and the reason whenever a leg can't be
-  measured). A trip with no sessions yet shows a how-to empty state
-  explaining how to tag sessions to it.
+- Trip detail shows total cost, energy charged, distance, $/km or $/mi,
+  $/kWh, and **energy used (est.)**: each measurable drive's battery drop
+  × the car's battery capacity, with km/kWh (or mi/kWh) and a footnote
+  when some drive couldn't be measured. Below that, every session in the
+  trip and a **driving efficiency** card with measured km/kWh per leg
+  (and the reason whenever a leg can't be measured). A trip with no
+  charging shows just its distance, energy used and efficiency; one with
+  no sessions and no readings yet shows a how-to empty state.
 - **View on map** — a map button in the trip detail top bar jumps to the
   Map tab filtered to just that trip's stops, framed on them. It appears
   once the trip has sessions.
@@ -330,7 +348,8 @@ motion-graphics tour built from these screenshots, or
   year-end recap (any year you pick): headline totals, an on-screen
   **charging map** (that year's stops and trip routes over a bundled
   North America outline, colored by trip), monthly trend, top brands,
-  longest trip. (A current-year recap trims the monthly trend to the
+  longest trip (a trip with no charging counts in the year of its own
+  date). (A current-year recap trims the monthly trend to the
   months elapsed so far.) A **PDF / HTML** segmented picker chooses the
   format, then one **Save** and one **Share** button export it — either
   a single-page PDF, or a self-contained **HTML** report: a richer,

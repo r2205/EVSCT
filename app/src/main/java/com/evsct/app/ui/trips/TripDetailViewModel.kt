@@ -11,11 +11,9 @@ import com.evsct.app.data.repository.SessionRepository
 import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
-import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.DrivingLeg
-import com.evsct.app.util.EfficiencyAnalysis
 import com.evsct.app.util.ExcludedPair
-import com.evsct.app.util.TripAnchor
+import com.evsct.app.util.TripReport
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +37,18 @@ data class TripDetailUi(
     val legs: List<DrivingLeg> = emptyList(),
     val excludedLegs: List<ExcludedPair> = emptyList(),
     val avgKmPerKwh: Double? = null,
+    /** Every vehicle, for the edit dialog's picker and for naming the car a
+     *  mismatched session was logged on. */
+    val vehicles: List<Vehicle> = emptyList(),
+    /** The trip's car; null when the trip has none yet (or it was deleted). */
+    val vehicle: Vehicle? = null,
+    /** Ids of tagged sessions logged on a car other than the trip's. */
+    val otherCarSessionIds: Set<Long> = emptySet(),
+    /** How many tagged sessions have no vehicle set (counted as the trip's car). */
+    val unassignedSessionCount: Int = 0,
+    /** Distance the measured legs cover, for the "energy used covers X of
+     *  Y" note when not every drive could be measured. */
+    val measuredDistanceKm: Double = 0.0,
 )
 
 @HiltViewModel
@@ -66,16 +76,8 @@ class TripDetailViewModel @Inject constructor(
             sessionRepository.observeAll(),
             vehicleRepository.observeAll(),
         ) { trip, sessions, allSessions, vehicles ->
-            val stats = trip?.let {
-                TripWithStats(
-                    trip = it,
-                    sessionCount = sessions.size,
-                    totalCostByCurrency = CurrencyTotals.from(sessions),
-                    totalEnergyKwh = sessions.sumOf { s -> s.energyKwh ?: 0.0 },
-                    totalDistanceKm = TripRepository.computeTripDistance(it, sessions),
-                )
-            }
-            val analysis = analyzeLegs(trip, sessions, allSessions, vehicles)
+            val report = trip?.let { TripReport.of(it, sessions, allSessions, vehicles) }
+            val stats = if (trip != null && report != null) TripWithStats.of(trip, sessions, report) else null
             val totalChargeSeconds = sessions.sumOf { it.durationSeconds ?: 0L }
             val sessionsWithoutDuration = sessions.count { it.durationSeconds == null }
             TripDetailUi(
@@ -84,80 +86,16 @@ class TripDetailViewModel @Inject constructor(
                 stats = stats,
                 totalChargeSeconds = totalChargeSeconds,
                 sessionsWithoutDuration = sessionsWithoutDuration,
-                legs = analysis.legs,
-                excludedLegs = analysis.excluded,
-                avgKmPerKwh = analysis.avgKmPerKwh,
+                legs = report?.legs.orEmpty(),
+                excludedLegs = report?.excluded.orEmpty(),
+                avgKmPerKwh = report?.avgKmPerKwh,
+                vehicles = vehicles,
+                vehicle = report?.vehicle,
+                otherCarSessionIds = report?.otherCarSessions.orEmpty().mapTo(mutableSetOf()) { it.id },
+                unassignedSessionCount = report?.unassignedSessions?.size ?: 0,
+                measuredDistanceKm = report?.measuredDistanceKm ?: 0.0,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUi())
-    }
-
-    private data class TripAnalysis(
-        val legs: List<DrivingLeg>,
-        val excluded: List<ExcludedPair>,
-        val avgKmPerKwh: Double?,
-    )
-
-    /** Group sessions by vehicle, run analysis per group, and merge. The trip's
-     *  weighted avg km/kWh treats every leg equally regardless of which car
-     *  drove it (totals over totals, not a mean of means). Each group also
-     *  gets the vehicle's complete session history so pairs with an
-     *  out-of-trip charge in between are excluded instead of silently
-     *  producing a distorted leg.
-     *
-     *  The trip's start/end battery+odometer readings anchor the first and
-     *  last legs — but only when the trip is single-vehicle: "the trip
-     *  started at 100%" is ambiguous across two cars. */
-    private fun analyzeLegs(
-        trip: Trip?,
-        sessions: List<ChargingSession>,
-        allSessions: List<ChargingSession>,
-        vehicles: List<Vehicle>,
-    ): TripAnalysis {
-        val byVehicle = sessions.groupBy { it.vehicleId }
-        val startAnchor = trip
-            ?.let { TripAnchor(it.startOdometerKm, it.startBatteryPct, it.startDate) }
-            ?.takeIf { it.hasData }
-        val endAnchor = trip
-            ?.let { TripAnchor(it.endOdometerKm, it.endBatteryPct, it.endDate) }
-            ?.takeIf { it.hasData }
-
-        val allLegs = mutableListOf<DrivingLeg>()
-        val allExcluded = mutableListOf<ExcludedPair>()
-        for ((vehicleId, group) in byVehicle) {
-            val v = vehicles.firstOrNull { it.id == vehicleId }
-            val vehicleTimeline = allSessions.filter { it.vehicleId == vehicleId }
-            val report = EfficiencyAnalysis.analyze(
-                group, v, vehicleTimeline,
-                tripStart = startAnchor.takeIf { byVehicle.size == 1 },
-                tripEnd = endAnchor.takeIf { byVehicle.size == 1 },
-            )
-            allLegs += report.legs
-            allExcluded += report.excluded
-        }
-        // A trip with boundary readings but no sessions yet: still one
-        // whole-trip leg, when the garage has exactly one car to pin the
-        // battery capacity on.
-        if (byVehicle.isEmpty() && (startAnchor != null || endAnchor != null) &&
-            vehicles.size == 1
-        ) {
-            val only = vehicles.single()
-            val report = EfficiencyAnalysis.analyze(
-                emptyList(), only,
-                allSessions.filter { it.vehicleId == only.id },
-                tripStart = startAnchor,
-                tripEnd = endAnchor,
-            )
-            allLegs += report.legs
-            allExcluded += report.excluded
-        }
-        val totalKm = allLegs.sumOf { it.distanceKm }
-        val totalKwh = allLegs.sumOf { it.energyUsedKwh }
-        val avg = if (totalKm > 0 && totalKwh > 0) totalKm / totalKwh else null
-        return TripAnalysis(
-            legs = allLegs.sortedBy { it.to.sessionStart },
-            excluded = allExcluded.sortedBy { it.to.sessionStart },
-            avgKmPerKwh = avg,
-        )
     }
 
     fun updateTrip(trip: Trip) = viewModelScope.launch {

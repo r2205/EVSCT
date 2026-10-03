@@ -292,6 +292,54 @@ class EfficiencyAnalysisTest {
     }
 
     @Test
+    fun `a trip start or end names the trip's own missing reading`() {
+        val startNoOdo = EfficiencyAnalysis.analyze(
+            sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battStart = 30, tripId = 7)),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = null, batteryPct = 100, atMillis = null),
+        )
+        assertEquals("Add the trip's start odometer", startNoOdo.excluded.single().reason)
+
+        val sessionNoEndPct = EfficiencyAnalysis.analyze(
+            sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battEnd = null, tripId = 7)),
+            vehicle = vehicle,
+            tripEnd = TripAnchor(odometerKm = 1480.0, batteryPct = 40, atMillis = null),
+        )
+        assertEquals("Add this session's end battery %", sessionNoEndPct.excluded.single().reason)
+
+        val wholeTripNoEnd = EfficiencyAnalysis.analyze(
+            sessions = emptyList(),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 90, atMillis = null),
+            tripEnd = TripAnchor(odometerKm = 1200.0, batteryPct = null, atMillis = null),
+        )
+        assertEquals("Add the trip's end battery %", wholeTripNoEnd.excluded.single().reason)
+    }
+
+    @Test
+    fun `session pairs keep their wording`() {
+        val report = EfficiencyAnalysis.analyze(
+            listOf(
+                session(id = 1, t = 0, odo = null, battEnd = 80, tripId = 7),
+                session(id = 2, t = 1, odo = 1280.0, battStart = 30, tripId = 7),
+            ),
+            vehicle,
+        )
+        assertEquals("Add odometer on both sessions", report.excluded.single().reason)
+    }
+
+    @Test
+    fun `a trip whose battery rose is flagged as a drive, not between sessions`() {
+        val report = EfficiencyAnalysis.analyze(
+            sessions = emptyList(),
+            vehicle = vehicle,
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 40, atMillis = null),
+            tripEnd = TripAnchor(odometerKm = 1200.0, batteryPct = 60, atMillis = null),
+        )
+        assertEquals("Battery didn't drop over this drive", report.excluded.single().reason)
+    }
+
+    @Test
     fun `anchor with no data at all is ignored`() {
         val report = EfficiencyAnalysis.analyze(
             sessions = listOf(session(id = 1, t = 100, odo = 1280.0, battStart = 30, tripId = 7)),
@@ -344,6 +392,147 @@ class EfficiencyAnalysisTest {
         )
         assertTrue(report.legs.isEmpty())
         assertEquals(1, report.excluded.size)
+    }
+
+    // --- trip boundary days: trip dates are whole days, so a charge on the
+    // start or end day is placed by odometer ---
+
+    private val day = 86_400_000L
+    private val startDate = 10 * day
+    private val endDate = 12 * day
+    private val hours = 3_600_000L
+
+    @Test
+    fun `the morning top-up at home doesn't block the drive to the first stop`() {
+        // Charged to 100% at home at 7 am, left at odometer 1000, first stop
+        // at 3 pm. The old rule counted any charge after the start date's
+        // midnight as part of the trip.
+        val homeTopUp = session(id = 2, t = startDate + 7 * hours, odo = 1000.0, battStart = 70, battEnd = 100)
+        val firstStop = session(id = 1, t = startDate + 15 * hours, odo = 1280.0, battStart = 30, tripId = 7)
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(firstStop),
+            vehicle = vehicle,
+            allSessions = listOf(homeTopUp, firstStop),
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 100, atMillis = startDate),
+        )
+        assertTrue(report.excluded.isEmpty())
+        assertEquals(70.0, report.legs.single().energyUsedKwh)
+    }
+
+    @Test
+    fun `a start-day charge past the start odometer was on the way`() {
+        val strayStop = session(id = 2, t = startDate + 11 * hours, odo = 1100.0, battStart = 40, battEnd = 80)
+        val firstStop = session(id = 1, t = startDate + 15 * hours, odo = 1280.0, battStart = 30, tripId = 7)
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(firstStop),
+            vehicle = vehicle,
+            allSessions = listOf(strayStop, firstStop),
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 100, atMillis = startDate),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertTrue(report.excluded.single().reason.startsWith("Another charge happened"))
+    }
+
+    @Test
+    fun `a start-day charge with no odometer asks for one`() {
+        val homeTopUp = session(id = 2, t = startDate + 7 * hours, odo = null, battStart = 70, battEnd = 100)
+        val firstStop = session(id = 1, t = startDate + 15 * hours, odo = 1280.0, battStart = 30, tripId = 7)
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(firstStop),
+            vehicle = vehicle,
+            allSessions = listOf(homeTopUp, firstStop),
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 100, atMillis = startDate),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertEquals(
+            "A charge on the trip's start day has no odometer reading — add one to show whether it was before you left",
+            report.excluded.single().reason,
+        )
+    }
+
+    @Test
+    fun `a start-day CSV row with no time is placed by its odometer too`() {
+        // Rows imported without a time sit at exactly midnight: the same
+        // instant as the trip's start date.
+        val firstStop = session(id = 1, t = startDate + 15 * hours, odo = 1280.0, battStart = 30, tripId = 7)
+        fun analyzeWith(dateOnly: ChargingSession) = EfficiencyAnalysis.analyze(
+            sessions = listOf(firstStop),
+            vehicle = vehicle,
+            allSessions = listOf(dateOnly, firstStop),
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 100, atMillis = startDate),
+        )
+        val atHome = analyzeWith(session(id = 2, t = startDate, odo = 1000.0, battEnd = 100))
+        assertEquals(1, atHome.legs.size)
+        val onTheWay = analyzeWith(session(id = 2, t = startDate, odo = 1100.0, battEnd = 80))
+        assertTrue(onTheWay.legs.isEmpty())
+        assertEquals(1, onTheWay.excluded.size)
+    }
+
+    @Test
+    fun `an untagged stop on the last day's drive home is caught`() {
+        // The end date sits at midnight, so the old rule never looked at the
+        // end day: this stop, mid-drive by its odometer, slipped through.
+        val lastStop = session(id = 1, t = endDate - 20 * hours, odo = 1280.0, battEnd = 80, tripId = 7)
+        val strayStop = session(id = 3, t = endDate + 10 * hours, odo = 1400.0, battStart = 30, battEnd = 60)
+        val report = EfficiencyAnalysis.analyze(
+            sessions = listOf(lastStop),
+            vehicle = vehicle,
+            allSessions = listOf(lastStop, strayStop),
+            tripEnd = TripAnchor(odometerKm = 1480.0, batteryPct = 40, atMillis = endDate),
+        )
+        assertTrue(report.legs.isEmpty())
+        assertEquals(1, report.excluded.size)
+    }
+
+    @Test
+    fun `plugging in at home on arrival doesn't block the drive home`() {
+        val lastStop = session(id = 1, t = endDate - 20 * hours, odo = 1280.0, battEnd = 80, tripId = 7)
+        val withOdometer = session(id = 3, t = endDate + 18 * hours, odo = 1480.0, battStart = 40, battEnd = 90)
+        val withoutOdometer = withOdometer.copy(odometerKm = null)
+        for (homeCharge in listOf(withOdometer, withoutOdometer)) {
+            val report = EfficiencyAnalysis.analyze(
+                sessions = listOf(lastStop),
+                vehicle = vehicle,
+                allSessions = listOf(lastStop, homeCharge),
+                tripEnd = TripAnchor(odometerKm = 1480.0, batteryPct = 40, atMillis = endDate),
+            )
+            assertTrue(report.excluded.isEmpty())
+            assertEquals(40.0, report.legs.single().energyUsedKwh)
+        }
+    }
+
+    @Test
+    fun `a trip with no charging survives the morning top-up`() {
+        val homeTopUp = session(id = 2, t = startDate + 7 * hours, odo = 1000.0, battStart = 70, battEnd = 100)
+        val report = EfficiencyAnalysis.analyze(
+            sessions = emptyList(),
+            vehicle = vehicle,
+            allSessions = listOf(homeTopUp),
+            tripStart = TripAnchor(odometerKm = 1000.0, batteryPct = 100, atMillis = startDate),
+            tripEnd = TripAnchor(odometerKm = 1200.0, batteryPct = 50, atMillis = endDate),
+        )
+        assertTrue(report.excluded.isEmpty())
+        assertEquals(50.0, report.legs.single().energyUsedKwh)
+    }
+
+    @Test
+    fun `a day trip's untagged stop is caught by its odometer`() {
+        // Start and end on the same date: the old rule had no window at all.
+        val start = TripAnchor(odometerKm = 1000.0, batteryPct = 90, atMillis = startDate)
+        val end = TripAnchor(odometerKm = 1150.0, batteryPct = 40, atMillis = startDate)
+        val stop = session(id = 2, t = startDate + 12 * hours, odo = 1075.0, battStart = 50, battEnd = 70)
+
+        val withOdometer = EfficiencyAnalysis.analyze(
+            emptyList(), vehicle, listOf(stop), tripStart = start, tripEnd = end,
+        )
+        assertTrue(withOdometer.legs.isEmpty())
+        assertEquals(1, withOdometer.excluded.size)
+
+        // With no odometer there's no telling, and it stays as before.
+        val withoutOdometer = EfficiencyAnalysis.analyze(
+            emptyList(), vehicle, listOf(stop.copy(odometerKm = null)), tripStart = start, tripEnd = end,
+        )
+        assertEquals(1, withoutOdometer.legs.size)
     }
 
     @Test

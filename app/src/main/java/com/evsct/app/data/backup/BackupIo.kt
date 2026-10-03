@@ -17,6 +17,7 @@ import com.evsct.app.ui.map.TripPinColor
 import com.evsct.app.util.BackupReminderScheduler
 import com.evsct.app.util.ExportNaming
 import com.evsct.app.util.InProgressChargeNotifier
+import com.evsct.app.util.TripVehicleInference
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -353,12 +354,16 @@ class BackupIo @Inject constructor(
             val danglingTrip = payload.sessions.count { it.tripId != null && it.tripId !in tripIds }
             val danglingVehicle =
                 payload.sessions.count { it.vehicleId != null && it.vehicleId !in vehicleIds }
-            if (danglingTrip > 0 || danglingVehicle > 0) {
+            val danglingTripVehicle =
+                payload.trips.count { it.vehicleId != null && it.vehicleId !in vehicleIds }
+            if (danglingTrip > 0 || danglingVehicle > 0 || danglingTripVehicle > 0) {
                 val problems = listOfNotNull(
                     danglingTrip.takeIf { it > 0 }
                         ?.let { "$it session(s) reference a trip that isn't in the backup" },
                     danglingVehicle.takeIf { it > 0 }
                         ?.let { "$it session(s) reference a vehicle that isn't in the backup" },
+                    danglingTripVehicle.takeIf { it > 0 }
+                        ?.let { "$it trip(s) reference a vehicle that isn't in the backup" },
                 ).joinToString("; ")
                 return@withContext BackupResult.Failure(
                     "Backup is inconsistent: $problems. Restore cancelled — nothing was changed.",
@@ -456,9 +461,19 @@ class BackupIo @Inject constructor(
                 // through TripRepository.upsert, whose auto-pick collects a
                 // DAO Flow that must not run inside a transaction.
                 val usedPinColors = payload.trips.mapNotNullTo(mutableListOf()) { it.pinColor }
+                // A trip without a vehicle (every trip, in a backup made
+                // before trips carried one) gets the car its sessions agree
+                // on, the same rule MIGRATION_14_15 applied on-device.
+                // Worked out in the backup's own ids, then remapped.
+                val rawVehicleIds = payload.vehicles.map { it.id }
+                val sessionCarsByTrip = payload.sessions
+                    .filter { it.tripId != null }
+                    .groupBy({ it.tripId }, { it.vehicleId })
                 payload.trips.forEach { raw ->
                     val pinColor = raw.pinColor
                         ?: TripPinColor.nextDefault(usedPinColors).name.also { usedPinColors += it }
+                    val rawVehicleId = raw.vehicleId
+                        ?: TripVehicleInference.infer(sessionCarsByTrip[raw.id].orEmpty(), rawVehicleIds)
                     val newId = tripDao.insert(
                         Trip(
                             id = 0,
@@ -472,6 +487,7 @@ class BackupIo @Inject constructor(
                             notes = raw.notes,
                             pinColor = pinColor,
                             createdAt = raw.createdAt,
+                            vehicleId = rawVehicleId?.let(vehicleIdMap::get),
                         )
                     )
                     tripIdMap[raw.id] = newId
@@ -649,6 +665,9 @@ class BackupIo @Inject constructor(
         putOptString("notes", notes)
         putOptString("pinColor", pinColor)
         put("createdAt", createdAt)
+        // Optional in the same way: backups from before trips carried a
+        // vehicle lack it, and restore infers one from the sessions.
+        putOptLong("vehicleId", vehicleId)
     }
 
     private fun ChargingSession.toJson(receipts: List<SessionReceipt>): JSONObject = JSONObject().apply {
@@ -768,6 +787,7 @@ class BackupIo @Inject constructor(
                     notes = t.optStringOrNull("notes"),
                     pinColor = t.optStringOrNull("pinColor"),
                     createdAt = t.optLong("createdAt", System.currentTimeMillis()),
+                    vehicleId = t.optLongOrNull("vehicleId"),
                 )
             },
             sessions = sessionsArr.mapObjectsStrict("sessions") { s ->
@@ -948,6 +968,9 @@ private data class RawTrip(
     val notes: String?,
     val pinColor: String?,
     val createdAt: Long,
+    /** Null both when the trip had no vehicle and when the backup predates
+     *  trip vehicles — restore infers one either way. */
+    val vehicleId: Long?,
 )
 
 /** Receipt entry parsed from backup JSON. file = basename only (no

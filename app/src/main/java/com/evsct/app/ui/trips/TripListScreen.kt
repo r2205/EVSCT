@@ -43,9 +43,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.evsct.app.R
+import com.evsct.app.data.entity.TripWithStats
 import com.evsct.app.ui.EmptyState
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.LocalUserUnits
+import com.evsct.app.ui.VehicleScope
+import com.evsct.app.ui.VehicleScopeTabs
+import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.util.Format
 import com.evsct.app.util.Money
 
@@ -53,9 +57,12 @@ import com.evsct.app.util.Money
 @Composable
 fun TripListScreen(
     onOpenTrip: (Long) -> Unit,
+    /** The vehicle strip's car icon — same shortcut as the Log and Stats. */
+    onOpenVehicles: () -> Unit,
     viewModel: TripListViewModel = hiltViewModel(),
 ) {
-    val trips by viewModel.trips.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val trips = state.trips
     // Saveable so rotating (or process death) doesn't dismiss the dialog
     // and discard everything typed into it.
     var dialogOpen by rememberSaveable { mutableStateOf(false) }
@@ -82,74 +89,52 @@ fun TripListScreen(
             }
         },
     ) { padding ->
-        if (trips.isEmpty()) {
-            EmptyState(
-                icon = Icons.Default.Map,
-                title = stringResource(R.string.trips_no_trips_yet),
-                // The button below replaces the old "Tap + to create one" —
-                // that sentence pointed at an unlabelled circle and asked the
-                // reader to work out which one.
-                body = stringResource(R.string.trips_trips_group_sessions_for),
-                actionLabel = stringResource(R.string.trips_new_trip),
-                onAction = { dialogOpen = true },
-                modifier = Modifier.padding(padding).fillMaxSize(),
-            )
-        } else {
-            LazyColumn(
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(padding),
-            ) {
-                items(trips, key = { it.trip.id }) { tws ->
-                    Card(
-                        modifier = Modifier
+        // Same strip as the Log and Stats, bucketing trips by their own car.
+        val showTabs = needsVehiclePicker(state.vehicles.size, state.hasUnassignedTrips)
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (showTabs) {
+                VehicleScopeTabs(
+                    vehicles = state.vehicles,
+                    includeUnassigned = state.hasUnassignedTrips,
+                    scope = state.vehicleScope,
+                    onSelect = viewModel::setVehicleScope,
+                    onManageVehicles = onOpenVehicles,
+                )
+            }
+            if (trips.isEmpty()) {
+                EmptyState(
+                    icon = Icons.Default.Map,
+                    title = stringResource(R.string.trips_no_trips_yet),
+                    // The button below replaces the old "Tap + to create one" —
+                    // that sentence pointed at an unlabelled circle and asked the
+                    // reader to work out which one.
+                    body = stringResource(R.string.trips_trips_group_sessions_for),
+                    actionLabel = stringResource(R.string.trips_new_trip),
+                    onAction = { dialogOpen = true },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                LazyColumn(
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(trips, key = { it.trip.id }) { tws ->
+                        // Under "All" each row names its car, as the Log's
+                        // rows do; a vehicle tab already says which car.
+                        val carName = if (showTabs && state.vehicleScope == VehicleScope.All) {
+                            state.vehicles.firstOrNull { it.id == tws.trip.vehicleId }?.name
+                        } else {
+                            null
+                        }
+                        TripRow(
+                            tws = tws,
+                            carName = carName,
+                            onOpen = { onOpenTrip(tws.trip.id) },
+                            onDelete = { pendingDelete = tws.trip },
                             // Rows glide to their new slot when a date edit
                             // re-sorts the list or a trip is deleted.
-                            .animateItem()
-                            .fillMaxWidth()
-                            .clickable { onOpenTrip(tws.trip.id) }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    tws.trip.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                tripDateLabel(tws.trip)?.let { dates ->
-                                    Text(
-                                        dates,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                val units = LocalUserUnits.current
-                                Text(
-                                    pluralStringResource(
-                                        R.plurals.trips_summary,
-                                        tws.sessionCount,
-                                        tws.sessionCount,
-                                        Money.format(tws.totalCostByCurrency),
-                                        Format.kwh(tws.totalEnergyKwh),
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                if (tws.totalDistanceKm > 0) {
-                                    Text(
-                                        "${Format.distance(tws.totalDistanceKm, units.useMiles)} · " +
-                                            Format.moneyRatePerDistance(tws.costPerKm, units.useMiles),
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                            }
-                            IconButton(onClick = { pendingDelete = tws.trip }) {
-                                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.trips_delete_trip))
-                            }
-                        }
+                            modifier = Modifier.animateItem(),
+                        )
                     }
                 }
             }
@@ -182,11 +167,87 @@ fun TripListScreen(
     if (dialogOpen) {
         TripEditDialog(
             trip = null,
+            vehicles = state.vehicles,
+            newTripVehicleId = state.newTripVehicleId,
             onDismiss = { dialogOpen = false },
             onSave = { trip ->
                 viewModel.upsert(trip)
                 dialogOpen = false
             },
         )
+    }
+}
+
+@Composable
+private fun TripRow(
+    tws: TripWithStats,
+    carName: String?,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val units = LocalUserUnits.current
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    tws.trip.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                listOfNotNull(carName, tripDateLabel(tws.trip))
+                    .joinToString(" · ")
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { subtitle ->
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                if (tws.sessionCount == 0) {
+                    // No charging: "0 sessions · — · 0.0 kWh" said nothing.
+                    // What the trip has is its drive — distance and the
+                    // energy its own readings put on it.
+                    val drive = listOfNotNull(
+                        tws.totalDistanceKm.takeIf { it > 0 }?.let { Format.distance(it, units.useMiles) },
+                        tws.energyUsedKwh?.let { stringResource(R.string.trips_energy_used, Format.kwh(it)) },
+                    )
+                    Text(
+                        drive.joinToString(" · ").ifEmpty { stringResource(R.string.trips_no_sessions_yet) },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Text(
+                        pluralStringResource(
+                            R.plurals.trips_summary,
+                            tws.sessionCount,
+                            tws.sessionCount,
+                            Money.format(tws.totalCostByCurrency),
+                            Format.kwh(tws.totalEnergyKwh),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (tws.totalDistanceKm > 0) {
+                        Text(
+                            "${Format.distance(tws.totalDistanceKm, units.useMiles)} · " +
+                                Format.moneyRatePerDistance(tws.costPerKm, units.useMiles),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.trips_delete_trip))
+            }
+        }
     }
 }

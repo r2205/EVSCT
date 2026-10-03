@@ -92,7 +92,10 @@ internal fun writeYearRecapPdf(
             y += 14f
             val parts = buildList {
                 add(Format.distance(trip.distanceKm, units.useMiles))
-                add("${trip.sessionCount} session" + if (trip.sessionCount == 1) "" else "s")
+                // A trip with no charging stops can be the longest one too.
+                if (trip.sessionCount > 0) {
+                    add("${trip.sessionCount} session" + if (trip.sessionCount == 1) "" else "s")
+                }
                 if (trip.totalCost != null && trip.currency != null) {
                     add(Format.money(trip.totalCost, trip.currency))
                 }

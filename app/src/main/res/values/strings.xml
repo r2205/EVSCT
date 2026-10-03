@@ -90,6 +90,7 @@
     <string name="log_no_brands_recorded_yet">No brands recorded yet.</string>
     <string name="log_no_matching_sessions">No matching sessions</string>
     <string name="log_no_tags_yet_add">No tags yet — add some when editing a session.</string>
+    <string name="log_no_trips_for_vehicle">No trips for %1$s yet. Create one from the Trips screen.</string>
     <string name="log_no_trips_yet_create">No trips yet. Create one from the Trips screen.</string>
     <string name="log_not_now">Not now</string>
     <string name="log_ok">OK</string>
@@ -123,6 +124,7 @@
     <string name="log_to_placeholder">To…</string>
     <string name="log_track_a_charge_now">Track a charge now</string>
     <string name="log_tracked_running">A tracked charge started %1$s is still running. Open it to finish or delete it.</string>
+    <string name="log_trip_needs_one_vehicle">These sessions are on different vehicles, and a trip belongs to one. Select one vehicle\'s sessions to assign them a trip.</string>
     <string name="log_unassigned">Unassigned</string>
     <string name="log_undo">Undo</string>
     <string name="log_welcome_to_evsct">Welcome to EVSCT</string>
@@ -267,6 +269,7 @@
     <string name="form_title_new">New session</string>
     <string name="form_total_cost_currency">Total cost (%1$s)</string>
     <string name="form_trip">Trip</string>
+    <string name="form_trip_on_other_vehicle">This trip is for %1$s, and a trip belongs to one vehicle. Pick another trip, or change the trip\'s vehicle from the Trips tab.</string>
     <string name="form_type_ac_l1">AC L1</string>
     <string name="form_type_ac_l2">AC L2</string>
     <string name="form_type_dc_fast">DC Fast</string>
@@ -428,7 +431,9 @@
     <string name="trips_delete">Delete</string>
     <string name="trips_delete_confirm_title">Delete \"%1$s\"?</string>
     <string name="trips_delete_trip">Delete trip</string>
+    <string name="trips_energy_used">≈%1$s used</string>
     <string name="trips_new_trip">New trip</string>
+    <string name="trips_no_sessions_yet">No sessions yet</string>
     <string name="trips_no_trips_yet">No trips yet</string>
     <string name="trips_sessions_tagged_with_this">Sessions tagged with this trip will keep their data but be untagged.</string>
     <string name="trips_trips_group_sessions_for">Trips group sessions for road-trip totals and color-coded map pins.</string>
@@ -439,15 +444,32 @@
 
     <!-- Trip detail -->
     <string name="trip_back">Back</string>
+    <string name="trip_choose_vehicle">Choose</string>
     <string name="trip_collapse">Collapse</string>
     <string name="trip_driving_efficiency">Driving efficiency</string>
     <string name="trip_edit_trip">Edit trip</string>
+    <string name="trip_efficiency">Efficiency</string>
     <string name="trip_end">Trip end</string>
+    <string name="trip_energy_charged">Energy charged</string>
+    <string name="trip_energy_used">Energy used (est.)</string>
+    <string name="trip_energy_used_partial">* Covers the drives with readings: %1$s of %2$s</string>
     <string name="trip_expand">Expand</string>
     <string name="trip_fallback_title">Trip</string>
+    <string name="trip_no_charging">No charging on this trip</string>
+    <string name="trip_no_charging_body">Its distance and energy come from the trip\'s own start and end readings. Charged along the way after all? Tag those sessions from the Log: tap Select (or long-press a session), choose them, then Assign to trip.</string>
     <string name="trip_no_sessions_in_this">No sessions in this trip yet</string>
+    <string name="trip_session_logged_on">Logged on %1$s</string>
+    <plurals name="trip_sessions_on_other_vehicle">
+        <item quantity="one">%1$d session is logged on another vehicle, so it\'s left out of this trip\'s distance and efficiency.</item>
+        <item quantity="other">%1$d sessions are logged on another vehicle, so they\'re left out of this trip\'s distance and efficiency.</item>
+    </plurals>
+    <plurals name="trip_sessions_without_vehicle">
+        <item quantity="one">%1$d session has no vehicle set, so it\'s counted as %2$s.</item>
+        <item quantity="other">%1$d sessions have no vehicle set, so they\'re counted as %2$s.</item>
+    </plurals>
     <string name="trip_start">Trip start</string>
-    <string name="trip_tag_sessions_from_the">Tag sessions from the Log: tap Select (or long-press a session), choose the ones from this trip, then Assign to trip. A session\'s edit form can also pick this trip directly.</string>
+    <string name="trip_tag_sessions_from_the" formatted="false">Tag sessions from the Log: tap Select (or long-press a session), choose the ones from this trip, then Assign to trip. A session\'s edit form can also pick this trip directly. No charging on this trip? Add its start and end odometer and battery % with Edit trip to estimate the energy it used.</string>
+    <string name="trip_vehicle_missing">Which vehicle was this trip in?</string>
     <string name="trip_view_on_map">View on map</string>
 
     <!-- Trip editor -->
@@ -477,6 +499,8 @@
     <string name="tripedit_start_odometer">Start %1$s</string>
     <string name="tripedit_title_edit">Edit trip</string>
     <string name="tripedit_title_new">New trip</string>
+    <string name="tripedit_vehicle">Vehicle</string>
+    <string name="tripedit_vehicle_required">Choose the vehicle this trip was in.</string>
 
     <!-- Vehicle list -->
     <string name="vehicles_add_the_ev_s">Add the EV(s) you charge so sessions can be tagged and per-vehicle stats become meaningful.</string>

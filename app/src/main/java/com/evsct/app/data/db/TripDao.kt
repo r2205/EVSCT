@@ -27,6 +27,12 @@ interface TripDao {
     @Update
     suspend fun update(trip: Trip)
 
+    /** Set just [tripId]'s vehicle. CSV import uses it to settle a trip's
+     *  car mid-transaction, where TripRepository.upsert's Flow read of the
+     *  trips table must not run. */
+    @Query("UPDATE trips SET vehicleId = :vehicleId WHERE id = :tripId")
+    suspend fun setVehicle(tripId: Long, vehicleId: Long?)
+
     @Delete
     suspend fun delete(trip: Trip)
 
