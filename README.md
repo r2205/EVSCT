@@ -280,7 +280,9 @@ motion-graphics tour built from these screenshots, or
   drive the app can measure on that car: between charging sessions, and
   the drives its trips' own start/end readings measure (to the first stop,
   home from the last, or a whole trip with no charging), each stretch of
-  road once.
+  road once. A charging session with no vehicle that's tagged to one of
+  the car's trips counts as that car's here, so the battery it added isn't
+  mistaken for energy a drive never used.
 
 ### Trips
 - Manual trip tagging (one trip per session, optional).

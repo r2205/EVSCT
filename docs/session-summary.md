@@ -712,7 +712,14 @@ vehicle on the same trip.
   home → first stop, last stop → home, and a whole no-charging trip.
   A trip leg that overlaps a session-pair leg's odometer range is
   dropped, so a `continuesPrevious` pair spanning a trip's start, end
-  or whole length doesn't count that road twice.
+  or whole length doesn't count that road twice. A session with no
+  vehicle tagged to one of the car's trips joins the car's timeline for
+  the session pairs, as `TripReport` already counts it as the trip's
+  car. Before, the car's sessions either side of it paired as one drive
+  and the battery it added read as energy never used, overstating
+  km/kWh. Its own `continuesPrevious` flag is ignored there, since it
+  was set against the previous no-vehicle session, not the car's.
+  Sessions with no vehicle off the car's trips still don't count.
 - **Reporting**: `EfficiencyReport` exposes measured legs and excluded
   pairs with user-facing reason strings. The UI surfaces both: average
   km/kWh + rows for unmeasurable legs so the user can see why a number
@@ -1506,7 +1513,9 @@ the unit pref as a parameter; aggregates pass the default-currency to
   trips restored from older backups.
 - **`util/VehicleEfficiencyTest.kt`** — a car's lifetime efficiency
   counting its trips' start/end and no-charging drives, only its own
-  trips, each stretch of road once beside a `continuesPrevious` pair.
+  trips, each stretch of road once beside a `continuesPrevious` pair;
+  and sessions with no vehicle on its trips splitting the drive around
+  them, without their own `continuesPrevious` flag.
 - **`util/LongestTripTest.kt`** — the recap's pick, including trips with
   no charging dated into the year.
 - **`data/db/Migration14To15Test.kt`** (Robolectric) — the v15 migration

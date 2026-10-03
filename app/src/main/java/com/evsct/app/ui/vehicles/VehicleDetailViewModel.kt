@@ -52,8 +52,9 @@ data class VehicleDetailUi(
     val mostExpensivePriceSession: VehicleHighlight? = null,
     val mostUsedBrand: Pair<String, Int>? = null,
     val lastChargedAt: Long? = null,
-    /** Distance per energy across measurable legs (same vehicle, consecutive
-     *  by trip or by the user-set "continues from previous" flag), plus the
+    /** Distance per energy across measurable legs (between the vehicle's
+     *  sessions, and sessions with no vehicle on its trips, consecutive by
+     *  trip or by the user-set "continues from previous" flag), plus the
      *  drives its trips' own start/end readings measure (see
      *  [VehicleEfficiency]). Stored as km/kWh; the screen converts to mi/kWh
      *  when needed. */
