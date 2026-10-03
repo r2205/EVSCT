@@ -122,6 +122,67 @@ class VehicleEfficiencyTest {
         assertEquals(200.0 / 32.0, report.avgKmPerKwh!!, 1e-9)
     }
 
+    @Test
+    fun `a stop with no vehicle on the car's trip splits the drive around it`() {
+        // 1 → 3 used to be one 300 km drive on 90% → 45% = 36 kWh, as if the
+        // stop at 2 never added its 35%. Split there: 150 km on 40% twice.
+        val sessions = listOf(
+            session(id = 1, t = 10, odo = 10_000.0, battEnd = 90, tripId = 7),
+            session(id = 2, t = 20, odo = 10_150.0, battStart = 50, battEnd = 85, tripId = 7, vehicleId = null),
+            session(id = 3, t = 30, odo = 10_300.0, battStart = 45, tripId = 7),
+        )
+
+        val report = VehicleEfficiency.of(car, sessions, listOf(trip(vehicleId = 1)))
+
+        assertEquals(listOf(1L to 2L, 2L to 3L), report.legs.map { it.from.id to it.to.id })
+        assertEquals(300.0 / 64.0, report.avgKmPerKwh!!, 1e-9)
+    }
+
+    @Test
+    fun `the car's own continues-from-previous flag carries on from a stop with no vehicle`() {
+        // 3 continues from the car's previous charge, 1; the stop at 2 came
+        // between them, so the flag vouches for 2 → 3 as well.
+        val sessions = listOf(
+            session(id = 1, t = 10, odo = 10_000.0, battEnd = 90, tripId = 7),
+            session(id = 2, t = 20, odo = 10_150.0, battStart = 50, battEnd = 85, tripId = 7, vehicleId = null),
+            session(id = 3, t = 30, odo = 10_300.0, battStart = 45, continuesPrevious = true),
+        )
+
+        val report = VehicleEfficiency.of(car, sessions, listOf(trip(vehicleId = 1)))
+
+        assertEquals(listOf(1L to 2L, 2L to 3L), report.legs.map { it.from.id to it.to.id })
+    }
+
+    @Test
+    fun `a stop with no vehicle can't vouch for the car's charge before it`() {
+        // Its flag was set against the previous session with no vehicle,
+        // not against this car's charge at 1.
+        val sessions = listOf(
+            session(id = 1, t = 0, odo = 9_000.0, battEnd = 90),
+            session(id = 2, t = 10, odo = 9_300.0, battStart = 40, tripId = 7, vehicleId = null, continuesPrevious = true),
+        )
+
+        val report = VehicleEfficiency.of(car, sessions, listOf(trip(vehicleId = 1)))
+
+        assertEquals(emptyList(), report.legs)
+    }
+
+    @Test
+    fun `sessions with no vehicle off the car's trips still don't count`() {
+        // One isn't on a trip, the other is on another car's trip: neither
+        // is known to be this car's, so 1 → 4 stays one drive.
+        val sessions = listOf(
+            session(id = 1, t = 0, odo = 9_000.0, battEnd = 90),
+            session(id = 2, t = 10, odo = 9_100.0, battStart = 70, battEnd = 80, vehicleId = null),
+            session(id = 3, t = 20, odo = 9_200.0, battStart = 60, battEnd = 70, tripId = 7, vehicleId = null),
+            session(id = 4, t = 30, odo = 9_300.0, battStart = 50, continuesPrevious = true),
+        )
+
+        val report = VehicleEfficiency.of(car, sessions, listOf(trip(vehicleId = 2)))
+
+        assertEquals(listOf(1L to 4L), report.legs.map { it.from.id to it.to.id })
+    }
+
     private fun trip(
         vehicleId: Long?,
         startOdo: Double? = null,
