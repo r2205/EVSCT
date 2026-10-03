@@ -705,6 +705,14 @@ vehicle on the same trip.
   date: on the start day it counts as during the trip, and the reason
   asks for its odometer; on the end day, after. A one-day trip gets
   the check too, where before it had none.
+- **Vehicle lifetime** (October 2026): the vehicle detail's efficiency
+  (`util/VehicleEfficiency`) is the car's session-pair legs plus the
+  trip start/end legs of its own trips, taken from `TripReport` as the
+  trip measures them. Those are the drives no session pair can measure:
+  home → first stop, last stop → home, and a whole no-charging trip.
+  A trip leg that overlaps a session-pair leg's odometer range is
+  dropped, so a `continuesPrevious` pair spanning a trip's start, end
+  or whole length doesn't count that road twice.
 - **Reporting**: `EfficiencyReport` exposes measured legs and excluded
   pairs with user-facing reason strings. The UI surfaces both: average
   km/kWh + rows for unmeasurable legs so the user can see why a number
@@ -724,7 +732,7 @@ vehicle on the same trip.
   path.
 - **Detail screen**: hero card with photo + label, Lifetime card
   (sessions, total cost, energy, distance, $/km or $/mi, $/kWh, avg
-  power, total charge time, top brand), highlight tiles (fastest
+  power, efficiency, total charge time, top brand), highlight tiles (fastest
   charge, cheapest $/kWh, most expensive $/kWh, last charged), recent
   sessions list (last 10) with tap-to-edit. Pencil icon in top bar
   opens edit screen. Total charge time shows a "(N sessions missing
@@ -1496,6 +1504,9 @@ the unit pref as a parameter; aggregates pass the default-currency to
   car's spread; a session on another car can't stretch the distance.
 - **`util/TripVehicleInferenceTest.kt`** — the v15 backfill rule for
   trips restored from older backups.
+- **`util/VehicleEfficiencyTest.kt`** — a car's lifetime efficiency
+  counting its trips' start/end and no-charging drives, only its own
+  trips, each stretch of road once beside a `continuesPrevious` pair.
 - **`util/LongestTripTest.kt`** — the recap's pick, including trips with
   no charging dated into the year.
 - **`data/db/Migration14To15Test.kt`** (Robolectric) — the v15 migration
