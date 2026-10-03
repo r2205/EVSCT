@@ -273,10 +273,14 @@ motion-graphics tour built from these screenshots, or
   (in your preferred distance unit), VIN, notes, and a profile photo.
 - Default vehicle pre-selects on new sessions.
 - **Per-vehicle detail screen** — lifetime stats (sessions, total cost,
-  total energy, total distance, $/km or $/mi, $/kWh, avg power, top brand)
-  plus highlight cards for fastest charge, cheapest $/kWh, most expensive
-  $/kWh, and last charged. Recent sessions for the vehicle listed at the
-  bottom.
+  total energy, total distance, $/km or $/mi, $/kWh, avg power, top brand,
+  and efficiency in km/kWh or mi/kWh) plus highlight cards for fastest
+  charge, cheapest $/kWh, most expensive $/kWh, and last charged. Recent
+  sessions for the vehicle listed at the bottom. Efficiency counts every
+  drive the app can measure on that car: between charging sessions, and
+  the drives its trips' own start/end readings measure (to the first stop,
+  home from the last, or a whole trip with no charging), each stretch of
+  road once.
 
 ### Trips
 - Manual trip tagging (one trip per session, optional).

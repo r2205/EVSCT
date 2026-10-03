@@ -4,14 +4,16 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.data.entity.ChargingSession
+import com.evsct.app.data.entity.Trip
 import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.data.repository.SessionRepository
+import com.evsct.app.data.repository.TripRepository
 import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.Derived
-import com.evsct.app.util.EfficiencyAnalysis
 import com.evsct.app.util.SessionAverages
+import com.evsct.app.util.VehicleEfficiency
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,8 +53,10 @@ data class VehicleDetailUi(
     val mostUsedBrand: Pair<String, Int>? = null,
     val lastChargedAt: Long? = null,
     /** Distance per energy across measurable legs (same vehicle, consecutive
-     *  by trip or by the user-set "continues from previous" flag). Stored as
-     *  km/kWh; the screen converts to mi/kWh when needed. */
+     *  by trip or by the user-set "continues from previous" flag), plus the
+     *  drives its trips' own start/end readings measure (see
+     *  [VehicleEfficiency]). Stored as km/kWh; the screen converts to mi/kWh
+     *  when needed. */
     val avgKmPerKwh: Double? = null,
     /** Sum of durationSeconds across this vehicle's sessions (null durations
      *  contribute 0). */
@@ -67,6 +71,7 @@ class VehicleDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val vehicleRepository: VehicleRepository,
     private val sessionRepository: SessionRepository,
+    private val tripRepository: TripRepository,
 ) : ViewModel() {
 
     private val vehicleId: Long = savedStateHandle.get<Long>(Routes.VEHICLE_DETAIL_ARG) ?: -1L
@@ -82,10 +87,11 @@ class VehicleDetailViewModel @Inject constructor(
             _vehicle.asStateFlow(),
             _vehicleLookedUp.asStateFlow(),
             sessionRepository.observeAll(),
-        ) { vehicle, lookedUp, allSessions ->
+            tripRepository.observeAll(),
+        ) { vehicle, lookedUp, allSessions, trips ->
             val sessions = allSessions.filter { it.vehicleId == vehicleId }
                 .sortedByDescending { it.sessionStart }
-            buildUi(vehicle, sessions).copy(isLoading = !lookedUp)
+            buildUi(vehicle, sessions, allSessions, trips).copy(isLoading = !lookedUp)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VehicleDetailUi())
     }
 
@@ -96,7 +102,15 @@ class VehicleDetailViewModel @Inject constructor(
         _vehicleLookedUp.value = true
     }
 
-    private fun buildUi(vehicle: Vehicle?, sessions: List<ChargingSession>): VehicleDetailUi {
+    /** [sessions] are the vehicle's own, newest first. [allSessions] and
+     *  [trips] are the whole log, which [VehicleEfficiency] needs to
+     *  measure the car's trips. */
+    private fun buildUi(
+        vehicle: Vehicle?,
+        sessions: List<ChargingSession>,
+        allSessions: List<ChargingSession>,
+        trips: List<Trip>,
+    ): VehicleDetailUi {
         if (vehicle == null) return VehicleDetailUi()
 
         val totals = CurrencyTotals.from(sessions)
@@ -135,7 +149,7 @@ class VehicleDetailViewModel @Inject constructor(
             .maxByOrNull { it.value }
             ?.toPair()
 
-        val efficiency = EfficiencyAnalysis.analyze(sessions, vehicle)
+        val efficiency = VehicleEfficiency.of(vehicle, allSessions, trips)
 
         return VehicleDetailUi(
             vehicle = vehicle,
