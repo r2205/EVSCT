@@ -121,6 +121,23 @@ class TripReportTest {
     }
 
     @Test
+    fun `a lone start reading counts toward the distance its leg measures`() {
+        // start → 1 → 2 measures 500 km; the distance used to read 250 (the
+        // sessions' spread alone), less than the legs it was made of.
+        val trip = trip(vehicleId = 1, startOdo = 10_000.0, startPct = 100)
+        val sessions = listOf(
+            session(id = 1, t = 10, odo = 10_250.0, battStart = 20, battEnd = 80, vehicleId = 1),
+            session(id = 2, t = 20, odo = 10_500.0, battStart = 25, battEnd = 80, vehicleId = 1),
+        )
+
+        val report = TripReport.of(trip, sessions, sessions, garage)
+
+        assertEquals(500.0, report.distanceKm, 1e-9)
+        assertEquals(500.0, report.measuredDistanceKm, 1e-9)
+        assertEquals(false, report.energyUsedIsPartial)
+    }
+
+    @Test
     fun `nothing measurable means no energy figure at all`() {
         val trip = trip(vehicleId = 1, startOdo = 10_000.0, endOdo = 10_180.0)
 
