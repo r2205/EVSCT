@@ -487,6 +487,7 @@
     <string name="tripedit_name">Name</string>
     <string name="tripedit_notes_optional">Notes (optional)</string>
     <string name="tripedit_odometer_order_error">Start %1$s cannot be more than End %2$s.</string>
+    <string name="tripedit_odometer_unreadable">Odometer isn\'t a number. Use digits with one decimal point, e.g. 10250.5.</string>
     <string name="tripedit_ok">OK</string>
     <string name="tripedit_optional_battery_when_the" formatted="false">Optional: battery % when the trip began and ended. With the odometer readings these measure the drives to the first charge and home from the last one.</string>
     <string name="tripedit_optional_dates_label_the">Optional: dates label the trip and sort the list (newest first).</string>
@@ -552,6 +553,7 @@
     <string name="vehicleedit_title_edit">Edit vehicle</string>
     <string name="vehicleedit_title_new">New vehicle</string>
     <string name="vehicleedit_trim">Trim</string>
+    <string name="vehicleedit_unreadable_number">Not a number: will be saved blank</string>
     <string name="vehicleedit_vin_optional">VIN (optional)</string>
     <string name="vehicleedit_year">Year</string>
 

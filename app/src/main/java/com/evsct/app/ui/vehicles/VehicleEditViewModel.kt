@@ -45,6 +45,10 @@ data class VehicleEditUi(
     val transientMessage: String? = null,
 )
 
+/** The model year as typed, or null. Shared by save() and the screen's
+ *  unreadable-number flag so they agree on what counts as a year. */
+internal fun parseYear(text: String): Int? = text.trim().toIntOrNull()
+
 @HiltViewModel
 class VehicleEditViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -225,7 +229,7 @@ class VehicleEditViewModel @Inject constructor(
                         s.model.takeIf { it.isNotBlank() },
                     ).joinToString(" ").ifBlank { "Vehicle" }
                 },
-                year = s.year.toIntOrNull(),
+                year = parseYear(s.year),
                 make = s.make.takeIf { it.isNotBlank() },
                 model = s.model.takeIf { it.isNotBlank() },
                 trim = s.trim.takeIf { it.isNotBlank() },
