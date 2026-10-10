@@ -578,7 +578,7 @@
     <string name="settings_import_csv">Import CSV…</string>
     <string name="settings_import_legacy_xlsx">Import legacy XLSX?</string>
     <string name="settings_import_sessions_from_a">Import sessions from a previously exported CSV.</string>
-    <string name="settings_import_the_legacy_dc">Import the legacy \\"DC Fast Charging.xlsx\\" sheet you\'ve been keeping. This is intended to be run once when first setting up the app.</string>
+    <string name="settings_import_the_legacy_dc">Import the legacy \"DC Fast Charging.xlsx\" sheet you\'ve been keeping. This is intended to be run once when first setting up the app.</string>
     <string name="settings_import_xlsx">Import legacy XLSX…</string>
     <string name="settings_kilometres">Kilometres</string>
     <string name="settings_last_backed_up">"Last backed up: "</string>
@@ -595,7 +595,7 @@
     <string name="settings_rate_per_min">$/min</string>
     <string name="settings_remind_me_after_days">Remind me after (days)</string>
     <string name="settings_replace_all_sessions">Replace all sessions?</string>
-    <string name="settings_replace_existing_is_ticked">\\"Replace existing\\" is ticked: this will erase every session currently in the app and replace them with the contents of the CSV. A snapshot of your current data is saved automatically first, so you can undo this from Settings if it\'s the wrong file.</string>
+    <string name="settings_replace_existing_is_ticked">\"Replace existing\" is ticked: this will erase every session currently in the app and replace them with the contents of the CSV. A snapshot of your current data is saved automatically first, so you can undo this from Settings if it\'s the wrong file.</string>
     <string name="settings_replace_existing_sessions_before">Replace existing sessions before import</string>
     <string name="settings_restore_backup">Restore from backup…</string>
     <string name="settings_restore_from_backup">Restore from backup?</string>
