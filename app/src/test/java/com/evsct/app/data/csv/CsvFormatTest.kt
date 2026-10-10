@@ -21,6 +21,22 @@ class CsvFormatTest {
         CsvFormat.fromRow(headers, values)
 
     @Test
+    fun `the id column is read for ordering but never reused as the row id`() {
+        val parsed = parse(
+            listOf("id", "date", "time"),
+            listOf("238", "2026-07-29", "10:00:00"),
+        )
+        assertEquals(238L, parsed?.sourceId)
+        assertEquals(0L, parsed?.session?.id)
+    }
+
+    @Test
+    fun `a file without an id column has no source id`() {
+        val parsed = parse(listOf("date", "time"), listOf("2026-07-29", "10:00:00"))
+        assertEquals(null, parsed?.sourceId)
+    }
+
+    @Test
     fun `wait_seconds imports as-is`() {
         val parsed = parse(
             listOf("date", "time", "wait_seconds"),

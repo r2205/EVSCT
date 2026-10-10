@@ -110,6 +110,10 @@ object CsvFormat {
         val session: ChargingSession,
         val tripName: String?,
         val vehicleName: String?,
+        /** The row's id column: the id the session had when exported, kept
+         *  only to order the import (see ImportOrder). Never reused as the
+         *  new row's id. Null for hand-made files without one. */
+        val sourceId: Long? = null,
     )
 
     /** Returns the parsed session plus the trip and vehicle names (caller resolves IDs). */
@@ -176,6 +180,11 @@ object CsvFormat {
         // Hand-edited CSVs can carry physically impossible values (battery
         // 8500%, negative odometer, latitude 400). Nobody sees advisory
         // hints on this path, so drop them at the boundary.
-        return ParsedCsvRow(ImportSanitizer.sanitize(session), get("trip_name"), get("vehicle_name"))
+        return ParsedCsvRow(
+            ImportSanitizer.sanitize(session),
+            get("trip_name"),
+            get("vehicle_name"),
+            sourceId = get("id")?.toLongOrNull(),
+        )
     }
 }

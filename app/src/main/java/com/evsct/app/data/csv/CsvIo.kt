@@ -13,6 +13,7 @@ import com.evsct.app.data.repository.VehicleRepository
 import com.evsct.app.ui.map.TripPinColor
 import com.evsct.app.util.BoundedInputStream
 import com.evsct.app.util.ExportNaming
+import com.evsct.app.util.ImportOrder
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.ReceiptImageStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -378,17 +379,25 @@ class CsvIo @Inject constructor(
         val receiptPathsBeforeWipe =
             if (replaceExisting) sessionReceiptRepository.findAll().map { it.filePath } else emptyList()
 
+        // Parsed up front so the rows can be inserted oldest first, ties by
+        // their exported id: fresh ids then keep same-timestamp sessions in
+        // their original order instead of reversing it (see ImportOrder).
+        val parsedRows = mutableListOf<CsvFormat.ParsedCsvRow>()
+        for (i in 1 until rows.size) {
+            val row = rows[i]
+            if (row.all { it.isBlank() }) continue
+            val parsed = CsvFormat.fromRow(headers, row)
+            if (parsed == null) skipped++ else parsedRows += parsed
+        }
+        val orderedRows = ImportOrder.chronological(parsedRows, { it.session.sessionStart }, { it.sourceId })
+
         // Atomic: either every row lands or none of it does. Without this a
         // killed process or a single bad row mid-loop after deleteAll() leaves
         // the user with a partially-wiped database and no rollback.
         database.withTransaction {
             if (replaceExisting) sessionRepository.deleteAll()
 
-            for (i in 1 until rows.size) {
-                val row = rows[i]
-                if (row.all { it.isBlank() }) continue
-                val parsed = CsvFormat.fromRow(headers, row)
-                if (parsed == null) { skipped++; continue }
+            for (parsed in orderedRows) {
                 val vehicleId = parsed.vehicleName?.takeIf { it.isNotBlank() }?.let { name ->
                     vehicleIdByName.getOrPut(nameKey(name)) {
                         vehicleRepository.upsert(Vehicle(name = name))
