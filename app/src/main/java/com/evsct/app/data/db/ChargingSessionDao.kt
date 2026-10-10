@@ -86,6 +86,31 @@ interface ChargingSessionDao {
         return updated
     }
 
+    /**
+     * The Log's bulk "Assign to trip": tags [ids] with [tripId] and, since a
+     * trip is one car, gives any of them with no vehicle yet the trip's car
+     * ([tripVehicleId]) — the rule the session form already applies when a
+     * trip is picked for a session with no vehicle. Sessions already on a
+     * car keep it. The vehicle change goes through
+     * [updateAndClearStaleContinuity], because moving a session from the
+     * no-vehicle timeline onto the car's can strand a `continuesPrevious`
+     * flag just like an edit in the form. One transaction, so a failure
+     * can't leave the trip tagged without the car or the reverse.
+     */
+    @Transaction
+    suspend fun assignTripAndCar(ids: List<Long>, tripId: Long?, tripVehicleId: Long?, now: Long): Int {
+        val updated = assignTripToIdsChunked(ids, tripId, now)
+        if (tripId != null && tripVehicleId != null) {
+            for (id in ids) {
+                val session = findById(id) ?: continue
+                if (session.vehicleId == null) {
+                    updateAndClearStaleContinuity(session.copy(vehicleId = tripVehicleId, updatedAt = now), now)
+                }
+            }
+        }
+        return updated
+    }
+
     /** See [assignTripToIdsChunked] — same 999-bind-variable cap. */
     @Transaction
     suspend fun setCoordinatesForIdsChunked(ids: List<Long>, lat: Double, lng: Double, now: Long): Int {

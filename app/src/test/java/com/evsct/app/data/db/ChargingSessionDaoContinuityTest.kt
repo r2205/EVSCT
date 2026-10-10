@@ -257,6 +257,62 @@ class ChargingSessionDaoContinuityTest {
         assertTrue(dao.findById(b.id)!!.continuesPrevious)
     }
 
+    // --- bulk assign to trip ---
+
+    @Test
+    fun `bulk assign gives sessions with no vehicle the trip's car`() = runBlocking {
+        val dao = FakeSessionDao()
+        val noCar = dao.put(session(t = 100, vehicleId = null))
+        val onCar = dao.put(session(t = 200, vehicleId = 1))
+
+        dao.assignTripAndCar(listOf(noCar.id, onCar.id), tripId = 7, tripVehicleId = 1, now = 999)
+
+        assertEquals(7L, dao.findById(noCar.id)!!.tripId)
+        assertEquals(1L, dao.findById(noCar.id)!!.vehicleId)
+        assertEquals(7L, dao.findById(onCar.id)!!.tripId)
+        assertEquals(1L, dao.findById(onCar.id)!!.vehicleId)
+    }
+
+    @Test
+    fun `bulk assign leaves a session on another car where it is`() = runBlocking {
+        // The sheet doesn't offer this, but the DAO mustn't move a car's
+        // session onto a different car.
+        val dao = FakeSessionDao()
+        val other = dao.put(session(t = 100, vehicleId = 2))
+
+        dao.assignTripAndCar(listOf(other.id), tripId = 7, tripVehicleId = 1, now = 999)
+
+        assertEquals(7L, dao.findById(other.id)!!.tripId)
+        assertEquals(2L, dao.findById(other.id)!!.vehicleId)
+    }
+
+    @Test
+    fun `bulk assign to a trip with no car or to no trip leaves vehicles alone`() = runBlocking {
+        val dao = FakeSessionDao()
+        val noCar = dao.put(session(t = 100, vehicleId = null))
+
+        dao.assignTripAndCar(listOf(noCar.id), tripId = 7, tripVehicleId = null, now = 999)
+        assertNull(dao.findById(noCar.id)!!.vehicleId)
+
+        dao.assignTripAndCar(listOf(noCar.id), tripId = null, tripVehicleId = 1, now = 999)
+        assertNull(dao.findById(noCar.id)!!.tripId)
+        assertNull(dao.findById(noCar.id)!!.vehicleId)
+    }
+
+    @Test
+    fun `bulk assign moving a session onto the car clears flags it stranded`() = runBlocking {
+        // Same rule as an edit in the form: the no-vehicle session left the
+        // no-vehicle timeline, so its follower there no longer follows it.
+        val dao = FakeSessionDao()
+        val moved = dao.put(session(t = 100, vehicleId = null))
+        val follower = dao.put(session(t = 200, vehicleId = null, continuesPrevious = true))
+
+        dao.assignTripAndCar(listOf(moved.id), tripId = 7, tripVehicleId = 1, now = 999)
+
+        assertEquals(1L, dao.findById(moved.id)!!.vehicleId)
+        assertFalse(dao.findById(follower.id)!!.continuesPrevious)
+    }
+
     // --- chunked bulk updates ---
 
     @Test
