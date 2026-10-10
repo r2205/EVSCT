@@ -349,8 +349,11 @@ class SessionListViewModel @Inject constructor(
         // trip tags.
         val ids = state.value.selectedIds
         if (ids.isEmpty()) return
+        // A trip is one car: selected sessions with no vehicle take the
+        // trip's, as they would picking the trip in the session form.
+        val tripVehicleId = tripId?.let { id -> state.value.trips.firstOrNull { it.id == id }?.vehicleId }
         viewModelScope.launch {
-            sessionRepository.assignTrip(ids, tripId)
+            sessionRepository.assignTrip(ids, tripId, tripVehicleId)
             clearSelection()
         }
     }

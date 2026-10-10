@@ -37,9 +37,11 @@ class SessionRepository @Inject constructor(
 
     suspend fun insertAll(sessions: List<ChargingSession>): List<Long> = dao.insertAll(sessions)
 
-    suspend fun assignTrip(ids: Collection<Long>, tripId: Long?) {
+    /** Tag [ids] with [tripId]; those with no vehicle take [tripVehicleId],
+     *  the trip's car. See [ChargingSessionDao.assignTripAndCar]. */
+    suspend fun assignTrip(ids: Collection<Long>, tripId: Long?, tripVehicleId: Long?) {
         if (ids.isEmpty()) return
-        dao.assignTripToIdsChunked(ids.toList(), tripId, System.currentTimeMillis())
+        dao.assignTripAndCar(ids.toList(), tripId, tripVehicleId, System.currentTimeMillis())
     }
 
     suspend fun setCoordinates(ids: Collection<Long>, lat: Double, lng: Double) {
