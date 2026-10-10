@@ -89,7 +89,7 @@ class BackupReminderNotifier @Inject constructor(
             else "It's been $daysSince days since your last full backup. "
             ) + "Open EVSCT and export a backup to keep your sessions safe."
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_evsct)
             .setContentTitle("Back up your EVSCT data")
             .setContentText(contentText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))

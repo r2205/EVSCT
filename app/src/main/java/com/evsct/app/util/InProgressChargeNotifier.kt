@@ -140,7 +140,7 @@ class InProgressChargeNotifier @Inject constructor(
         val tapHint = "Tap to add cost, kWh, etc."
         val text = locationText?.let { "$it · $tapHint" } ?: tapHint
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_evsct)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
