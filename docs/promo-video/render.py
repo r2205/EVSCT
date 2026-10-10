@@ -8,6 +8,7 @@ seeked and screenshotted in headless Chromium and piped straight into ffmpeg.
     python3 render.py                      # -> evsct-promo.mp4 (1080p30)
     python3 render.py --fps 60 --out x.mp4
     python3 render.py --stills 2,7,13      # PNG stills at those seconds, no video
+    python3 render.py --no-audio           # silent (otherwise music.m4a is muxed in)
 
 Uses the Chromium that Playwright finds (`playwright install chromium`), or
 set CHROMIUM=/path/to/chrome to use a specific browser binary.
@@ -40,6 +41,8 @@ def main():
     ap.add_argument("--stills", help="comma-separated seconds; writes still-<t>.png instead of a video")
     ap.add_argument("--start", type=float, default=0.0)
     ap.add_argument("--end", type=float, default=None)
+    ap.add_argument("--audio", default=str(HERE / "music.m4a"), help="soundtrack to mux in (see music.py)")
+    ap.add_argument("--no-audio", action="store_true")
     args = ap.parse_args()
 
     with sync_playwright() as p:
@@ -62,9 +65,13 @@ def main():
         end = args.end if args.end is not None else duration
         n = int(round((end - args.start) * args.fps))
         cmd = [ffmpeg_exe(), "-y", "-loglevel", "error",
-               "-f", "image2pipe", "-framerate", str(args.fps), "-c:v", "png", "-i", "-",
-               "-c:v", "libx264", "-preset", "slow", "-crf", str(args.crf),
-               "-pix_fmt", "yuv420p", "-movflags", "+faststart", args.out]
+               "-f", "image2pipe", "-framerate", str(args.fps), "-c:v", "png", "-i", "-"]
+        audio = not args.no_audio and os.path.exists(args.audio)
+        if audio:  # the score is written against the same timeline, so offset it to --start
+            cmd += ["-ss", str(args.start), "-i", args.audio, "-map", "0:v", "-map", "1:a", "-c:a", "copy", "-shortest"]
+        cmd += ["-c:v", "libx264", "-preset", "slow", "-crf", str(args.crf),
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart", args.out]
+        print("with soundtrack " + args.audio if audio else "silent")
         ff = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         t0 = time.time()
         for i in range(n):
