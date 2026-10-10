@@ -84,6 +84,71 @@ class TripDistanceTest {
     }
 
     @Test
+    fun `a lone start reading extends the trip back to where it left`() {
+        // The bug: the spread ignored the start reading (250 km) while the
+        // efficiency legs measured from it (500 km), doubling $/km.
+        val trip = trip(startOdo = 10_000.0, vehicleId = 1)
+        val sessions = listOf(
+            session(id = 1, odo = 10_250.0, vehicleId = 1),
+            session(id = 2, odo = 10_500.0, vehicleId = 1),
+        )
+        assertEquals(500.0, TripDistance.km(trip, sessions), 1e-9)
+    }
+
+    @Test
+    fun `a lone end reading extends the trip forward to where it finished`() {
+        val trip = trip(endOdo = 10_700.0, vehicleId = 1)
+        val sessions = listOf(
+            session(id = 1, odo = 10_250.0, vehicleId = 1),
+            session(id = 2, odo = 10_500.0, vehicleId = 1),
+        )
+        assertEquals(450.0, TripDistance.km(trip, sessions), 1e-9)
+    }
+
+    @Test
+    fun `a lone reading and one session make a distance`() {
+        val trip = trip(startOdo = 10_000.0, vehicleId = 1)
+        assertEquals(
+            300.0,
+            TripDistance.km(trip, listOf(session(id = 1, odo = 10_300.0, vehicleId = 1))),
+            1e-9,
+        )
+    }
+
+    @Test
+    fun `a lone reading on the wrong side of the sessions is ignored`() {
+        // A start reading above the sessions' readings is a typo.
+        val trip = trip(startOdo = 20_000.0, vehicleId = 1)
+        val sessions = listOf(
+            session(id = 1, odo = 10_250.0, vehicleId = 1),
+            session(id = 2, odo = 10_500.0, vehicleId = 1),
+        )
+        assertEquals(250.0, TripDistance.km(trip, sessions), 1e-9)
+    }
+
+    @Test
+    fun `a lone reading on a trip with no car is not used`() {
+        // Without a car the reading can't be placed against any odometer —
+        // TripReport doesn't measure from it either.
+        val trip = trip(startOdo = 10_000.0)
+        val sessions = listOf(
+            session(id = 1, odo = 10_250.0, vehicleId = 1),
+            session(id = 2, odo = 10_500.0, vehicleId = 1),
+        )
+        assertEquals(250.0, TripDistance.km(trip, sessions), 1e-9)
+    }
+
+    @Test
+    fun `reversed readings on a trip with a car fall back to the sessions`() {
+        val trip = trip(startOdo = 10_650.0, endOdo = 10_000.0, vehicleId = 1)
+        val sessions = listOf(
+            session(id = 1, odo = 10_100.0, vehicleId = 1),
+            session(id = 2, odo = 10_400.0, vehicleId = 1),
+        )
+        assertEquals(300.0, TripDistance.km(trip, sessions), 1e-9)
+    }
+
+    @Test
     fun `no readings at all is zero`() {
         assertEquals(0.0, TripDistance.km(trip(), emptyList()), 1e-9)
         assertEquals(
