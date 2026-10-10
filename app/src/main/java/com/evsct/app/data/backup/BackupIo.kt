@@ -16,6 +16,7 @@ import com.evsct.app.data.entity.Vehicle
 import com.evsct.app.ui.map.TripPinColor
 import com.evsct.app.util.BackupReminderScheduler
 import com.evsct.app.util.ExportNaming
+import com.evsct.app.util.ImportOrder
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.TripVehicleInference
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -493,7 +494,11 @@ class BackupIo @Inject constructor(
                     tripIdMap[raw.id] = newId
                 }
 
-                val sessionEntities = payload.sessions.map { raw ->
+                // Oldest first, ties by their exported id, so the fresh ids
+                // keep same-timestamp sessions in their original order (see
+                // ImportOrder). Used for the receipt zip below too.
+                val orderedSessions = ImportOrder.chronological(payload.sessions, { it.sessionStart }, { it.id })
+                val sessionEntities = orderedSessions.map { raw ->
                     ChargingSession(
                         id = 0,
                         sessionStart = raw.sessionStart,
@@ -532,10 +537,10 @@ class BackupIo @Inject constructor(
                     )
                 }
                 // insertAll returns the new auto-generated ids in input
-                // order — zip back against the raw list so we can attach
-                // each session's receipts to its fresh id.
+                // order — zip back against the same ordered list so we can
+                // attach each session's receipts to its fresh id.
                 val newSessionIds = sessionDao.insertAll(sessionEntities)
-                val receiptRows = payload.sessions
+                val receiptRows = orderedSessions
                     .zip(newSessionIds)
                     .flatMap { (raw, newSessionId) ->
                         raw.receipts.mapNotNull { entry ->
