@@ -420,11 +420,13 @@ fun SessionEditScreen(
                     state.batteryEndText,
                 ).count { it.isNotBlank() },
                 demandsAttention = HintField.BATTERY_START in warnedFields ||
-                    HintField.BATTERY_END in warnedFields,
+                    HintField.BATTERY_END in warnedFields ||
+                    HintField.WAIT_TIME in warnedFields,
             ) {
                 DurationField(
                     value = state.waitTimeText,
                     label = stringResource(R.string.form_wait_time_optional),
+                    isError = HintField.WAIT_TIME in warnedFields,
                     onValue = { v -> viewModel.update { it.copy(waitTimeText = v) } },
                 )
                 Row(

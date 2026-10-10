@@ -50,7 +50,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class HintField {
-    ODOMETER, ENERGY, COST, DURATION,
+    ODOMETER, ENERGY, COST, DURATION, WAIT_TIME,
     POSTED_ENERGY_PRICE, POSTED_TIME_RATE, POSTED_MAX_POWER,
     BATTERY_START, BATTERY_END,
 }
@@ -735,6 +735,21 @@ class SessionEditViewModel @Inject constructor(
             )
         }
 
+        // Listed first: unlike every other hint, this one means data is
+        // about to be lost.
+        val unreadable = unreadableFields(form)
+        if (unreadable.isNotEmpty()) {
+            out.add(
+                0,
+                ValidationHint(
+                    title = "Can't read a value",
+                    detail = "Highlighted fields will be saved blank. Use digits with one decimal " +
+                        "point (e.g. 48.2) and no units; durations like 25, 32:14 or 1:25:00.",
+                    fields = unreadable,
+                ),
+            )
+        }
+
         return out
     }
 
@@ -1276,6 +1291,35 @@ class SessionEditViewModel @Inject constructor(
             orphans.forEach { receiptImageStore.delete(it) }
         }
     }
+}
+
+/**
+ * Fields holding text the save path can't read, which it would save as
+ * blank. Pasted units ("48.2 kWh"), a currency sign, a doubled point or
+ * space-grouped thousands used to vanish without a word.
+ *
+ * File-level, like [computeRecentStops], so a test can drive it without the
+ * Hilt ViewModel.
+ */
+internal fun unreadableFields(form: SessionEditUi): Set<HintField> {
+    val out = mutableSetOf<HintField>()
+    fun number(text: String, field: HintField) {
+        if (text.isNotBlank() && Format.parseDecimal(text) == null) out += field
+    }
+    fun duration(text: String, field: HintField) {
+        if (text.isNotBlank() && DurationFormat.parse(text) == null) out += field
+    }
+    number(form.odometerText, HintField.ODOMETER)
+    number(form.energyText, HintField.ENERGY)
+    number(form.costText, HintField.COST)
+    number(form.postedEnergyPriceText, HintField.POSTED_ENERGY_PRICE)
+    number(form.postedTimeRateText, HintField.POSTED_TIME_RATE)
+    number(form.postedMaxPowerText, HintField.POSTED_MAX_POWER)
+    number(form.batteryStartText, HintField.BATTERY_START)
+    number(form.batteryEndText, HintField.BATTERY_END)
+    duration(form.durationText, HintField.DURATION)
+    duration(form.waitTimeText, HintField.WAIT_TIME)
+    return out
 }
 
 /**

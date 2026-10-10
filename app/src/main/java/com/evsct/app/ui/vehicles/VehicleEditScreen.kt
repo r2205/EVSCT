@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.evsct.app.R
 import com.evsct.app.ui.readableFormWidth
+import com.evsct.app.util.Format
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -250,6 +251,7 @@ fun VehicleEditScreen(
                 NumField(
                     label = stringResource(R.string.vehicleedit_year),
                     value = state.year,
+                    readable = { parseYear(it) != null },
                     modifier = Modifier.weight(1f),
                 ) { v -> viewModel.update { it.copy(year = v) } }
                 TextEntry(
@@ -281,11 +283,13 @@ fun VehicleEditScreen(
                 NumField(
                     label = stringResource(R.string.vehicleedit_battery_kwh),
                     value = state.batteryKwh,
+                    readable = { Format.parseDecimal(it) != null },
                     modifier = Modifier.weight(1f),
                 ) { v -> viewModel.update { it.copy(batteryKwh = v) } }
                 NumField(
                     label = stringResource(R.string.vehicleedit_range_unit, com.evsct.app.util.Units.distanceUnit(state.useMiles)),
                     value = state.rangeText,
+                    readable = { Format.parseDecimal(it) != null },
                     modifier = Modifier.weight(1f),
                 ) { v -> viewModel.update { it.copy(rangeText = v) } }
             }
@@ -438,14 +442,19 @@ private fun ProfileImage(
     }
 }
 
+/** A number entry. [readable] is the save path's own parse, so text it
+ *  can't read (pasted units, a doubled point) is flagged instead of being
+ *  saved blank without a word. */
 @Composable
 private fun NumField(
     label: String,
     value: String,
+    readable: (String) -> Boolean,
     modifier: Modifier = Modifier.fillMaxWidth(),
     onValue: (String) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
+    val unreadable = value.isNotBlank() && !readable(value)
     OutlinedTextField(
         value = value,
         onValueChange = onValue,
@@ -458,6 +467,12 @@ private fun NumField(
             onNext = { focusManager.moveFocus(FocusDirection.Next) },
         ),
         singleLine = true,
+        isError = unreadable,
+        supportingText = if (unreadable) {
+            { Text(stringResource(R.string.vehicleedit_unreadable_number)) }
+        } else {
+            null
+        },
         modifier = modifier,
     )
 }

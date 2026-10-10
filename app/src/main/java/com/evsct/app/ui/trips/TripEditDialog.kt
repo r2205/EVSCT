@@ -143,6 +143,11 @@ fun TripEditDialog(
     // negative distance).
     val odometerError = startKm != null && endKm != null && startKm > endKm
 
+    // The filter admits only digits, '.' and ',', but "12..5" or "1.234.5"
+    // still can't be read, and would save as no reading at all.
+    val startUnreadable = startText.isNotBlank() && startKm == null
+    val endUnreadable = endText.isNotBlank() && endKm == null
+
     // Input is digit-filtered, so the only invalid shape is out-of-range.
     val startBatt = startBattText.toIntOrNull()
     val endBatt = endBattText.toIntOrNull()
@@ -241,7 +246,7 @@ fun TripEditDialog(
                         onValueChange = { startText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
                         label = { Text(stringResource(R.string.tripedit_start_odometer, unitLabel)) },
                         singleLine = true,
-                        isError = odometerError,
+                        isError = odometerError || startUnreadable,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f),
                     )
@@ -250,7 +255,7 @@ fun TripEditDialog(
                         onValueChange = { endText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
                         label = { Text(stringResource(R.string.tripedit_end_odometer, unitLabel)) },
                         singleLine = true,
-                        isError = odometerError,
+                        isError = odometerError || endUnreadable,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f),
                     )
@@ -258,6 +263,13 @@ fun TripEditDialog(
                 if (odometerError) {
                     Text(
                         stringResource(R.string.tripedit_odometer_order_error, unitLabel, unitLabel),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (startUnreadable || endUnreadable) {
+                    Text(
+                        stringResource(R.string.tripedit_odometer_unreadable),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -322,7 +334,7 @@ fun TripEditDialog(
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank() && !odometerError && !batteryError && !dateError &&
-                    !vehicleMissing,
+                    !vehicleMissing && !startUnreadable && !endUnreadable,
                 onClick = {
                     val merged = (trip ?: Trip(name = name.trim())).copy(
                         name = name.trim(),
