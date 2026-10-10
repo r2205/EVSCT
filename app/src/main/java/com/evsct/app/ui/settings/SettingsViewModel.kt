@@ -9,8 +9,6 @@ import com.evsct.app.data.backup.PrepareShareResult
 import com.evsct.app.data.csv.CsvImportResult
 import com.evsct.app.data.csv.CsvIo
 import com.evsct.app.data.csv.PrepareCsvShareResult
-import com.evsct.app.data.csv.XlsxImportResult
-import com.evsct.app.data.csv.XlsxImporter
 import com.evsct.app.data.prefs.AppPreferences
 import com.evsct.app.data.prefs.BackupReminderSettings
 import com.evsct.app.data.prefs.CardTimeRate
@@ -36,7 +34,7 @@ import kotlinx.coroutines.withContext
  *  one of the lower cards. */
 enum class SettingsOp {
     EXPORT_BACKUP, SHARE_BACKUP, RESTORE, UNDO_RESTORE,
-    EXPORT_CSV, SHARE_CSV, IMPORT_CSV, IMPORT_XLSX,
+    EXPORT_CSV, SHARE_CSV, IMPORT_CSV,
 }
 
 data class SettingsUi(
@@ -67,7 +65,6 @@ data class SettingsUi(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val csvIo: CsvIo,
-    private val xlsxImporter: XlsxImporter,
     private val backupIo: BackupIo,
     private val appPreferences: AppPreferences,
     private val backupReminderScheduler: BackupReminderScheduler,
@@ -216,24 +213,6 @@ class SettingsViewModel @Inject constructor(
         if (replaceExisting) refreshSnapshotInfo()
     }
 
-    fun importXlsx(uri: Uri) = viewModelScope.launch {
-        transient.update { it.copy(busyOp = SettingsOp.IMPORT_XLSX, feedback = null) }
-        runCatching { xlsxImporter.import(uri) }
-            .onSuccess { result: XlsxImportResult ->
-                finish(OpFeedback(
-                    title = "XLSX import complete",
-                    body = "Imported ${result.imported} sessions from XLSX " +
-                        "(skipped ${result.skipped}).",
-                ))
-            }
-            .onFailure { e ->
-                finish(OpFeedback(
-                    title = "XLSX import failed",
-                    body = humanFailure("The spreadsheet couldn't be read", e.message),
-                    isError = true,
-                ))
-            }
-    }
 
     fun exportBackup(uri: Uri) = viewModelScope.launch {
         transient.update { it.copy(busyOp = SettingsOp.EXPORT_BACKUP, feedback = null) }

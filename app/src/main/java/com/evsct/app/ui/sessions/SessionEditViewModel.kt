@@ -57,7 +57,7 @@ enum class HintField {
 
 /** Entry unit for the posted time-based rate field. Stations advertise in
  *  either; storage stays canonical $/min ([ChargingSession.postedTimeRatePerMin])
- *  so every downstream consumer (hints, CSV, XLSX, backup) is unaffected —
+ *  so every downstream consumer (hints, CSV, backup) is unaffected —
  *  the unit only governs how the typed text is interpreted and echoed. */
 enum class TimeRateUnit(val suffix: String) {
     PER_MINUTE("min"),
@@ -950,7 +950,7 @@ class SessionEditViewModel @Inject constructor(
                 },
                 postedEnergyPricePerKwh = Format.parseDecimal(s.postedEnergyPriceText),
                 // Storage is canonical $/min; a $/hr entry converts here so
-                // nothing downstream (hints, CSV, XLSX, backup) changes.
+                // nothing downstream (hints, CSV, backup) changes.
                 postedTimeRatePerMin = Format.parseDecimal(s.postedTimeRateText)?.let {
                     if (s.postedTimeRateUnit == TimeRateUnit.PER_HOUR) it / 60.0 else it
                 },

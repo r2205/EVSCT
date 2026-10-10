@@ -100,7 +100,6 @@ fun SettingsScreen(
     // otherwise see the flag reset to false and quietly downgrade a
     // replace-import into an append that duplicates the whole log.
     var replaceOnImport by rememberSaveable { mutableStateOf(false) }
-    var showXlsxConfirm by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf<android.net.Uri?>(null) }
     var showUndoRestoreConfirm by remember { mutableStateOf(false) }
     var showCsvReplaceConfirm by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -119,10 +118,6 @@ fun SettingsScreen(
             else viewModel.importCsv(it, replaceExisting = false)
         }
     }
-
-    val xlsxImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let { viewModel.importXlsx(it) } }
 
     val backupExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip"),
@@ -404,49 +399,8 @@ fun SettingsScreen(
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.settings_one_time_xlsx_import), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        stringResource(R.string.settings_import_the_legacy_dc),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    OutlinedButton(
-                        onClick = { showXlsxConfirm = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !state.busy,
-                    ) {
-                        BusyButtonContent(stringResource(R.string.settings_import_xlsx), state.busyOp == SettingsOp.IMPORT_XLSX)
-                    }
-                }
-            }
-
             AboutCard(context = context)
         }
-    }
-
-    if (showXlsxConfirm) {
-        AlertDialog(
-            onDismissRequest = { showXlsxConfirm = false },
-            title = { Text(stringResource(R.string.settings_import_legacy_xlsx)) },
-            text = {
-                Text(
-                    stringResource(R.string.settings_this_will_append_every)
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showXlsxConfirm = false
-                    xlsxImportLauncher.launch(arrayOf(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "application/octet-stream",
-                    ))
-                }) { Text(stringResource(R.string.settings_pick_file)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showXlsxConfirm = false }) { Text(stringResource(R.string.settings_cancel)) }
-            },
-        )
     }
 
     showCsvReplaceConfirm?.let { uri ->

@@ -43,7 +43,7 @@ class ImportTieOrderTest {
         val source = newDb()
         val car = source.vehicleDao().insert(Vehicle(name = "EV6"))
         // Inserted in true order; the two day-2 charges share a midnight
-        // timestamp, as date-only CSV or XLSX rows do.
+        // timestamp, as date-only CSV rows do.
         listOf(10_000.0 to 0L, 10_100.0 to day, 10_300.0 to day, 10_500.0 to 2 * day).forEach { (odo, t) ->
             source.sessionDao().insert(ChargingSession(sessionStart = t, odometerKm = odo, vehicleId = car))
         }

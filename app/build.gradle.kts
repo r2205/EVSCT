@@ -234,9 +234,6 @@ dependencies {
     ksp(libs.hilt.compiler)
     ksp(libs.androidx.hilt.compiler)
 
-    implementation(libs.apache.poi)
-    implementation(libs.apache.poi.ooxml)
-
     implementation(libs.coil.compose)
 
     implementation(libs.play.services.maps)

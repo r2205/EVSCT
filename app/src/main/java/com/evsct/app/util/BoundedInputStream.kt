@@ -6,12 +6,12 @@ import java.io.InputStream
 
 /**
  * Passes [delegate] through until more than [limit] bytes have been read,
- * then throws the [IOException] that [onExceeded] builds. For the import
- * paths that hand a user-picked stream to a parser which slurps it whole
- * (the CSV reader, POI's workbook loader): without a bound, a mis-picked
- * multi-hundred-megabyte file is an out-of-memory crash rather than an
- * error message. The backup restore path meters its zip entries the same
- * way; this is the streaming equivalent for readers we don't control.
+ * then throws the [IOException] that [onExceeded] builds. For an import
+ * path that hands a user-picked stream to a reader which slurps it whole
+ * (the CSV import): without a bound, a mis-picked multi-hundred-megabyte
+ * file is an out-of-memory crash rather than an error message. The backup
+ * restore path meters its zip entries the same way; this is the streaming
+ * equivalent for readers we don't control.
  */
 class BoundedInputStream(
     delegate: InputStream,

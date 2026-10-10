@@ -23,7 +23,6 @@ context is in the repo even if the conversation is summarized later.
   `hilt-navigation-compose`)
 - WorkManager 2.10.0 for the background backup-reminder check
 - Coil 2.7 for image loading
-- Apache POI for one-shot legacy XLSX import
 - DataStore Preferences for cross-screen prefs
 - Google Maps SDK + Maps Compose 4.4.1 + maps-compose-utils
   (for clustering, BitmapDescriptor pins, and `HeatmapTileProvider`)
@@ -1121,12 +1120,17 @@ of years where they have data) and recomputes the recap on each pick.
     `=`, `+`, `-`, `@`, tab, or CR is prefixed with `'` on export.
     Import strips a leading `'` only when followed by a trigger char,
     so the round-trip is asymmetric and never injects a real apostrophe.
-- **Legacy XLSX importer**: one-shot for the original
-  `DC Fast Charging.xlsx`. Auto-tags imported rows with the user's
-  default vehicle (if one exists at import time). Apache POI parses
-  Excel duration cells (fraction-of-a-day) and date cells. Hardened
-  with `ZipSecureFile.setMaxFileCount(2_000L)` and bounded reads to
-  defuse zip-bomb-style attacks.
+- **Legacy XLSX importer — removed (October 2026).** It was a one-shot
+  import of the original `DC Fast Charging.xlsx`, long since run, and no
+  other sheet would match its layout. Apache POI and its XML libraries,
+  which R8 had to keep whole, were about half the release build's classes:
+  removing them took the release APK from 16.9 MB to 5.1 MB. It also
+  retired two open bugs that only existed because of it: time cells
+  imported a second early (truncation, so about 13% of whole-minute
+  times displayed a minute early) and poi-ooxml 5.3.0's CVE-2025-31672.
+  Sessions it imported are ordinary rows and are unaffected. The code is
+  in git history before PR "Remove the legacy XLSX importer" if ever
+  needed; CSV import covers any spreadsheet re-saved as CSV.
 
 ### Backup reminder
 
@@ -1339,8 +1343,7 @@ Cards (top to bottom):
    announces one labeled switch.
 6. **Backup (CSV)** — Export to CSV… / Share CSV file….
 7. **Import (CSV)** — Import CSV with replace-existing toggle.
-8. **One-time XLSX import** — for the legacy log.
-9. **About** — running build version + git commit (the commit line
+8. **About** — running build version + git commit (the commit line
    links to the matching GitHub commit on clean builds), plus View on
    GitHub and Privacy-policy links. All three go through an `openUrl`
    helper that shows a toast instead of crashing when no browser is
@@ -1426,7 +1429,7 @@ the unit pref as a parameter; aggregates pass the default-currency to
 - **`util/SessionAverages.kt`** — per-session-paired avg power and avg
   $/kWh for Stats and Vehicle detail.
 - **`util/BoundedInputStream.kt`** — throws a caller-built `IOException`
-  past a byte limit; used by the CSV and XLSX importers.
+  past a byte limit; used by the CSV importer.
 - **`util/ExportNaming.kt`** — the single owner of backup / CSV export
   filenames (see Backup & export).
 - **`util/Tags.kt`** — comma-joined-string parsing for the new tags
@@ -1482,9 +1485,9 @@ the unit pref as a parameter; aggregates pass the default-currency to
   exclusion of tags already on the session, limits, and the
   canonical re-casing.
 - **`data/csv/ImportSanitizerTest.kt`** (sweep #8/#16) — the import
-  range gate (impossible battery/negative values nulled, refunds kept),
-  the XLSX percent heuristic, and the time-of-day / duration cell
-  interpreters (datetime-serial overflow case included).
+  range gate (impossible battery/negative values nulled, refunds kept)
+  and the CSV path applying it end to end. (Its XLSX cell-interpreter
+  cases went with the importer.)
 - **`data/db/ChargingSessionDaoContinuityTest.kt`** (sweep #7) — the
   DAO's default `@Transaction` methods that clear a stale
   `continuesPrevious` when its attested predecessor is deleted or
