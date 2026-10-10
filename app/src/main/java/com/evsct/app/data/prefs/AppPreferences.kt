@@ -42,6 +42,10 @@ class AppPreferences @Inject constructor(
         private val REMINDER_ENABLED = booleanPreferencesKey("backup_reminder_enabled")
         private val REMINDER_THRESHOLD_DAYS = longPreferencesKey("backup_reminder_threshold_days")
         private val REMINDER_NOTIFY = booleanPreferencesKey("backup_reminder_notify")
+        /** Epoch millis the backup-reminder notification was last posted
+         *  (with sound). Paces it to once a day: see
+         *  [com.evsct.app.util.BackupReminderNotifier]. */
+        private val REMINDER_LAST_POSTED_AT = longPreferencesKey("backup_reminder_last_posted_at")
         private val USE_MILES = booleanPreferencesKey("use_miles")
         private val DEFAULT_CURRENCY = stringPreferencesKey("default_currency")
         /** [CardTimeRate] enum name controlling the time-cost rate shown on
@@ -133,6 +137,14 @@ class AppPreferences @Inject constructor(
 
     suspend fun setReminderNotifyEnabled(notify: Boolean) {
         dataStore.edit { it[REMINDER_NOTIFY] = notify }
+    }
+
+    /** When the backup-reminder notification was last posted, or null. */
+    suspend fun reminderLastPostedAt(): Long? =
+        dataStore.data.first()[REMINDER_LAST_POSTED_AT]?.takeIf { it > 0 }
+
+    suspend fun recordReminderPosted(epochMillis: Long = System.currentTimeMillis()) {
+        dataStore.edit { it[REMINDER_LAST_POSTED_AT] = epochMillis }
     }
 
     suspend fun setUseMiles(useMiles: Boolean) {

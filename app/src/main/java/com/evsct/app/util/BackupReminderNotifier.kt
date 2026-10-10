@@ -58,20 +58,44 @@ class BackupReminderNotifier @Inject constructor(
             // this branch the worker chain re-armed forever without ever
             // posting anything.)
             val sessionCount = sessionRepository.observeAll().first().size
-            if (sessionCount >= AppPreferences.BACKUP_NUDGE_MIN_SESSIONS) post(daysSince = null)
+            if (sessionCount >= AppPreferences.BACKUP_NUDGE_MIN_SESSIONS) remind(daysSince = null)
             else cancel()
             return
         }
         val daysSince = (System.currentTimeMillis() - lastBackupAt) / 86_400_000L
-        if (daysSince >= reminder.thresholdDays) post(daysSince) else cancel()
+        if (daysSince >= reminder.thresholdDays) remind(daysSince) else cancel()
     }
 
     fun cancel() {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
     }
 
-    /** [daysSince] is null for the never-backed-up nudge. */
-    private fun post(daysSince: Long?) {
+    /**
+     * Show the reminder, paced to once a day. refresh() runs on every app
+     * foregrounding, and posting each time sounded the channel again on
+     * every return to the app, even coming back from the photo picker.
+     * See [reminderAction].
+     */
+    private suspend fun remind(daysSince: Long?) {
+        val now = System.currentTimeMillis()
+        when (reminderAction(isShowing(), appPreferences.reminderLastPostedAt(), now)) {
+            ReminderAction.REFRESH_SILENTLY -> post(daysSince, silently = true)
+            ReminderAction.POST -> {
+                post(daysSince, silently = false)
+                appPreferences.recordReminderPosted(now)
+            }
+            ReminderAction.LEAVE_DISMISSED -> Unit
+        }
+    }
+
+    private fun isShowing(): Boolean {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return nm.activeNotifications.any { it.id == NOTIFICATION_ID }
+    }
+
+    /** [daysSince] is null for the never-backed-up nudge. [silently] keeps
+     *  an update to a notification already in the shade from sounding. */
+    private fun post(daysSince: Long?, silently: Boolean) {
         ensureChannel()
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -95,6 +119,7 @@ class BackupReminderNotifier @Inject constructor(
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(silently)
             .setContentIntent(pending)
             .build()
         try {
@@ -124,4 +149,25 @@ class BackupReminderNotifier @Inject constructor(
             Manifest.permission.POST_NOTIFICATIONS,
         ) == PackageManager.PERMISSION_GRANTED
     }
+}
+
+internal enum class ReminderAction { POST, REFRESH_SILENTLY, LEAVE_DISMISSED }
+
+/** How long a reminder the user dismissed (or tapped) stays away. Under a
+ *  day so the scheduler's daily check, which can land a little early after
+ *  Doze batching, still finds the reminder due. */
+internal const val REMINDER_REPOST_INTERVAL_MS = 20L * 60 * 60 * 1000
+
+/**
+ * What an overdue reminder should do right now. Already in the shade: update
+ * it without sound, so the day count stays current. Gone, and last posted
+ * within [REMINDER_REPOST_INTERVAL_MS]: the user dismissed or tapped it
+ * today, so leave it gone until the next daily nag. Otherwise: post, with
+ * sound. File-level so a test can drive it without a NotificationManager.
+ */
+internal fun reminderAction(isShowing: Boolean, lastPostedAt: Long?, now: Long): ReminderAction = when {
+    isShowing -> ReminderAction.REFRESH_SILENTLY
+    lastPostedAt != null && now - lastPostedAt in 0 until REMINDER_REPOST_INTERVAL_MS ->
+        ReminderAction.LEAVE_DISMISSED
+    else -> ReminderAction.POST
 }
