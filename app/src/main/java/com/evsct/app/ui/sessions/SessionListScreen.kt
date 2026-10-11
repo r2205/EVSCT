@@ -802,7 +802,9 @@ private fun TripPickerSheet(
             )
             Spacer(Modifier.height(8.dp))
             TripPickerRow(
-                label = stringResource(R.string.log_unassigned),
+                // "No trip", not "Unassigned": everywhere else Unassigned
+                // means a session with no vehicle.
+                label = stringResource(R.string.log_no_trip),
                 emphasis = false,
                 onClick = { onPick(null) },
             )
