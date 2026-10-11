@@ -578,10 +578,7 @@
     <string name="settings_full_backup">Full backup</string>
     <string name="settings_import">Import</string>
     <string name="settings_import_csv">Import CSV…</string>
-    <string name="settings_import_legacy_xlsx">Import legacy XLSX?</string>
     <string name="settings_import_sessions_from_a">Import sessions from a previously exported CSV.</string>
-    <string name="settings_import_the_legacy_dc">Import the legacy \"DC Fast Charging.xlsx\" sheet you\'ve been keeping. This is intended to be run once when first setting up the app.</string>
-    <string name="settings_import_xlsx">Import legacy XLSX…</string>
     <string name="settings_kilometres">Kilometres</string>
     <string name="settings_last_backed_up">"Last backed up: "</string>
     <string name="settings_manage_your_evs_and">Manage your EVs and choose a default for new sessions.</string>
@@ -589,8 +586,6 @@
     <string name="settings_never">never</string>
     <string name="settings_nudge_me_when_its">Nudge me when it\'s been a while since my last full backup.</string>
     <string name="settings_ok">OK</string>
-    <string name="settings_one_time_xlsx_import">One-time XLSX import</string>
-    <string name="settings_pick_file">Pick file</string>
     <string name="settings_privacy_policy">Privacy policy</string>
     <string name="settings_rate_off">Off</string>
     <string name="settings_rate_per_hr">$/hr</string>
@@ -615,7 +610,6 @@
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_this_replaces_everything_currently">This replaces everything currently in the app with the snapshot taken just before your last restore or replace-import. The data you\'re replacing is snapshotted first, so you can undo the undo.</string>
-    <string name="settings_this_will_append_every">This will append every row from the chosen .xlsx into your sessions. Run it only once to avoid duplicates.</string>
     <string name="settings_this_will_erase_every">This will erase every session, trip, and vehicle currently in the app and replace them with the contents of the backup file. A snapshot of your current data is saved automatically first, so you can undo this from Settings if it\'s the wrong file.</string>
     <string name="settings_threshold_range">Between %1$d and %2$d days. Default: %3$d.</string>
     <string name="settings_time_rate_on_cards">Time rate on cards</string>

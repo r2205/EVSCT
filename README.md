@@ -399,8 +399,6 @@ motion-graphics tour built from these screenshots with an original score, or
   payment round-trip too.
 - **Import (CSV)** — Round-trips with the CSV export, with a "replace
   existing" toggle.
-- **One-time XLSX import** — for the legacy `DC Fast Charging.xlsx`
-  log; auto-tags imported rows with the default vehicle.
 - **About** — the running build version and git commit (linked to that
   commit on GitHub for clean builds), plus View on GitHub and privacy
   policy links.
@@ -534,17 +532,6 @@ only needs R8 + release lint to run).
    the app signing key's SHA-1 to your Maps API key — see the callout in the
    [Google Maps API key](#google-maps-api-key) section above.
 
-## Importing an existing xlsx log
-
-1. Drop your xlsx (e.g. `DC Fast Charging.xlsx`) somewhere reachable on the
-   phone (Drive, local storage, etc.).
-2. **Settings → Import legacy XLSX…** and pick the file.
-3. Confirm — the importer is one-shot, so re-running it would create
-   duplicates.
-
-If the XLSX importer gives trouble (POI on Android can be finicky), export
-the sheet to CSV from Google Sheets and use **Import CSV…** instead.
-
 ## Migrating to a new phone
 
 1. On the old phone, **Settings → Full backup**. Either:
@@ -585,7 +572,6 @@ Like any restore, it replaces the data already on the phone.
   recap is rendered as plain inline SVG (no chart/map libraries). Its map
   basemap is bundled from [Natural Earth](https://www.naturalearthdata.com/)
   1:50m admin-1 data (public domain), simplified to a small outline.
-- Apache POI for the legacy XLSX importer (one-shot only)
 - DataStore Preferences for cross-screen settings (units, currency,
   backup reminder, map prefs, last-backup timestamp)
 - Screen text lives in `res/values/strings.xml`, so a translation is one
