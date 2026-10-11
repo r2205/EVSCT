@@ -40,7 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -104,7 +104,10 @@ fun YearRecapScreen(
     // Mirror the Full backup share flow: VM writes a recap file to cacheDir,
     // posts it here, we wrap with FileProvider and fire ACTION_SEND. The mime
     // type follows the file extension since the same channel carries both the
-    // PDF and HTML exports.
+    // PDF and HTML exports. The chooser title is resolved here, where Compose
+    // tracks configuration changes, rather than with context.getString
+    // inside the effect.
+    val shareTitle = stringResource(R.string.recap_share_title)
     LaunchedEffect(state.pendingShareFile) {
         val file = state.pendingShareFile ?: return@LaunchedEffect
         val authority = "${context.packageName}.fileprovider"
@@ -117,7 +120,7 @@ fun YearRecapScreen(
             putExtra(Intent.EXTRA_TITLE, file.name)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(send, context.getString(R.string.recap_share_title)))
+        context.startActivity(Intent.createChooser(send, shareTitle))
         viewModel.consumePendingShare()
     }
 
@@ -243,7 +246,7 @@ fun YearRecapScreen(
 @Composable
 private fun YearTabs(years: List<Int>, selected: Int, onSelect: (Int) -> Unit) {
     val selectedIndex = years.indexOf(selected).coerceAtLeast(0)
-    ScrollableTabRow(
+    SecondaryScrollableTabRow(
         selectedTabIndex = selectedIndex,
         edgePadding = 12.dp,
         containerColor = MaterialTheme.colorScheme.surface,

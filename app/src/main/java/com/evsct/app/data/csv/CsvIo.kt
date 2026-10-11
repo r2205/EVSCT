@@ -305,7 +305,7 @@ class CsvIo @Inject constructor(
         // the reader keeps as U+FEFF (not whitespace, so trim() keeps it too).
         // Left in place it glues onto the first header name and every row
         // fails the header lookup.
-        val text = raw.removePrefix("﻿")
+        val text = raw.removePrefix("\uFEFF")
 
         val rows = Csv.parseAll(text)
         if (rows.isEmpty()) return@withContext CsvImportResult(0, 0)

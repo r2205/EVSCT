@@ -132,6 +132,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            // Drop resources nothing references once R8 has removed the code
+            // that used them, mostly from libraries.
+            isShrinkResources = true
             // Sign with the real upload keystore when keystore.properties is
             // present (see keystore.properties.template), producing the AAB you
             // upload to Play. Without it, fall back to the debug keystore so a

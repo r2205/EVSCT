@@ -84,7 +84,7 @@ internal fun MapTypeMenu(
         if (hasHeatmap) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.maptype_heatmap)) },
-                onClick = { onToggleHeatmap(!heatmapEnabled!!) },
+                onClick = { onToggleHeatmap(!heatmapEnabled) },
                 trailingIcon = {
                     if (heatmapEnabled == true) {
                         Icon(Icons.Default.Check, contentDescription = stringResource(R.string.maptype_heatmap_on))
@@ -96,7 +96,7 @@ internal fun MapTypeMenu(
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.maptype_trip_routes)) },
                 enabled = polylinesAvailable,
-                onClick = { onTogglePolylines(!polylinesEnabled!!) },
+                onClick = { onTogglePolylines(!polylinesEnabled) },
                 trailingIcon = {
                     if (polylinesEnabled == true) {
                         Icon(Icons.Default.Check, contentDescription = stringResource(R.string.maptype_trip_routes_on))
@@ -107,7 +107,7 @@ internal fun MapTypeMenu(
         if (hasColorByTrip) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.maptype_color_pins_by_trip)) },
-                onClick = { onToggleColorByTrip(!colorByTripEnabled!!) },
+                onClick = { onToggleColorByTrip(!colorByTripEnabled) },
                 trailingIcon = {
                     if (colorByTripEnabled == true) {
                         Icon(Icons.Default.Check, contentDescription = stringResource(R.string.maptype_trip_colors_on))
@@ -118,7 +118,7 @@ internal fun MapTypeMenu(
         if (hasClustering) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.maptype_cluster_nearby_pins)) },
-                onClick = { onToggleClustering(!clusteringEnabled!!) },
+                onClick = { onToggleClustering(!clusteringEnabled) },
                 trailingIcon = {
                     if (clusteringEnabled == true) {
                         Icon(Icons.Default.Check, contentDescription = stringResource(R.string.maptype_clustering_on))

@@ -57,5 +57,10 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
+      # Full Android Lint, not just the fatal subset the release build runs.
+      # Fails on errors only; warnings stay in the report.
+      - name: Run Android Lint
+        run: ./gradlew lintDebug --stacktrace
+
       - name: Build release APK (runs R8 + release lint)
         run: ./gradlew assembleRelease --stacktrace
