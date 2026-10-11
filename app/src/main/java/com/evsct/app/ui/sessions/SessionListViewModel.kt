@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -254,7 +256,7 @@ class SessionListViewModel @Inject constructor(
                 sessionsWithReceipts = withReceipts,
                 staleTrackedSession = staleTracked,
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SessionListUi())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SessionListUi())
 
     fun dismissBackupNudge() {
         backupNudgeDismissed.value = true

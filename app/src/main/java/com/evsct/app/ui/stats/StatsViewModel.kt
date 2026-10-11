@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 
 /** Page-level time window: scopes every stat on the screen except the
  *  this-month "vs gas" card, which is pinned to the current calendar
@@ -189,7 +191,7 @@ class StatsViewModel @Inject constructor(
                 it.chargingType == ChargingType.AC_L2 || it.chargingType == ChargingType.AC_L1
             }),
         ).withGasComparison(scoped, scoped.filter { it.currency == costCurrency })
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())
 
     fun setVehicleScope(scope: VehicleScope) { vehicleScopeFlow.value = scope }
 
