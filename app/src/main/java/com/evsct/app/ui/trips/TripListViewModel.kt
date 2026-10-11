@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 data class TripListUi(
@@ -55,7 +57,7 @@ class TripListViewModel @Inject constructor(
                 newTripVehicleId = (effectiveScope as? VehicleScope.One)?.id
                     ?: vehicles.firstOrNull { it.isDefault }?.id,
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripListUi())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripListUi())
 
     fun setVehicleScope(scope: VehicleScope) {
         vehicleScopeFlow.value = scope

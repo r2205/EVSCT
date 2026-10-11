@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -201,7 +202,10 @@ class YearRecapViewModel @Inject constructor(
         // of that vehicle's trips. The map still colors stops by any trip.
         val scopedTrips = trips.filter { vehicleScope.matchesVehicleId(it.trip.vehicleId) }
         recapFor(scoped, sessions, trips, scopedTrips, year, units).copy(vehicleName = scopeLabel)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearRecapUi(isLoading = true))
+        // Off the main thread: every trip report, the odometer walk and the
+        // map grouping rerun on each emission, which a long log makes slow
+        // enough to drop frames.
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearRecapUi(isLoading = true))
 
     /** Final state merges the computed snapshot with transient flags
      *  (busy / message / pendingShareFile) the screen toggles via the VM

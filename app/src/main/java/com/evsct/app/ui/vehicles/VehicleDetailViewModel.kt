@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 data class VehicleHighlight(
@@ -93,7 +95,7 @@ class VehicleDetailViewModel @Inject constructor(
             val sessions = allSessions.filter { it.vehicleId == vehicleId }
                 .sortedByDescending { it.sessionStart }
             buildUi(vehicle, sessions, allSessions, trips).copy(isLoading = !lookedUp)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VehicleDetailUi())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VehicleDetailUi())
     }
 
     fun refresh() = viewModelScope.launch { refreshVehicle() }

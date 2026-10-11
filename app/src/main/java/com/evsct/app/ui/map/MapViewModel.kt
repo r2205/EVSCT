@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -266,7 +268,7 @@ class MapViewModel @Inject constructor(
             selectedStop = resolvedSelectedStop,
             selectedStopSessions = pickerSessions,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapUi())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MapUi())
 
     fun setClusteringEnabled(enabled: Boolean) {
         viewModelScope.launch { appPreferences.setMapClusteringEnabled(enabled) }

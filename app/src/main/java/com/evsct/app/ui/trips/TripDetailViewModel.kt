@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 data class TripDetailUi(
@@ -95,7 +97,7 @@ class TripDetailViewModel @Inject constructor(
                 unassignedSessionCount = report?.unassignedSessions?.size ?: 0,
                 measuredDistanceKm = report?.measuredDistanceKm ?: 0.0,
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUi())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUi())
     }
 
     fun updateTrip(trip: Trip) = viewModelScope.launch {
