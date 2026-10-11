@@ -35,6 +35,9 @@ class BackupReminderNotifier @Inject constructor(
     companion object {
         const val CHANNEL_ID = "backup_reminder"
         const val NOTIFICATION_ID = 1001
+        /** Boolean extra on the tap intent: MainActivity opens Settings,
+         *  where the backup lives, instead of the Log. */
+        const val EXTRA_OPEN_BACKUP_SETTINGS = "open_backup_settings"
     }
 
     /** Re-evaluate reminder conditions and post or cancel the notification. */
@@ -99,6 +102,7 @@ class BackupReminderNotifier @Inject constructor(
         ensureChannel()
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_BACKUP_SETTINGS, true)
         }
         val pending = PendingIntent.getActivity(
             context,
@@ -111,7 +115,7 @@ class BackupReminderNotifier @Inject constructor(
         val bigText = (
             if (daysSince == null) "Your charging log has never been backed up. "
             else "It's been $daysSince days since your last full backup. "
-            ) + "Open EVSCT and export a backup to keep your sessions safe."
+            ) + "Tap to open Settings and save a full backup to keep your sessions safe."
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_evsct)
             .setContentTitle("Back up your EVSCT data")
