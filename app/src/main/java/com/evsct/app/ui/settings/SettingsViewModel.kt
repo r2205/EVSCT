@@ -15,6 +15,7 @@ import com.evsct.app.data.prefs.CardTimeRate
 import com.evsct.app.data.prefs.UserUnits
 import com.evsct.app.ui.OpFeedback
 import com.evsct.app.util.BackupReminderScheduler
+import com.evsct.app.util.GasComparison
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
@@ -42,6 +43,8 @@ data class SettingsUi(
     val feedback: OpFeedback? = null,
     val reminder: BackupReminderSettings = BackupReminderSettings(),
     val units: UserUnits = UserUnits(),
+    /** The Stats "vs gas" card's comparison car, canonical $/L and L/100 km. */
+    val gasComparison: GasComparison = GasComparison(),
     /** Theme override (SYSTEM / LIGHT / DARK) — resolved at the activity
      *  level so a change here applies app-wide on the next recomposition. */
     val themeMode: String = "SYSTEM",
@@ -80,13 +83,15 @@ class SettingsViewModel @Inject constructor(
         combine(
             transient,
             appPreferences.reminderSettings,
-            appPreferences.userUnits,
+            // Paired so the combine stays within its 5-flow overload.
+            combine(appPreferences.userUnits, appPreferences.gasComparison) { u, g -> u to g },
             appPreferences.themeMode,
             appPreferences.lastBackupAt,
-        ) { ui, reminder, units, themeMode, lastBackupAt ->
+        ) { ui, reminder, (units, gas), themeMode, lastBackupAt ->
             ui.copy(
                 reminder = reminder,
                 units = units,
+                gasComparison = gas,
                 themeMode = themeMode,
                 lastBackupAt = lastBackupAt,
             )
@@ -109,6 +114,18 @@ class SettingsViewModel @Inject constructor(
 
     fun setCardTimeRate(mode: CardTimeRate) = viewModelScope.launch {
         appPreferences.setCardTimeRate(mode)
+    }
+
+    fun setGasPricePerLitre(value: Double) = viewModelScope.launch {
+        appPreferences.setGasPricePerLitre(value)
+    }
+
+    fun setGasLitresPer100Km(value: Double) = viewModelScope.launch {
+        appPreferences.setGasLitresPer100Km(value)
+    }
+
+    fun resetGasComparison() = viewModelScope.launch {
+        appPreferences.resetGasComparison()
     }
 
     fun setThemeMode(mode: String) = viewModelScope.launch {

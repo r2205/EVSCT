@@ -297,7 +297,7 @@
     <string name="stats_cost_by">Cost by %1$s</string>
     <string name="stats_dc_fast">DC FAST</string>
     <string name="stats_energy_by">Energy by %1$s</string>
-    <string name="stats_gas_assumptions">Assumes $2.15/L · 12 L/100 km</string>
+    <string name="stats_gas_assumptions">Assumes %1$s · %2$s (change in Settings)</string>
     <string name="stats_less">Less</string>
     <string name="stats_more">More</string>
     <string name="stats_no_sessions_in_window">No sessions in the last 12 months</string>
@@ -618,6 +618,12 @@
     <string name="settings_undo_last_restore_or">Undo last restore or import?</string>
     <string name="settings_undo_restore">Undo last restore or import…</string>
     <string name="settings_units_currency">Units &amp; currency</string>
+    <string name="settings_gas_comparison">Gas comparison</string>
+    <string name="settings_gas_comparison_body">The gas car the Stats \"vs gas\" card compares your charging costs against.</string>
+    <string name="settings_gas_price">Gas price (%1$s per %2$s)</string>
+    <string name="settings_gas_economy">Fuel economy (%1$s)</string>
+    <string name="settings_gas_must_be_positive">Enter a number above 0</string>
+    <string name="settings_gas_reset">Reset to defaults</string>
     <string name="settings_vehicles">Vehicles</string>
     <string name="settings_version">EVSCT %1$s (build %2$d)</string>
     <string name="settings_view_on_github">View on GitHub</string>

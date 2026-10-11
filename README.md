@@ -336,7 +336,8 @@ motion-graphics tour built from these screenshots with an original score, or
   an import with missing durations can't read as hundreds of kW.
 - **vs gas this month** card — compares this month's charging cost to
   what an equivalent distance of driving would have cost in gas. Shows a
-  big "Saved $X" headline with the underlying numbers below.
+  big "Saved $X" headline with the underlying numbers below, and the gas
+  price and fuel economy it assumed, which you set in Settings.
 - Cost and energy trend charts; the charts and their titles ("Cost by
   month" vs "Cost by year") follow the window you choose — monthly
   buckets for the 12-month window, yearly buckets for all time.
@@ -375,6 +376,10 @@ motion-graphics tour built from these screenshots with an original score, or
   display + form labels. Each session keeps the currency it was saved
   with — the default just seeds new sessions and tags totals on the
   dashboards.
+- **Gas comparison** — the gas price and fuel economy the Stats "vs gas"
+  card compares against, in your default currency: $/L and L/100 km, or
+  $/gal and mpg when you use miles. Defaults to $2.15/L and 12 L/100 km;
+  **Reset to defaults** brings those back.
 - **Theme** — System / Light / Dark segmented switch. System follows your
   phone's dark-mode setting; Light and Dark force the corresponding
   palette.

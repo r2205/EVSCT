@@ -3,9 +3,11 @@ package com.evsct.app.data.prefs
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.evsct.app.util.GasComparison
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -83,6 +85,10 @@ class AppPreferences @Inject constructor(
          *  every pin renders in the default red. A display mode like the
          *  toggles above, so it persists across app restarts too. */
         private val MAP_COLOR_BY_TRIP = booleanPreferencesKey("map_color_by_trip")
+        /** The Stats "vs gas" card's comparison car, canonical $/L and
+         *  L/100 km (see [com.evsct.app.util.GasComparison]). */
+        private val GAS_PRICE_PER_LITRE = doublePreferencesKey("gas_price_per_litre")
+        private val GAS_LITRES_PER_100KM = doublePreferencesKey("gas_litres_per_100km")
 
         val SUPPORTED_CURRENCIES = listOf("CAD", "USD")
         val SUPPORTED_MAP_TYPES = listOf("NORMAL", "SATELLITE", "HYBRID", "TERRAIN")
@@ -246,6 +252,35 @@ class AppPreferences @Inject constructor(
 
     suspend fun setMapColorByTrip(enabled: Boolean) {
         dataStore.edit { it[MAP_COLOR_BY_TRIP] = enabled }
+    }
+
+    /** The gas car the "vs gas" card compares against. Stored values that
+     *  aren't positive and finite fall back to the defaults. */
+    val gasComparison: Flow<GasComparison> = dataStore.data.map { prefs ->
+        GasComparison(
+            pricePerLitre = prefs[GAS_PRICE_PER_LITRE]?.takeIf { it.isFinite() && it > 0 }
+                ?: GasComparison.DEFAULT_PRICE_PER_LITRE,
+            litresPer100Km = prefs[GAS_LITRES_PER_100KM]?.takeIf { it.isFinite() && it > 0 }
+                ?: GasComparison.DEFAULT_LITRES_PER_100_KM,
+        )
+    }
+
+    suspend fun setGasPricePerLitre(value: Double) {
+        if (!value.isFinite() || value <= 0) return
+        dataStore.edit { it[GAS_PRICE_PER_LITRE] = value }
+    }
+
+    suspend fun setGasLitresPer100Km(value: Double) {
+        if (!value.isFinite() || value <= 0) return
+        dataStore.edit { it[GAS_LITRES_PER_100KM] = value }
+    }
+
+    /** Back to [GasComparison]'s defaults. */
+    suspend fun resetGasComparison() {
+        dataStore.edit {
+            it.remove(GAS_PRICE_PER_LITRE)
+            it.remove(GAS_LITRES_PER_100KM)
+        }
     }
 
     suspend fun snapshot(): Snapshot {

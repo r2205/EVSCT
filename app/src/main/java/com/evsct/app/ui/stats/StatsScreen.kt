@@ -71,8 +71,10 @@ import com.evsct.app.ui.needsVehiclePicker
 import com.evsct.app.ui.forType
 import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.ui.theme.LocalEvAccents
+import com.evsct.app.ui.LocalUserUnits
 import com.evsct.app.util.CurrencyTotals
 import com.evsct.app.util.Format
+import com.evsct.app.util.GasUnits
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -367,8 +369,19 @@ private fun GasSavingsCard(state: StatsUi) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(2.dp))
+            // The comparison car from Settings, in the user's units.
+            val useMiles = LocalUserUnits.current.useMiles
+            val gas = state.gasComparison
             Text(
-                stringResource(R.string.stats_gas_assumptions),
+                stringResource(
+                    R.string.stats_gas_assumptions,
+                    Format.moneyPerTime(
+                        GasUnits.priceToDisplay(gas.pricePerLitre, useMiles),
+                        GasUnits.priceUnit(useMiles),
+                    ),
+                    GasUnits.economyNumber(GasUnits.economyToDisplay(gas.litresPer100Km, useMiles)) +
+                        " " + GasUnits.economyUnit(useMiles),
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
