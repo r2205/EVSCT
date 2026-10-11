@@ -6,7 +6,7 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,7 +66,7 @@ fun VehicleScopeTabs(
     }
     val selectedIndex = tabs.indexOfFirst { it.first == scope }.coerceAtLeast(0)
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        ScrollableTabRow(
+        SecondaryScrollableTabRow(
             selectedTabIndex = selectedIndex,
             modifier = Modifier.weight(1f),
             edgePadding = 12.dp,

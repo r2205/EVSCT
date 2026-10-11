@@ -1,5 +1,11 @@
 # EVSCT Full-App Bug Hunt — Findings Report
 
+> **Status: all 29 findings resolved** (July 2026, PRs #31–#34). Kept as a
+> record of what was found and why the code looks the way it does; line
+> numbers below refer to the code as it was then. See
+> `docs/session-summary.md` ("Audit closeouts") for how each was fixed and
+> for later review rounds.
+
 Read-only audit of `app/src/main` (all 78 Kotlin files + manifest/XML resources reviewed).
 Findings ranked most-severe first. Severity is estimated impact-if-triggered weighted by
 likelihood; confidence is how sure I am the described behavior actually occurs.

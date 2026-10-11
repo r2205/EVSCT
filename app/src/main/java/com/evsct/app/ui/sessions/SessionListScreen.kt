@@ -76,7 +76,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -1493,7 +1492,10 @@ private fun formatDate(at: Long): String =
 
 @Composable
 private fun formatDateRange(from: Long?, to: Long?): String {
-    val fmt = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+    // The configuration's locale, not Locale.getDefault(): Compose tracks
+    // it, so the label re-renders if the language changes while it shows.
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+    val fmt = java.text.SimpleDateFormat("MMM d, yyyy", locale)
     return when {
         from != null && to != null -> "${fmt.format(java.util.Date(from))} – ${fmt.format(java.util.Date(to))}"
         from != null -> stringResource(R.string.log_date_from, fmt.format(java.util.Date(from)))
