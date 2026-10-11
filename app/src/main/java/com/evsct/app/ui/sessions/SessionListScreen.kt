@@ -380,7 +380,10 @@ fun SessionListScreen(
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (showSearchStrip) {
                 SearchAndFilterStrip(
-                    query = state.filters.query,
+                    // Not state.filters.query: that comes back from a
+                    // background thread a beat late, and feeding it to the
+                    // field moved the cursor mid-typing.
+                    query = viewModel.searchQuery,
                     onQueryChange = { viewModel.setQuery(it) },
                     filters = state.filters,
                     onOpenFilterSheet = { showFilterSheet = true },

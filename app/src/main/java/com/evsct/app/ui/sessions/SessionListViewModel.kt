@@ -1,6 +1,9 @@
 package com.evsct.app.ui.sessions
 
 import androidx.annotation.StringRes
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.evsct.app.R
@@ -125,6 +128,17 @@ class SessionListViewModel @Inject constructor(
     private val backupNudgeDismissed = MutableStateFlow(false)
 
     /**
+     * The search box's text, held as Compose state so the field reads back
+     * every keystroke immediately. [state] is built on a background thread
+     * (flowOn), so its filters.query lags a keystroke or two behind, and a
+     * text field fed from it gets older text back mid-typing and jumps the
+     * cursor: typing "Regina" came out as "Rginae". The filtering still
+     * runs off [filters]; this is only what the field shows.
+     */
+    var searchQuery by mutableStateOf("")
+        private set
+
+    /**
      * Brand drill-down from Stats: show exactly "sessions at this brand"
      * within [scope]. Replaces the whole filter set on purpose — a leftover
      * date or tag filter would quietly shrink the promised result. The screen
@@ -134,6 +148,7 @@ class SessionListViewModel @Inject constructor(
     fun applyBrandDrilldown(brand: String, scope: VehicleScope) {
         vehicleScopeFlow.value = scope
         filters.value = SessionFilters(brand = brand)
+        searchQuery = ""
         clearSelection()
     }
 
@@ -268,6 +283,7 @@ class SessionListViewModel @Inject constructor(
     }
 
     fun setQuery(query: String) {
+        searchQuery = query
         filters.update { it.copy(query = query) }
     }
 
@@ -285,6 +301,7 @@ class SessionListViewModel @Inject constructor(
 
     fun clearFilters() {
         filters.value = SessionFilters()
+        searchQuery = ""
     }
 
     fun setSortOption(option: SortOption) {
