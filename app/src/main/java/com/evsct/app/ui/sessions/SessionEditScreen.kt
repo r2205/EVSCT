@@ -114,7 +114,7 @@ import com.evsct.app.R
 import com.evsct.app.ui.readableFormWidth
 import com.evsct.app.ui.theme.EvsctTheme
 import java.io.File
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle

@@ -73,7 +73,9 @@ val resolvedVersionCode: Int =
 
 android {
     namespace = "com.evsct.app"
-    compileSdk = 36
+    // Android 17's SDK, which Compose 1.12+ and current AndroidX require.
+    // Compile-time only: how the app behaves on devices follows targetSdk.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.evsct.app"
@@ -231,7 +233,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
 
     implementation(libs.hilt.android)
-    implementation(libs.hilt.navigation.compose)
+    implementation(libs.hilt.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.work)
     implementation(libs.androidx.work.runtime.ktx)
     ksp(libs.hilt.compiler)
