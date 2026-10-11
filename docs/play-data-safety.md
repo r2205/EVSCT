@@ -51,9 +51,9 @@ what an earlier draft of this file said. Six paths, three of them automatic:
 
 Three things follow that are easy to get wrong on the form:
 
-- **Direction.** The last three send *text the user typed* and get coordinates
-  back. The privacy policy currently describes only the reverse (coordinates
-  in, address out) — see judgment call #4.
+- **Direction.** Two of the automatic paths (map open and post-save) send
+  *text the user typed* and get coordinates back. The privacy policy describes
+  both directions (see judgment call #4).
 - **Permission is not the gate.** Forward geocoding uses the platform
   `Geocoder`, which needs no location permission. A user who denied location
   outright still has their typed stop addresses sent to Google the first time
@@ -97,13 +97,13 @@ Nothing below leaves the device:
    tab is the user's choice and the rest of the app works without it — but if
    you want the stricter reading, the fix is a setting that turns the automatic
    backfill off, not a different form answer.
-4. **`docs/privacy-policy.html` needs the matching correction.** It currently
-   says location is read "only when you actively request it" and describes
-   Google as receiving "the coordinates being looked up" — accurate for the
-   device-location paths and for reverse geocoding, but it never mentions that
-   typed address text is sent, or that the map backfill and the post-save
-   re-geocode run on their own. Until it is updated, the two documents
-   disagree.
+4. **`docs/privacy-policy.html` matches this (updated October 2026).** It
+   used to say location was read "only when you actively request it" and
+   described only coordinates being looked up. It now separates the phone's
+   location (read only on a tap) from typed addresses (looked up
+   automatically on map open and after an address edit, without location
+   permission), and lists tile loads. Keep the two documents in step when any
+   path above changes.
 
 ## Through-line
 
