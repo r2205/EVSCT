@@ -125,7 +125,7 @@
     <string name="log_track_a_charge_now">Track a charge now</string>
     <string name="log_tracked_running">A tracked charge started %1$s is still running. Open it to finish or delete it.</string>
     <string name="log_trip_needs_one_vehicle">These sessions are on different vehicles, and a trip belongs to one. Select one vehicle\'s sessions to assign them a trip.</string>
-    <string name="log_unassigned">Unassigned</string>
+    <string name="log_no_trip">No trip</string>
     <string name="log_undo">Undo</string>
     <string name="log_welcome_to_evsct">Welcome to EVSCT</string>
     <string name="log_your_search_and_filters">Your search and filters don\'t match any sessions.</string>
@@ -548,7 +548,7 @@
     <string name="vehicleedit_range_unit">Range (%1$s)</string>
     <string name="vehicleedit_remove">Remove</string>
     <string name="vehicleedit_save">Save vehicle</string>
-    <string name="vehicleedit_sessions_previously_tagged_with">Sessions previously tagged with this vehicle will keep their data but be unassigned.</string>
+    <string name="vehicleedit_sessions_previously_tagged_with">Sessions and trips tagged with this vehicle keep their data but become unassigned. Those trips can\'t show energy used or efficiency until you pick another vehicle for them.</string>
     <string name="vehicleedit_this_vehicle_has_unsaved">This vehicle has unsaved edits. Leaving now throws them away.</string>
     <string name="vehicleedit_title_edit">Edit vehicle</string>
     <string name="vehicleedit_title_new">New vehicle</string>

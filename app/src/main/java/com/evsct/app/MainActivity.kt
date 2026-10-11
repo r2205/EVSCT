@@ -20,6 +20,7 @@ import com.evsct.app.ui.navigation.EvsctNavGraph
 import com.evsct.app.ui.navigation.Routes
 import com.evsct.app.ui.theme.EvsctTheme
 import com.evsct.app.ui.theme.SystemBarIconsFollowTheme
+import com.evsct.app.util.BackupReminderNotifier
 import com.evsct.app.util.BackupReminderScheduler
 import com.evsct.app.util.InProgressChargeNotifier
 import com.evsct.app.util.MissingMediaSweeper
@@ -160,6 +161,15 @@ class MainActivity : ComponentActivity() {
      * this early in startup.
      */
     private fun consumeIntentExtrasIfStillTracked(intent: Intent?) {
+        // The backup reminder's tap opens Settings, where the Full backup
+        // card is, instead of the Log its text tells the user to leave.
+        // No gate needed: opening Settings changes nothing, so it's
+        // harmless when another app sends the extra. Same once-per-delivery
+        // handling as the charge link, via the callers.
+        if (intent?.getBooleanExtra(BackupReminderNotifier.EXTRA_OPEN_BACKUP_SETTINGS, false) == true) {
+            pendingDeepLinkRoute.value = Routes.SETTINGS
+            return
+        }
         val sessionId = intent
             ?.getLongExtra(InProgressChargeNotifier.EXTRA_OPEN_SESSION_ID, -1L)
             ?: -1L
