@@ -614,37 +614,39 @@ class SessionEditViewModel @Inject constructor(
         Format.parseDecimal(text)?.roundToInt()
 
     private fun withHints(form: SessionEditUi): SessionEditUi {
-        val prev = previousSessionFor(form)
-        return form.copy(hints = computeHints(form, prev))
-    }
-
-    private fun previousSessionFor(form: SessionEditUi): ChargingSession? {
-        val vid = form.vehicleId ?: return null
-        return allSessionsCache.asSequence()
-            .filter { it.vehicleId == vid }
-            .filter { it.id != sessionId }            // ignore the session we're currently editing
-            .filter { it.sessionStart < form.sessionStart }
-            .maxByOrNull { it.sessionStart }
+        val (prev, next) = odometerNeighbours(allSessionsCache, form.vehicleId, sessionId, form.sessionStart)
+        return form.copy(hints = computeHints(form, prev, next))
     }
 
     private fun computeHints(
         form: SessionEditUi,
         previous: ChargingSession?,
+        next: ChargingSession?,
     ): List<ValidationHint> {
         val out = mutableListOf<ValidationHint>()
 
         // Odometer text is in the user's preferred unit, but stored values
-        // are km; normalize both to km before comparing.
+        // are km; normalize both to km before comparing. Numbers in hint
+        // text are pinned to Locale.US, like every other display number.
         val odoEntered = Format.parseDecimal(form.odometerText)
         val odoKm = currentOdometerKm(form)
+        val unit = Units.distanceUnit(form.useMiles)
+        fun odo(km: Double) = "%,.0f".format(Locale.US, Units.kmToDisplay(km, form.useMiles))
         val prevOdoKm = previous?.odometerKm
         if (odoKm != null && prevOdoKm != null && odoKm < prevOdoKm) {
-            val unit = Units.distanceUnit(form.useMiles)
-            val prevDisplay = Units.kmToDisplay(prevOdoKm, form.useMiles)
             out += ValidationHint(
                 title = "Odometer went backward",
-                detail = "Previous session: ${"%,.0f".format(prevDisplay)} $unit · " +
-                    "Now: ${"%,.0f".format(odoEntered)} $unit. Check for typos.",
+                detail = "Previous session: ${odo(prevOdoKm)} $unit · " +
+                    "Now: ${"%,.0f".format(Locale.US, odoEntered)} $unit. Check for typos.",
+                fields = setOf(HintField.ODOMETER),
+            )
+        }
+        val nextOdoKm = next?.odometerKm
+        if (odoKm != null && nextOdoKm != null && odoKm > nextOdoKm) {
+            out += ValidationHint(
+                title = "Odometer is past a later session",
+                detail = "Next session (${Format.date(next.sessionStart)}): ${odo(nextOdoKm)} $unit · " +
+                    "Now: ${"%,.0f".format(Locale.US, odoEntered)} $unit. Check for typos.",
                 fields = setOf(HintField.ODOMETER),
             )
         }
@@ -660,7 +662,7 @@ class SessionEditViewModel @Inject constructor(
             if (deviation > 0.25) {
                 out += ValidationHint(
                     title = "Effective $/kWh differs from posted",
-                    detail = "Posted ${"%.3f".format(postedPrice)} · Effective ${"%.3f".format(effPricePerKwh)}. Check kWh or cost.",
+                    detail = "Posted ${"%.3f".format(Locale.US, postedPrice)} · Effective ${"%.3f".format(Locale.US, effPricePerKwh)}. Check kWh or cost.",
                     fields = setOf(HintField.COST, HintField.ENERGY, HintField.POSTED_ENERGY_PRICE),
                 )
             }
@@ -694,7 +696,7 @@ class SessionEditViewModel @Inject constructor(
         if (avgPower != null && postedMaxKw != null && postedMaxKw > 0 && avgPower > postedMaxKw * 1.05) {
             out += ValidationHint(
                 title = "Avg power exceeds posted max",
-                detail = "Posted max ${"%.0f".format(postedMaxKw)} kW · Effective avg ${"%.1f".format(avgPower)} kW. Check kWh or duration.",
+                detail = "Posted max ${"%.0f".format(Locale.US, postedMaxKw)} kW · Effective avg ${"%.1f".format(Locale.US, avgPower)} kW. Check kWh or duration.",
                 fields = setOf(HintField.ENERGY, HintField.DURATION, HintField.POSTED_MAX_POWER),
             )
         }
@@ -1291,6 +1293,31 @@ class SessionEditViewModel @Inject constructor(
             orphans.forEach { receiptImageStore.delete(it) }
         }
     }
+}
+
+/**
+ * The same car's nearest earlier and later sessions that recorded an
+ * odometer, for the edit form to check a reading against. Later matters for
+ * a backfilled or edited session in the middle of the log: a typo there can
+ * overshoot the next reading, which a previous-only check never saw.
+ * Sessions without a reading are skipped rather than ending the search, or
+ * one quick log without an odometer switched the check off for the session
+ * after it. [editingId] (the session being edited) is left out.
+ *
+ * File-level, like [computeRecentStops], so a test can drive it without the
+ * Hilt ViewModel.
+ */
+internal fun odometerNeighbours(
+    sessions: List<ChargingSession>,
+    vehicleId: Long?,
+    editingId: Long,
+    sessionStart: Long,
+): Pair<ChargingSession?, ChargingSession?> {
+    vehicleId ?: return null to null
+    val sameCar = sessions.filter { it.vehicleId == vehicleId && it.id != editingId && it.odometerKm != null }
+    val previous = sameCar.filter { it.sessionStart < sessionStart }.maxByOrNull { it.sessionStart }
+    val next = sameCar.filter { it.sessionStart > sessionStart }.minByOrNull { it.sessionStart }
+    return previous to next
 }
 
 /**
