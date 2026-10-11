@@ -41,7 +41,7 @@
     </div>
   </header>
 
-  <p class="muted"><strong>Last updated:</strong> June 27, 2026</p>
+  <p class="muted"><strong>Last updated:</strong> October 10, 2026</p>
 
   <p>
     EVSCT (“the app”) is a personal Android app for logging electric-vehicle
@@ -72,26 +72,47 @@
 
   <h3>Location</h3>
   <p>
-    EVSCT requests location permission (approximate and precise) so that, when
-    you tap the “GPS autofill” / “use my location” control while editing a
-    session, the app can:
+    EVSCT handles location in two ways: your phone’s own location, read only
+    when you ask, and the charging-stop addresses you type, which the app looks
+    up on its own to place your stops on the map.
+  </p>
+  <p>
+    <strong>Your phone’s location.</strong> EVSCT requests location permission
+    (approximate and precise) so that, when you tap “GPS autofill” while editing
+    a session, or the “my location” button on the map or the location picker,
+    the app can:
   </p>
   <ul>
-    <li>fill in the city, province/state, and address of where you charged, and</li>
-    <li>store the coordinates so the charging stop can appear on the in-app map.</li>
+    <li>fill in the city, province/state, and address of where you charged,</li>
+    <li>store the coordinates so the charging stop can appear on the in-app map, and</li>
+    <li>center the map on where you are.</li>
   </ul>
   <p>
-    Location is read <strong>only when you actively request it</strong> — the
-    app does not track your location in the background. The resulting
-    coordinates and address text are stored locally with that session. To turn
-    the address lookup into a place name, the coordinates are sent to the
-    device’s geocoding service, which on most Android devices is provided by
-    Google (see “Third-party services” below).
+    Your phone’s location is read <strong>only when you tap one of these
+    controls</strong>; the app does not track your location in the background.
+    To turn coordinates into an address (for GPS autofill, or when you confirm a
+    point in the location picker), the coordinates are sent to the device’s
+    geocoding service, which on most Android devices is provided by Google.
+  </p>
+  <p>
+    <strong>Addresses you type.</strong> To show stops on the map, the app
+    sends the address, city, and province/state you typed to the same geocoding
+    service, which returns coordinates. This happens <strong>automatically,
+    without a tap and without location permission</strong>:
+  </p>
+  <ul>
+    <li>when you open the Map tab, for each logged stop that doesn’t have coordinates yet, and</li>
+    <li>when you save a session whose address you edited, for that session.</li>
+  </ul>
+  <p>
+    The resulting coordinates are stored locally with your sessions. Only the
+    address text is sent, not the rest of the session. See “Third-party
+    services” below.
   </p>
 
   <h3>Permissions used</h3>
   <ul>
-    <li><strong>Location (approximate &amp; precise)</strong> — on-demand GPS autofill and map placement, as described above.</li>
+    <li><strong>Location (approximate &amp; precise)</strong> — GPS autofill and the “my location” button, only when you tap them, as described above. Looking up the addresses you type does not use this permission.</li>
     <li><strong>Internet</strong> — to load Google map tiles and perform address lookups.</li>
     <li><strong>Notifications</strong> — to show the optional “charging in progress” notification and backup reminders. Declining only hides these notifications; the app still works.</li>
   </ul>
@@ -100,9 +121,12 @@
   <p>
     EVSCT uses Google Maps Platform to display the map of your charging stops,
     and the device’s geocoding service (Google on most devices) to convert
-    coordinates into addresses. When these features are used, the relevant
-    request data (such as map view coordinates or the coordinates being looked
-    up) is processed by Google under Google’s own privacy terms:
+    between coordinates and addresses in both directions. The request data is
+    processed by Google under Google’s own privacy terms. That data is the map
+    view’s coordinates, to load map tiles whenever a map is on screen; the
+    coordinates being turned into an address; and the address text you typed,
+    being turned into coordinates (automatically, as described under
+    “Location”). Google’s terms:
   </p>
   <ul>
     <li><a href="https://policies.google.com/privacy" rel="noopener" target="_blank">Google Privacy Policy</a></li>

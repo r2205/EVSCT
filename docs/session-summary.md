@@ -2284,14 +2284,11 @@ stats edges (PRs #72–#77). Highlights of what got fixed and built
 - Merge-mode restore (current is replace-only).
 - ~~"View on map" entry from the trip detail screen, filtered to that
   trip's pins~~ — **shipped** (PR #46): see Map view → Trip focus.
-- **Privacy policy geocoding wording**: `docs/privacy-policy.html` still
-  says location is read only when the user asks and describes only
-  coordinates → address lookups. It needs the same correction
-  `docs/play-data-safety.md` got in PR #77: opening the map
-  forward-geocodes typed addresses automatically (no location
-  permission involved), saving an edited address re-geocodes it, and
-  tiles load whenever a map is on screen. The data-safety notes'
-  judgment call #4 has the details.
+- ~~Privacy policy geocoding wording~~ — **done** (October 2026):
+  `docs/privacy-policy.html` now separates the phone's location (read
+  only on a tap) from typed addresses (forward-geocoded automatically on
+  map open and after an address edit, no location permission involved),
+  and lists tile loads, matching `docs/play-data-safety.md`.
 - **Tappable `BarList` row targets**: the Stats brand rows are about a
   third of the 48dp touch-target minimum, with 6dp between neighbours,
   so a mis-tap drills into the wrong brand. Growing the rows was reverted
