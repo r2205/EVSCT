@@ -455,7 +455,7 @@ motion-graphics tour built from these screenshots with an original score, or
 1. Open Android Studio (a recent version that supports AGP 9.x —
    Narwhal/2025.x or newer).
 2. **File → Open…** → pick the `EVSCT` folder.
-3. Wait for the initial Gradle sync (AGP 9.3.0, Gradle 9.6.1, Kotlin
+3. Wait for the initial Gradle sync (AGP 9.4.1, Gradle 9.6.1, Kotlin
    2.3, Compose, the Android SDK pieces it needs). Studio will fetch
    anything missing on first open.
 4. Plug in your Pixel via USB with USB debugging enabled, select it as the
@@ -579,7 +579,7 @@ Like any restore, it replaces the data already on the phone.
   and notifications are still inline.
 - JUnit, plus Robolectric for Compose UI tests that run on the JVM inside
   `testDebugUnitTest` (no emulator needed)
-- AGP 9.3.0, Gradle 9.6.1, minSdk 30, targetSdk 36. Build on JDK 21 — the
+- AGP 9.4.1, Gradle 9.6.1, compileSdk 37, minSdk 30, targetSdk 36. Build on JDK 21 — the
   Robolectric tests simulate SDK 36 and need a 21 runtime, though the app
   itself is still compiled to Java 17 bytecode.
 - GitHub Actions CI runs the unit tests and an R8 release build on every

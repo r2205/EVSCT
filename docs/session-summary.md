@@ -28,7 +28,7 @@ context is in the repo even if the conversation is summarized later.
   (for clustering, BitmapDescriptor pins, and `HeatmapTileProvider`)
 - `android.graphics.pdf.PdfDocument` for the year-recap PDF export
   (no third-party PDF library)
-- minSdk 30, targetSdk 36, AGP 9.3.0, Gradle 9.6.1, KSP 2.3.10
+- compileSdk 37, minSdk 30, targetSdk 36, AGP 9.4.1, Gradle 9.6.1, KSP 2.3.10
   (Kotlin is compiled by AGP's built-in Kotlin — no `kotlin-android` plugin)
   (upgraded mid-project from AGP 8.13.2 / Gradle 8.13 / Kotlin 2.1)
 - Tests: JUnit 4, plus Robolectric 4.16.1 with Compose `ui-test-junit4`
