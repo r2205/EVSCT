@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -83,6 +84,9 @@ import com.evsct.app.data.prefs.CardTimeRate
 import com.evsct.app.ui.EvsctBarTitle
 import com.evsct.app.ui.readableFormWidth
 import com.evsct.app.util.ExportNaming
+import com.evsct.app.util.Format
+import com.evsct.app.util.GasComparison
+import com.evsct.app.util.GasUnits
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -261,6 +265,15 @@ fun SettingsScreen(
                 onUseMilesChange = viewModel::setUseMiles,
                 onDefaultCurrencyChange = viewModel::setDefaultCurrency,
                 onCardTimeRateChange = viewModel::setCardTimeRate,
+            )
+
+            GasComparisonCard(
+                gas = state.gasComparison,
+                useMiles = state.units.useMiles,
+                currency = state.units.defaultCurrency,
+                onPriceChange = viewModel::setGasPricePerLitre,
+                onEconomyChange = viewModel::setGasLitresPer100Km,
+                onReset = viewModel::resetGasComparison,
             )
 
             ThemeCard(
@@ -660,6 +673,112 @@ private fun BackupReminderCard(
             }
         }
     }
+}
+
+/**
+ * The Stats "vs gas" card's comparison car: gas price and fuel economy, in
+ * $/L and L/100 km, or $/US gal and mpg for miles users. Stored canonically
+ * (see [GasUnits]), so switching units converts rather than loses them.
+ */
+@Composable
+private fun GasComparisonCard(
+    gas: GasComparison,
+    useMiles: Boolean,
+    currency: String,
+    onPriceChange: (Double) -> Unit,
+    onEconomyChange: (Double) -> Unit,
+    onReset: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.LocalGasStation,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        stringResource(R.string.settings_gas_comparison),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        stringResource(R.string.settings_gas_comparison_body),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            GasNumberField(
+                label = stringResource(R.string.settings_gas_price, currency, GasUnits.priceUnit(useMiles)),
+                stored = gas.pricePerLitre,
+                toDisplay = { GasUnits.priceToDisplay(it, useMiles) },
+                fromDisplay = { GasUnits.priceFromDisplay(it, useMiles) },
+                format = { "%.2f".format(java.util.Locale.US, it) },
+                useMiles = useMiles,
+                onChange = onPriceChange,
+            )
+            GasNumberField(
+                label = stringResource(R.string.settings_gas_economy, GasUnits.economyUnit(useMiles)),
+                stored = gas.litresPer100Km,
+                toDisplay = { GasUnits.economyToDisplay(it, useMiles) },
+                fromDisplay = { GasUnits.economyFromDisplay(it, useMiles) },
+                format = { GasUnits.economyNumber(it) },
+                useMiles = useMiles,
+                onChange = onEconomyChange,
+            )
+            val isDefault = gas == GasComparison()
+            if (!isDefault) {
+                TextButton(onClick = onReset) { Text(stringResource(R.string.settings_gas_reset)) }
+            }
+        }
+    }
+}
+
+/**
+ * A decimal field for one [GasComparison] figure. It saves each readable,
+ * positive value as it's typed, converted to storage units. The text only
+ * takes the stored value when that differs from what the text already reads
+ * as: the saved value loading, a units switch, or a reset. Resetting it on
+ * every save would reformat "4." to "4.00" mid-typing.
+ */
+@Composable
+private fun GasNumberField(
+    label: String,
+    stored: Double,
+    toDisplay: (Double) -> Double,
+    fromDisplay: (Double) -> Double,
+    format: (Double) -> String,
+    useMiles: Boolean,
+    onChange: (Double) -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf(format(toDisplay(stored))) }
+    LaunchedEffect(stored, useMiles) {
+        val typed = Format.parseDecimal(text)?.takeIf { it > 0 }?.let(fromDisplay)
+        if (typed == null || kotlin.math.abs(typed - stored) > 1e-9 * stored) {
+            text = format(toDisplay(stored))
+        }
+    }
+    val parsed = Format.parseDecimal(text)
+    val invalid = parsed == null || parsed <= 0
+    OutlinedTextField(
+        value = text,
+        onValueChange = { input ->
+            text = input
+            Format.parseDecimal(input)?.takeIf { it > 0 }?.let { onChange(fromDisplay(it)) }
+        },
+        label = { Text(label) },
+        isError = invalid,
+        supportingText = if (invalid) {
+            { Text(stringResource(R.string.settings_gas_must_be_positive)) }
+        } else {
+            null
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

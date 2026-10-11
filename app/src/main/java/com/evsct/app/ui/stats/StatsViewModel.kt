@@ -12,6 +12,7 @@ import com.evsct.app.ui.VehicleScope
 import com.evsct.app.ui.orAllIfEmpty
 import com.evsct.app.util.BrandSpend
 import com.evsct.app.util.CurrencyTotals
+import com.evsct.app.util.GasComparison
 import com.evsct.app.util.OdometerDistance
 import com.evsct.app.util.SessionAverages
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -95,8 +96,11 @@ data class StatsUi(
      *  constant. */
     val thisMonthDistanceKm: Double = 0.0,
     /** What [thisMonthDistanceKm] of driving would have cost in gas, in
-     *  [costCurrency], using the hardcoded gas-price + L/100 km constants. */
+     *  [costCurrency], at the price and economy in [gasComparison]. */
     val thisMonthGasCost: Double = 0.0,
+    /** The gas car the card compares against, as set in Settings; the
+     *  card's caption shows its figures. */
+    val gasComparison: GasComparison = GasComparison(),
     /** [thisMonthGasCost] − [thisMonthCost]. Positive = saved by driving
      *  electric; negative = the rare case where charging cost more. */
     val thisMonthSavings: Double = 0.0,
@@ -108,12 +112,9 @@ data class StatsUi(
 
 private fun emptyDayHourGrid(): List<List<Int>> = List(7) { List(24) { 0 } }
 
-/* --- Hardcoded gas-equivalence constants for the "vs gas" card. Currency
- *     here is implicitly the user's default (no FX); these defaults assume
- *     CAD pump prices in BC. Earmarked to be promoted to user-settable
- *     preferences in a follow-up. */
-private const val GAS_PRICE_PER_L = 2.15
-private const val GAS_CONSUMPTION_L_PER_100KM = 12.0
+/** The "vs gas" card's distance fallback when the month has no usable
+ *  odometer readings: kWh charged × this. The gas price and economy it
+ *  compares against are user settings ([GasComparison]). */
 private const val EV_EFFICIENCY_KM_PER_KWH = 4.0
 
 /** Most year buckets the "All time" chart window will render. */
@@ -134,8 +135,9 @@ class StatsViewModel @Inject constructor(
         vehicleRepository.observeAll(),
         vehicleScopeFlow,
         chartWindow,
-        appPreferences.userUnits,
-    ) { allSessions, vehicles, filter, window, units ->
+        // Paired so the combine stays within its 5-flow overload.
+        combine(appPreferences.userUnits, appPreferences.gasComparison) { u, g -> u to g },
+    ) { allSessions, vehicles, filter, window, (units, gas) ->
         val hasUnassigned = allSessions.any { it.vehicleId == null }
         val effectiveScope = filter.orAllIfEmpty(vehicles, hasUnassigned)
         val scoped = allSessions.filter { effectiveScope.matches(it) }
@@ -190,7 +192,7 @@ class StatsViewModel @Inject constructor(
             acByDayHour = dayHourGrid(sessions.filter {
                 it.chargingType == ChargingType.AC_L2 || it.chargingType == ChargingType.AC_L1
             }),
-        ).withGasComparison(scoped, scoped.filter { it.currency == costCurrency })
+        ).withGasComparison(scoped, scoped.filter { it.currency == costCurrency }, gas)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUi())
 
     fun setVehicleScope(scope: VehicleScope) { vehicleScopeFlow.value = scope }
@@ -289,6 +291,7 @@ class StatsViewModel @Inject constructor(
     private fun StatsUi.withGasComparison(
         sessions: List<ChargingSession>,
         costSessions: List<ChargingSession>,
+        gas: GasComparison,
     ): StatsUi {
         val (monthStart, monthEnd) = currentMonthBounds()
         val monthCost = costSessions
@@ -301,11 +304,12 @@ class StatsViewModel @Inject constructor(
             .sumOf { it.energyKwh ?: 0.0 } * EV_EFFICIENCY_KM_PER_KWH
         val distance = if (odoDistance > 1.0) odoDistance else kwhDistance
 
-        val gasCost = (distance / 100.0) * GAS_CONSUMPTION_L_PER_100KM * GAS_PRICE_PER_L
+        val gasCost = gas.costForKm(distance)
         return copy(
             thisMonthCost = monthCost,
             thisMonthDistanceKm = distance,
             thisMonthGasCost = gasCost,
+            gasComparison = gas,
             thisMonthSavings = gasCost - monthCost,
             thisMonthHasDriving = distance > 0.0,
         )

@@ -863,7 +863,8 @@ vehicle on the same trip.
   why it's shared now. `SessionAveragesTest`.
 - **"vs gas this month" card** — slotted right under the headline.
   Big "Saved $X" line with sub-text "$cost charging vs ~$gas on gas"
-  and an "Assumes $2.15/L · 12 L/100 km" caption. Distance preference:
+  and an "Assumes $2.15/L · 12 L/100 km" caption showing the gas price
+  and economy set in Settings (those are the defaults). Distance preference:
   per-vehicle odometer deltas where the *end* session is in this
   month (so the delta from the previous month's last charge counts),
   falling back to month-kWh × 4 km/kWh when odometer data is sparse.
@@ -2302,12 +2303,14 @@ stats edges (PRs #72–#77). Highlights of what got fixed and built
   translation actually ships.
 - Reminders by location ("you're at a station you've been to;
   log a session?") — nice-to-have but adds geofencing complexity.
-- **Configurable gas-card constants**: $/L, L/100 km, and the
-  fallback km/kWh are currently hardcoded in `StatsViewModel`
-  (BC pump-price defaults). Lift these into Settings so non-CAD
-  users can tune them. The card and the recap's distance fallback
-  share the same `FALLBACK_KM_PER_KWH` so any new pref should drive
-  both.
+- ~~Configurable gas-card constants~~ — **done** (October 2026) for
+  gas price and fuel economy: a Settings "Gas comparison" card, in $/L
+  and L/100 km or $/US gal and mpg for miles users, stored canonically
+  (`util/GasComparison`, `GasUnits`), defaulting to the old $2.15/L and
+  12 L/100 km. The card's caption shows the figures in use. Still
+  hard-coded: the 4 km/kWh distance fallback used when a month has no
+  odometer readings (`StatsViewModel`'s `EV_EFFICIENCY_KM_PER_KWH`,
+  the recap's `FALLBACK_KM_PER_KWH`).
 - **Year recap polish**: include the scoped vehicle's name in the
   PDF title block (the screen's scope line, the HTML title, and the
   filename already carry it); pro-rate cross-year trips for "longest
