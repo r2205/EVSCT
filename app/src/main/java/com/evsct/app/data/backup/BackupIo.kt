@@ -1,5 +1,6 @@
 package com.evsct.app.data.backup
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
@@ -23,6 +24,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -56,18 +58,37 @@ private const val SHARE_DIR_IN_CACHE = "backup-share"
 private const val PRE_RESTORE_DIR_IN_FILES = "pre-restore"
 private const val PRE_RESTORE_SNAPSHOT_NAME = "pre-restore-snapshot.zip"
 
-// Decompression caps. They exist to short-circuit zip-bombs that decompress
-// a few KB of input into gigabytes of output — the primary defenses are the
-// per-entry and entry-count caps. The aggregate cap must stay far above any
-// legitimate backup: export is unbounded (attachments are capped at 25 MiB
-// each but a receipt-photographing user accumulates multi-hundred-MiB
-// collections), and a backup that exports fine but trips the restore cap is
-// un-restorable — including the automatic pre-restore snapshot, which would
-// make "Undo last restore" fail exactly when it's needed.
-private const val MAX_JSON_BYTES: Long = 10L * 1024 * 1024
+// Restore limits. A backup that saves fine but trips one of these on restore
+// is un-restorable — the automatic pre-restore snapshot included, which would
+// make "Undo last restore" fail exactly when it's needed — so export checks
+// the same numbers before writing ([backupLimitProblem]) and none of them
+// caps how much a log can grow in practice. There used to be a fixed 2 GiB
+// total and a 5,000-entry cap: a few hundred full-size receipt photos crossed
+// the first, a few thousand receipts the second, and nothing on the export
+// side knew.
+//
+// backup.json is read into memory, so it keeps a cap — set where export, which
+// builds the same JSON in memory, would itself be struggling (~1 KB a session,
+// so ~65,000 sessions). Attachments are capped at 25 MiB when picked, so a
+// larger entry is not one this app wrote. The entry cap only bounds how many
+// files a restore creates; it sits far above any receipt collection.
+private const val MAX_JSON_BYTES: Long = 64L * 1024 * 1024
 private const val MAX_ENTRY_BYTES: Long = 25L * 1024 * 1024
-private const val MAX_TOTAL_BYTES: Long = 2L * 1024 * 1024 * 1024
-private const val MAX_BACKUP_ENTRIES: Int = 5_000
+private const val MAX_BACKUP_ENTRIES: Int = 100_000
+
+// Zip-bomb guard, in place of the old fixed total: the bytes a restore
+// inflates may not exceed this allowance plus MAX_INFLATION_RATIO times the
+// compressed bytes it has read. Real backups sit far inside it — photos and
+// PDFs deflate 1–2×, backup.json ~10× (52× at worst, a log of empty sessions),
+// and the allowance alone covers a JSON at its cap. A bomb deflates ~1,000×,
+// so it fails after a small multiple of its own file size. Whatever passes
+// is still bounded by the free space on the device (see MIN_FREE_BYTES).
+private const val INFLATION_ALLOWANCE_BYTES: Long = 128L * 1024 * 1024
+private const val MAX_INFLATION_RATIO: Long = 20
+
+/** Space restore leaves free on the cache filesystem while unpacking, so a
+ *  huge backup fails with a message instead of filling the device. */
+private const val MIN_FREE_BYTES: Long = 64L * 1024 * 1024
 
 sealed interface BackupResult {
     data class ExportSuccess(val sessions: Int, val trips: Int, val vehicles: Int) : BackupResult
@@ -214,36 +235,41 @@ class BackupIo @Inject constructor(
         val receiptsBySession = receipts.groupBy { it.sessionId }
 
         val json = buildBackupJson(vehicles, trips, sessions, receiptsBySession)
+            .toString(2).toByteArray(Charsets.UTF_8)
+
+        // Each distinct entry name is written once. Restore dedupes shared
+        // basenames into a single file, so two receipt rows can legitimately
+        // reference the same path after restoring a merged backup — writing
+        // that entry twice would throw ZipException("duplicate entry") and
+        // fail the whole export.
+        val fileEntries = linkedMapOf<String, File>()
+        vehicles.forEach { v ->
+            val rel = v.imagePath ?: return@forEach
+            val file = File(context.filesDir, rel)
+            if (file.exists()) fileEntries.putIfAbsent(IMAGE_DIR_IN_ZIP + file.name, file)
+        }
+        // Every attached receipt file, not just one per session.
+        receipts.forEach { r ->
+            val file = File(context.filesDir, r.filePath)
+            if (file.exists()) fileEntries.putIfAbsent(RECEIPT_DIR_IN_ZIP + file.name, file)
+        }
+
+        // Refuse here, with a reason, rather than write a file the user
+        // would only find out at restore time can't be read back.
+        backupLimitProblem(
+            jsonBytes = json.size.toLong(),
+            entryCount = 1 + fileEntries.size,
+            largestFileBytes = fileEntries.values.maxOfOrNull { it.length() } ?: 0L,
+        )?.let { throw IOException("This backup couldn't be restored later: $it.") }
+
         ZipOutputStream(out).use { zip ->
             zip.putNextEntry(ZipEntry(BACKUP_JSON))
-            zip.write(json.toString(2).toByteArray(Charsets.UTF_8))
+            zip.write(json)
             zip.closeEntry()
-
-            // Each distinct entry name is written once. Restore dedupes
-            // shared basenames into a single file, so two receipt rows can
-            // legitimately reference the same path after restoring a
-            // merged backup — writing that entry twice would throw
-            // ZipException("duplicate entry") and fail the whole export.
-            val writtenEntries = mutableSetOf<String>()
-            fun writeFileEntry(nameInZip: String, file: File) {
-                if (!writtenEntries.add(nameInZip)) return
+            fileEntries.forEach { (nameInZip, file) ->
                 zip.putNextEntry(ZipEntry(nameInZip))
                 file.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
-            }
-
-            vehicles.forEach { v ->
-                val rel = v.imagePath ?: return@forEach
-                val file = File(context.filesDir, rel)
-                if (!file.exists()) return@forEach
-                writeFileEntry(IMAGE_DIR_IN_ZIP + file.name, file)
-            }
-
-            // Write every attached receipt file, not just one per session.
-            receipts.forEach { r ->
-                val file = File(context.filesDir, r.filePath)
-                if (!file.exists()) return@forEach
-                writeFileEntry(RECEIPT_DIR_IN_ZIP + file.name, file)
             }
         }
         return BackupCounts(sessions = sessions.size, trips = trips.size, vehicles = vehicles.size)
@@ -740,11 +766,18 @@ class BackupIo @Inject constructor(
 
     /* --- restore helpers --- */
 
+    // usableSpace rather than StorageManager.getAllocatableBytes: the unpack
+    // writes ordinary files, which never make the system clear other apps'
+    // caches, so counting that clearable space would let a restore run into
+    // "no space left" partway instead of failing up front with a message.
+    @SuppressLint("UsableSpace")
     private fun readZipToTemp(uri: Uri, tempDir: File): JSONObject? =
         context.contentResolver.openInputStream(uri).use { stream ->
             requireNotNull(stream) { "Could not open backup file." }
-            BackupZip.scanToTemp(stream, tempDir)
-                ?.let { JSONObject(String(it, Charsets.UTF_8)) }
+            BackupZip.scanToTemp(
+                stream, tempDir,
+                spaceBudgetBytes = (tempDir.usableSpace - MIN_FREE_BYTES).coerceAtLeast(0L),
+            )?.let { JSONObject(String(it, Charsets.UTF_8)) }
         }
 
     private fun parsePayload(json: JSONObject): BackupPayload? {
@@ -872,7 +905,7 @@ class BackupIo @Inject constructor(
      *  from an earlier restore of the same media. */
     private data class InstallOutcome(val failed: Int, val absent: Int)
 
-    /** Copy each [name] from [tempSubdir] into filesDir/[targetSubdir]/.
+    /** Move each [name] from [tempSubdir] into filesDir/[targetSubdir]/.
      *  Called only after the DB transaction commits, so a failure here
      *  leaves a single file missing rather than a half-restored database.
      *  A partially written destination is removed: left in place it would
@@ -892,6 +925,10 @@ class BackupIo @Inject constructor(
                 if (!dest.isFile) absent++
                 return@forEach
             }
+            // Moved, not copied: cacheDir and filesDir share a filesystem, so
+            // the rename is instant and a large restore needs its media's
+            // space once instead of twice. Copy only when it can't move.
+            if (src.renameTo(dest)) return@forEach
             try {
                 src.inputStream().use { input ->
                     dest.outputStream().use { output -> input.copyTo(output) }
@@ -922,6 +959,27 @@ class BackupIo @Inject constructor(
         }
     }
 }
+
+/**
+ * Why a restore would refuse a backup with this content, or null when it
+ * would take it. Export asks before writing anything: a backup that saves
+ * fine and then can't be read back is worse than an export that fails with a
+ * reason. [jsonBytes] is backup.json's encoded size, [entryCount] counts it
+ * and every attached file, and [largestFileBytes] is the largest attachment.
+ */
+internal fun backupLimitProblem(jsonBytes: Long, entryCount: Int, largestFileBytes: Long): String? = when {
+    jsonBytes > MAX_JSON_BYTES ->
+        "its data file would be ${mb(jsonBytes)}, over the ${mb(MAX_JSON_BYTES)} a restore reads"
+    entryCount > MAX_BACKUP_ENTRIES ->
+        "it would hold $entryCount files, over the $MAX_BACKUP_ENTRIES a restore reads"
+    largestFileBytes > MAX_ENTRY_BYTES ->
+        "an attached file is ${mb(largestFileBytes)}, over the ${mb(MAX_ENTRY_BYTES)} a restore reads"
+    else -> null
+}
+
+/** Whole MB, rounded up, so a value just over a limit never reads as equal
+ *  to it. */
+private fun mb(bytes: Long): String = "${(bytes + 1024 * 1024 - 1) / (1024 * 1024)} MB"
 
 private val MANAGED_FILE_PATTERN = Regex(
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.(jpg|pdf)\$"
@@ -1133,26 +1191,40 @@ internal object BackupZip {
     /**
      * Scan [stream], extracting vehicle images and receipts into [tempDir],
      * and return the raw bytes of `backup.json` (null when the zip has
-     * none). Throws [IOException] when any decompression cap is exceeded.
-     * The caps default to the production limits; tests pass small ones.
+     * none). Throws [IOException] when any limit is exceeded.
+     *
+     * [spaceBudgetBytes] bounds what is written to disk: production passes
+     * the free space on [tempDir]'s filesystem less a reserve. The inflation
+     * guard — [inflationAllowanceBytes] plus [maxInflationRatio] times the
+     * compressed bytes read so far — bounds everything inflated, extracted
+     * or not. The other limits default to the production ones; tests pass
+     * small ones.
      */
     fun scanToTemp(
         stream: InputStream,
         tempDir: File,
+        spaceBudgetBytes: Long,
         maxJsonBytes: Long = MAX_JSON_BYTES,
         maxEntryBytes: Long = MAX_ENTRY_BYTES,
-        maxTotalBytes: Long = MAX_TOTAL_BYTES,
         maxEntries: Int = MAX_BACKUP_ENTRIES,
+        inflationAllowanceBytes: Long = INFLATION_ALLOWANCE_BYTES,
+        maxInflationRatio: Long = MAX_INFLATION_RATIO,
     ): ByteArray? {
         var json: ByteArray? = null
-        var totalBytes = 0L
+        var inflatedBytes = 0L
+        var extractedBytes = 0L
         var entryCount = 0
-        ZipInputStream(BufferedInputStream(stream)).use { zip ->
+        // Counts what the zip reader pulls from the file, read-ahead
+        // included, so the ratio errs toward letting a real backup through.
+        val compressed = CountingInputStream(stream)
+        ZipInputStream(BufferedInputStream(compressed)).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 if (++entryCount > maxEntries) {
                     throw IOException("Backup contains too many entries (>$maxEntries).")
                 }
+                val isMedia = !entry.isDirectory &&
+                    (entry.name.startsWith(IMAGE_DIR_IN_ZIP) || entry.name.startsWith(RECEIPT_DIR_IN_ZIP))
                 val written: Long = when {
                     entry.isDirectory -> zip.drainBounded(maxEntryBytes)
                     entry.name == BACKUP_JSON -> {
@@ -1175,14 +1247,39 @@ internal object BackupZip {
                     // closeEntry() to inflate unmetered.
                     else -> zip.drainBounded(maxEntryBytes)
                 }
-                totalBytes += written
-                if (totalBytes > maxTotalBytes) {
-                    throw IOException("Backup exceeds the $maxTotalBytes byte total decompression cap.")
+                inflatedBytes += written
+                // Media bytes count as written even when extractInto drained
+                // a duplicate instead: over-counting only errs safe.
+                if (isMedia) extractedBytes += written
+                if (inflatedBytes > inflationAllowanceBytes + maxInflationRatio * compressed.count) {
+                    throw IOException(
+                        "This file unpacks to far more data than a backup holds, so it wasn't " +
+                            "restored. Nothing was changed.",
+                    )
+                }
+                if (extractedBytes > spaceBudgetBytes) {
+                    throw IOException(
+                        "There isn't enough free storage to unpack this backup. Free up some " +
+                            "space and try again. Nothing was changed.",
+                    )
                 }
                 zip.closeEntry()
             }
         }
         return json
+    }
+
+    /** Passes [delegate] through, counting the bytes read from it. */
+    private class CountingInputStream(delegate: InputStream) : FilterInputStream(delegate) {
+        var count = 0L
+            private set
+
+        override fun read(): Int = super.read().also { if (it >= 0) count++ }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int =
+            super.read(b, off, len).also { if (it > 0) count += it }
+
+        override fun skip(n: Long): Long = super.skip(n).also { if (it > 0) count += it }
     }
 
     /** Extract one zip entry to [targetDir] under its basename, returning the
