@@ -756,6 +756,20 @@ vehicle on the same trip.
   adjustPan devices panned off-screen while typing (see
   "Soft-keyboard (IME) handling"). Delete stays in the top bar,
   away from where thumbs land.
+- **Unsaved edits survive process death** (November 2026): the form
+  lived only in ViewModel memory, so Android killing the app behind the
+  photo picker (the likeliest moment) silently reverted it to the
+  database row. `VehicleFormDraft` mirrors the session form's
+  `SessionFormDraft`: it captures only the fields that differ from the
+  form as loaded, through a `SavedStateHandle` saved-state provider
+  (called only when Android saves state), and lays them over a fresh
+  load. The ViewModel also carries its photo-copy bookkeeping
+  (`touchedImagePaths`) and an already-committed row id, so a retry
+  after a dropped pop still updates rather than duplicates. A picked
+  photo that arrives on the recreated screen waits for the load
+  (`loadJob`), which used to overwrite `imagePath` and orphan the copy
+  on disk, and back-out cleanup gets `reconcileImageFiles`'
+  still-referenced guard, so it never deletes a photo a row uses.
 
 ### Trips
 
@@ -1562,6 +1576,18 @@ the unit pref as a parameter; aggregates pass the default-currency to
   escaping of user-controlled names, dot decimals under comma locales,
   the monthly table, and the map section (basemap, pins, routes, legend,
   and its absence when nothing is located).
+- **`ui/vehicles/VehicleFormDraftTest.kt`** (November 2026, Robolectric)
+  — the vehicle form's process-death draft through a real `Parcel`: an
+  unedited form captures nothing, every editable field round-trips,
+  cleared values (the photo included) stay cleared, untouched fields
+  take the fresh load.
+- **`ui/vehicles/VehicleEditViewModelTest.kt`** (November 2026,
+  Robolectric, in-memory Room, real `SavedStateHandle`) — unsaved edits
+  survive process death, and a second death before the reload; a photo
+  picked while the recreated form is still loading (the load held back
+  by a gated DataStore) is kept and saved; a photo picked before the
+  death is cleaned up on back-out; after a dropped pop, a retry updates
+  the committed row and back-out keeps its photo.
 - **`ui/VehicleScopeTest.kt`** — bucket membership, `needsVehiclePicker`,
   fallbacks, and token round-trips.
 - **`ui/theme/ColorSchemeTest.kt`** — palette properties (see Theme).
