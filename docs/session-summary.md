@@ -160,6 +160,19 @@ diff in review.
   - Expansion is `rememberSaveable`, since the map and photo pickers put
     the screen at risk of process death. `CollapsibleSectionTest`
     (Robolectric) pins all of these rules.
+- **Unsaved edits survive process death** (November 2026): the form
+  lived only in ViewModel memory, so Android killing the app behind the
+  camera or photo picker — the likeliest moment — silently reverted it
+  to the database row. `SessionFormDraft` captures only the fields that
+  differ from the form as loaded, through a `SavedStateHandle` saved-state
+  provider (called only when Android saves state, not per keystroke), and
+  lays them over a fresh load, so untouched fields (a tracked charge's
+  elapsed-time seed) take fresh values. The ViewModel also carries its
+  receipt-copy bookkeeping, the geocode baseline, a pending map-pick
+  propagation and an already-committed row id. Picker results that
+  arrive on the recreated screen (a receipt, a map pick) wait for the
+  load (`loadJob`), which would otherwise overwrite them, and back-out
+  cleanup never deletes a receipt file a row still references.
 - **Smart duration entry**: `25` → `0h 25m 0s`; `32:14` → `0h 32m 14s`
   (two-part is m:s, the stopwatch reading — sub-hour charges dominate);
   `1:25:00` exact. While focused, supporting text previews the
@@ -187,7 +200,12 @@ diff in review.
   with another's rate; coordinates from the newest visit with both
   halves. `applyStop` replaces rather than merges (re-picking a different
   stop must not keep the last one's residue), echoes rates in canonical
-  $/min, recomputes hints, and clears `timeRateFlipUndo`. The helpers
+  $/min, recomputes hints, and clears `timeRateFlipUndo`. Since November
+  2026 a stop with coordinates also rebases the geocode baseline, as GPS
+  autofill and a map pick do: save() used to read the stop's address as
+  a user edit, null its coordinates and fall back to a text geocode,
+  and since the map averages a stop's visits each new visit dragged a
+  map-picked pin toward the geocoder's guess. The helpers
   live at file scope so `RecentStopsTest` can drive them without the
   Hilt ViewModel.
 - **GPS autofill**: tap the tertiary-tinted card to request location
@@ -1050,7 +1068,20 @@ of years where they have data) and recomputes the recap on each pick.
     `MANAGED_FILE_PATTERN` so a stray non-app file in the same dir
     never gets nuked.
   - Bounded decompression: zip-bomb defense via `copyBoundedTo` /
-    `readBytesBounded` with per-entry and total caps.
+    `readBytesBounded` with per-entry caps (25 MiB media, the attach
+    cap; 64 MiB `backup.json`), an entry cap (100,000), and — since
+    November 2026 — an inflation-ratio guard instead of a fixed total:
+    a restore may inflate at most 128 MiB plus 20× the compressed bytes
+    it has read (photos and PDFs deflate 1–2×, `backup.json` ~10×, 52×
+    at worst; a bomb ~1,000×), and only as much media as fits in the
+    free space on the cache filesystem less a 64 MiB reserve. The old
+    fixed 2 GiB total and 5,000-entry cap refused real receipt-heavy
+    backups that export had written without complaint, the pre-restore
+    snapshot included.
+  - **Export checks the restore limits** (November 2026):
+    `writeBackupZip` plans its entries, then asks `backupLimitProblem`
+    whether restore would take them, and fails with the reason instead
+    of writing a backup that can't be read back. `BackupLimitProblemTest`.
   - Zip-slip guard via `sanitizedBasename` on JSON-declared paths. Since
     PR #75 it also rejects `.` and `..` (which `File.name` keeps), so a
     hand-edited row can't point at `receipts/..`: the files directory
@@ -1061,8 +1092,10 @@ of years where they have data) and recomputes the recap on each pick.
     disk part-way still said "Restore complete" — and at next launch
     `MissingMediaSweeper` deleted every row whose file never arrived,
     turning a recoverable copy error into silent loss. A restore
-    transiently needs about three copies of the media (extracted temp
-    dir, snapshot staging zip, final files), so this is plausible.
+    transiently needs extra space for the media (extracted temp dir and
+    snapshot staging zip; since November 2026 `installFiles` moves
+    files into place rather than copying them, falling back to a copy),
+    so this is plausible.
     `installFiles` now counts copy failures (removing the partial file,
     which would otherwise pass the sweep's existence check as corrupt)
     and counts referenced files the backup never contained.
@@ -1465,7 +1498,10 @@ the unit pref as a parameter; aggregates pass the default-currency to
   thousands ("1,234.5"), trims whitespace, and returns null on
   blank/garbage. Extended in the 2026-07 sweep: European
   dot-thousands+comma-decimal, strict comma-grouping ("1,234" reads
-  as thousands, "12,5" as a decimal).
+  as thousands, "12,5" as a decimal). Since November 2026 the one
+  ambiguous shape, a single comma and three digits ("45,678"), follows
+  the device locale: a decimal where it writes decimals with a comma,
+  thousands elsewhere; several groups are always thousands.
 - **`util/FormatLocaleTest.kt`** (2026-07 sweep) — number rendering is
   pinned to US separators regardless of device locale; checks run on
   fresh threads under de/fr/us defaults so the ThreadLocal formatters
@@ -1497,7 +1533,11 @@ the unit pref as a parameter; aggregates pass the default-currency to
 - **`data/backup/BackupZipTest.kt`** (sweep #10) — the bounded zip
   scanner with in-memory zips and tiny caps: unknown-entry metering,
   data-carrying directory entries, duplicate basenames, zip-slip
-  confinement.
+  confinement; since November 2026 the inflation-ratio guard (zeros
+  fail, incompressible media passes) and the free-space budget (media
+  spends it; `backup.json` and drained entries don't).
+- **`data/backup/BackupLimitProblemTest.kt`** (November 2026) — export's
+  restore-limit check: at every limit is fine, one past each fails.
 - **`util/FormatThreadSafetyTest.kt`** — concurrent formatter use.
 - **`util/EfficiencyAnalysisTest.kt`** also grew interleave-exclusion
   cases (sweep #6) and the trip-anchor suite (start/end/whole-trip
@@ -1555,6 +1595,15 @@ the unit pref as a parameter; aggregates pass the default-currency to
 - **`ui/sessions/RecentStopsTest.kt`** — recent-stop grouping and the
   three sourcing rules (identity from latest, pricing set whole, coords
   from newest full pair).
+- **`ui/sessions/SessionFormDraftTest.kt`** (November 2026, Robolectric)
+  — the process-death draft through a real `Parcel`: an unedited form
+  captures nothing, every editable field round-trips, cleared values
+  stay cleared, untouched fields take the fresh load.
+- **`ui/sessions/SessionEditViewModelTest.kt`** (November 2026,
+  Robolectric, in-memory Room, real `SavedStateHandle`) — the edit
+  ViewModel end to end: a recent stop's coordinates survive save;
+  unsaved edits survive process death, and a second death before the
+  reload; a stop picked before process death keeps its coordinates.
 - **`ui/sessions/SessionRowDescriptionTest.kt`** — the row's TalkBack
   sentence: optional parts, pluralization, spoken rates, and the
   time-rate preference mapping.
@@ -1841,8 +1890,23 @@ sweep** (Phases 1–7) then reworked the app's surface for correctness,
 feedback, navigation, motion, and accessibility, and a **second UI/UX
 round** (PRs #50–#59) followed at the end of July. In September a
 **review pass** closed out a batch of restore, import, security, and
-stats edges (PRs #72–#77). Highlights of what got fixed and built
-(newest first):
+stats edges (PRs #72–#77). In November a full-app security and bug audit found no
+serious security issues and four medium bugs, fixed together. Highlights
+of what got fixed and built (newest first):
+
+- **November 2026 audit fixes** (branch `claude/funny-ride-7u356s`):
+  - **Backups restore what export writes**: the fixed 2 GiB total and
+    5,000-entry restore caps (and 10 MiB `backup.json`) refused backups
+    export had written without complaint. Restore now uses an
+    inflation-ratio guard plus the device's free space, 100,000 entries
+    and 64 MiB JSON; export checks the same limits before writing;
+    restored media is moved into place instead of copied.
+  - **Recent stop keeps its coordinates**: `applyStop` rebases the
+    geocode baseline when the stop has coordinates.
+  - **"45,678" on a comma-decimal device is 45.678**: `parseDecimal`'s
+    single-group comma case follows the device locale.
+  - **Session form survives process death**: `SessionFormDraft` in the
+    ViewModel's `SavedStateHandle`; picker results wait for the reload.
 
 - **September 2026 review fixes** (PRs #72–#77, branch
   `claude/sweet-meitner-4cd0mz`, restarted from `main` between PRs):
