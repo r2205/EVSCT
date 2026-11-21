@@ -106,17 +106,23 @@ object Format {
      * and the value would silently save as null. Accepts both separators.
      * When both appear, the one that occurs last is the decimal point and
      * the other is a thousands separator — so US "1,234.5" and European
-     * "1.234,56" both parse to their intended value. A comma-only value in
-     * strict thousands grouping ("1,234", "12,345,678") reads as grouped —
-     * pasted US-style odometers would otherwise silently shrink ~1000×.
-     * Any other lone comma is the decimal point ("12,5", "0,485"); the
-     * nonzero-leading-group requirement keeps 3-decimal fractions below 1
-     * out of the grouped branch. The residual ambiguity — a comma-decimal
-     * value ≥ 1 with exactly 3 decimals — resolves as thousands, since no
-     * field in this app realistically takes 3-decimal input above 1.
+     * "1.234,56" both parse to their intended value. Two or more comma
+     * groups ("12,345,678") can only be thousands grouping.
+     *
+     * A single comma followed by exactly three digits ("45,678") is the one
+     * genuinely ambiguous shape, and [decimalSeparator] — the device
+     * locale's, by default — settles it. Where the locale writes decimals
+     * with a comma (fr-CA, de, …) it is a decimal: that is what a
+     * comma-decimal keyboard types, and a charger receipt's "45,678 kWh"
+     * must not save as 45,678 kWh. Everywhere else it is a thousands group,
+     * as before: a dot-decimal keyboard has no comma to type, so the input
+     * was pasted, and a pasted US-style odometer would otherwise silently
+     * shrink ~1000×. The nonzero-leading-group requirement keeps
+     * 3-decimal fractions below 1 ("0,485") out of the grouped branch in
+     * every locale. Any other lone comma is the decimal point ("12,5").
      * Returns null for blank or unparseable input.
      */
-    fun parseDecimal(text: String): Double? {
+    fun parseDecimal(text: String, decimalSeparator: Char = localeDecimalSeparator()): Double? {
         val t = text.trim()
         if (t.isEmpty()) return null
         val normalized = when {
@@ -125,11 +131,17 @@ object Format {
                     t.replace(".", "").replace(',', '.')  // European: dot-thousands, comma-decimal
                 else
                     t.replace(",", "")                    // US: comma-thousands, dot-decimal
-            ',' in t ->
-                if (GROUPED_THOUSANDS.matches(t) && !t.trimStart('-', '+').startsWith("0"))
+            ',' in t -> {
+                val grouped = GROUPED_THOUSANDS.matches(t) &&
+                    !t.trimStart('-', '+').startsWith("0") &&
+                    // One group in a comma-decimal locale is "45,678" typed
+                    // as a decimal, not 45 thousand.
+                    !(decimalSeparator == ',' && t.count { it == ',' } == 1)
+                if (grouped)
                     t.replace(",", "")                    // "1,234" / "12,345,678"
                 else
                     t.replace(',', '.')                   // "12,5" / "0,485"
+            }
             else -> t
         }
         // toDoubleOrNull happily parses "NaN", "Infinity", and overflowing
@@ -142,4 +154,19 @@ object Format {
     /** Comma-only input in strict US thousands grouping: 1–3 digit leading
      *  group, then one or more groups of exactly 3. */
     private val GROUPED_THOUSANDS = Regex("""[-+]?\d{1,3}(,\d{3})+""")
+
+    /** Last locale [localeDecimalSeparator] resolved, with its separator.
+     *  The hints re-parse every numeric field on each keystroke, and
+     *  DecimalFormatSymbols builds a fresh instance per call; the locale
+     *  key keeps a language change picked up. */
+    @Volatile private var separatorCache: Pair<Locale, Char>? = null
+
+    /** The decimal separator of the locale numbers are formatted in — what
+     *  the device's decimal keyboard offers. */
+    private fun localeDecimalSeparator(): Char {
+        val locale = Locale.getDefault(Locale.Category.FORMAT)
+        separatorCache?.let { (cached, separator) -> if (cached == locale) return separator }
+        return DecimalFormatSymbols.getInstance(locale).decimalSeparator
+            .also { separatorCache = locale to it }
+    }
 }
