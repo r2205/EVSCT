@@ -29,3 +29,7 @@ Thumbs.db
 *.aab
 *.ap_
 *.dex
+# Android Studio's Generate Signed App Bundle / APK wizard saves here by
+# default, with output-metadata.json and baselineProfiles/ beside the APK.
+# Untracked, they marked every later build "-dirty" in the About card.
+app/release/
