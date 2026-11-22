@@ -1920,7 +1920,8 @@ stats edges (PRs #72–#77). In November a full-app security and bug audit found
 serious security issues and four medium bugs, fixed together. Highlights
 of what got fixed and built (newest first):
 
-- **November 2026 audit fixes** (branch `claude/funny-ride-7u356s`):
+- **November 2026 audit fixes** (PR #103, branch
+  `claude/funny-ride-7u356s`; the vehicle-form follow-up is PR #102):
   - **Backups restore what export writes**: the fixed 2 GiB total and
     5,000-entry restore caps (and 10 MiB `backup.json`) refused backups
     export had written without complaint. Restore now uses an
@@ -1933,6 +1934,10 @@ of what got fixed and built (newest first):
     single-group comma case follows the device locale.
   - **Session form survives process death**: `SessionFormDraft` in the
     ViewModel's `SavedStateHandle`; picker results wait for the reload.
+  - **Vehicle form survives process death** (#102, follow-up): the same
+    fix as `VehicleFormDraft`. A photo picked while the recreated form
+    loads is no longer overwritten (and orphaned), and back-out cleanup
+    keeps a photo a row still references.
 
 - **September 2026 review fixes** (PRs #72–#77, branch
   `claude/sweet-meitner-4cd0mz`, restarted from `main` between PRs):
