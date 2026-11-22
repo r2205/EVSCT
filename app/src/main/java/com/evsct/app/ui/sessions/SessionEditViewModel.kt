@@ -1,5 +1,6 @@
 package com.evsct.app.ui.sessions
 
+import android.os.Bundle
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -211,7 +212,7 @@ data class SessionEditUi(
 
 @HiltViewModel
 class SessionEditViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     /** Only for [androidx.room.withTransaction] in save(): the session row
      *  and its receipt-row reconciliation must commit atomically. All data
      *  access still goes through the repositories. */
@@ -321,7 +322,21 @@ class SessionEditViewModel @Inject constructor(
      *  fresh geocode when they diverge. */
     private var originalGeocodeQuery: String? = null
 
+    /** Unsaved edits from before the process died, when this screen is being
+     *  recreated — see [captureDraft]. Read before the provider below
+     *  replaces the key's saved value. */
+    private val restoredDraft: Bundle? = savedStateHandle.get<Bundle>(DRAFT_KEY)
+
+    /** Seeds the form from the database (or new-session defaults), then lays
+     *  any [restoredDraft] over it. Edits that can arrive from outside the
+     *  form — a picker result redelivered after process death — wait for it,
+     *  or the load would overwrite them. */
+    private val loadJob: Job
+
     init {
+        // Called only when Android actually saves state (the app going to
+        // the background), not on every keystroke.
+        savedStateHandle.setSavedStateProvider(DRAFT_KEY) { captureDraft() }
         // Single collector that pushes brand/city changes through to the
         // in-progress notifier. Funnels every state mutation (typed,
         // GPS-autofilled, recent-stop-applied, map-picked) through the
@@ -367,7 +382,7 @@ class SessionEditViewModel @Inject constructor(
         viewModelScope.launch {
             vehicleRepository.observeAll().collect { _state.update { s -> s.copy(vehicles = it) } }
         }
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             // Capture the user's units once at load time so the odometer
             // input/display stays in a single coordinate space for the lifetime
             // of this edit session. Toggling the pref later won't surprise the
@@ -412,6 +427,50 @@ class SessionEditViewModel @Inject constructor(
             // here rather than per-path also folds in the tracked-charge
             // duration seed, so opening a tracked session isn't "dirty".
             dirtyBaseline = _state.value
+            // After the baseline, so restored edits read as unsaved: the
+            // discard prompt still guards them.
+            restoredDraft?.let(::applyDraft)
+        }
+    }
+
+    /**
+     * What process death must not lose: the form's unsaved edits (see
+     * [SessionFormDraft]) and the bookkeeping that gives them meaning — the
+     * receipt copies made so far (cleanup must still find them), the
+     * geocode baseline (a GPS fix, map pick or recent stop moved it, and
+     * losing that would null their coordinates on save), a map pick still
+     * waiting to reach sibling sessions, and a row an earlier save already
+     * committed (a retry must update it, not insert a duplicate).
+     *
+     * Before the load lands there is nothing new to capture, so whatever
+     * was restored is handed back as-is: dying twice in a row must not
+     * drop it.
+     */
+    private fun captureDraft(): Bundle {
+        val baseline = dirtyBaseline ?: return restoredDraft ?: Bundle()
+        return Bundle().apply {
+            putBundle(DRAFT_FORM, SessionFormDraft.capture(_state.value, baseline))
+            putStringArrayList(DRAFT_TOUCHED_RECEIPTS, ArrayList(touchedReceiptPaths))
+            // "" is no query: geocodeQueryFor never returns a blank one.
+            putString(DRAFT_GEOCODE_BASELINE, originalGeocodeQuery.orEmpty())
+            pendingPickPropagation?.let { (lat, lng) ->
+                putDoubleArray(DRAFT_PICK_PROPAGATION, doubleArrayOf(lat, lng))
+            }
+            committedSessionId?.let { putLong(DRAFT_COMMITTED_ID, it) }
+        }
+    }
+
+    private fun applyDraft(draft: Bundle) {
+        draft.getStringArrayList(DRAFT_TOUCHED_RECEIPTS)?.let { touchedReceiptPaths += it }
+        if (draft.containsKey(DRAFT_GEOCODE_BASELINE)) {
+            originalGeocodeQuery = draft.getString(DRAFT_GEOCODE_BASELINE)?.takeIf { it.isNotEmpty() }
+        }
+        draft.getDoubleArray(DRAFT_PICK_PROPAGATION)?.takeIf { it.size == 2 }?.let { (lat, lng) ->
+            pendingPickPropagation = lat to lng
+        }
+        if (draft.containsKey(DRAFT_COMMITTED_ID)) committedSessionId = draft.getLong(DRAFT_COMMITTED_ID)
+        draft.getBundle(DRAFT_FORM)?.let { form ->
+            _state.update { withHints(SessionFormDraft.restore(form, it)) }
         }
     }
 
@@ -774,6 +833,10 @@ class SessionEditViewModel @Inject constructor(
                 return@launch
             }
             touchedReceiptPaths += copied.filePath
+            // The photo picker is where Android most often kills the app;
+            // its result then arrives on a recreated ViewModel whose form
+            // may still be loading, and the load would replace the list.
+            loadJob.join()
             _state.update {
                 it.copy(
                     receipts = it.receipts + UiReceipt(
@@ -833,12 +896,25 @@ class SessionEditViewModel @Inject constructor(
      * Rates echo in canonical $/min exactly as loading a saved session does,
      * including forcing the unit toggle to match — see the load path. Hints
      * recompute because the posted-rate fields participate in validation.
+     *
+     * A stop's coordinates belong to its address, so when it carries both
+     * the address becomes the geocode baseline, as after GPS autofill or a
+     * map pick. Without that, save() read the new address as a user edit,
+     * nulled the stop's coordinates and fell back to a text geocode — and
+     * since the map averages a stop's visits, every new visit dragged a
+     * map-picked pin toward the geocoder's guess. A stop without
+     * coordinates leaves the baseline alone, so save() geocodes it.
      */
-    fun applyStop(stop: RecentStop) = _state.update { current ->
+    fun applyStop(stop: RecentStop) {
         // Same reset [update] performs on a keystroke: the stop's rate
         // supersedes any pre-flip text, or a later unit toggle would restore
         // text from before the pick.
         timeRateFlipUndo = null
+        _state.update { current -> applyStopTo(current, stop) }
+        if (stop.latitude != null && stop.longitude != null) rebaseGeocodeQuery()
+    }
+
+    private fun applyStopTo(current: SessionEditUi, stop: RecentStop): SessionEditUi =
         withHints(current.copy(
             brand = stop.brand?.trim().orEmpty(),
             city = stop.city.orEmpty(),
@@ -857,8 +933,6 @@ class SessionEditViewModel @Inject constructor(
             latitude = stop.latitude,
             longitude = stop.longitude,
         ))
-    }
-
 
     /** Pick or clear the payment method. Clearing drops the detail with it:
      *  "TD Visa" with no method would be hidden from the form yet saved. */
@@ -892,6 +966,23 @@ class SessionEditViewModel @Inject constructor(
         province?.takeIf { it.isNotBlank() },
     ).joinToString(", ").takeIf { it.isNotBlank() }
 
+    /** The form's geocode query, as save() builds it. */
+    private fun geocodeQueryOf(s: SessionEditUi): String? = geocodeQueryFor(
+        address = s.address.takeIf { it.isNotBlank() },
+        stationName = s.stationName.takeIf { it.isNotBlank() },
+        city = s.city.takeIf { it.isNotBlank() },
+        province = s.province.takeIf { it.isNotBlank() },
+    )
+
+    /** The address fields and the coordinates now agree — GPS autofill, a
+     *  map pick or a recent stop set them together. Make the current
+     *  address the baseline save() compares against, so it isn't read as a
+     *  user edit that leaves the coordinates stale: save() would null them
+     *  in favour of a later, less precise text geocode. */
+    private fun rebaseGeocodeQuery() {
+        originalGeocodeQuery = geocodeQueryOf(_state.value)
+    }
+
     fun save(onSaved: () -> Unit) {
         if (commitInFlight || exitRequested) return
         commitInFlight = true
@@ -901,12 +992,7 @@ class SessionEditViewModel @Inject constructor(
             attachJobsInFlight.toList().joinAll()
             val s = _state.value
             val odometerKm = currentOdometerKm(s)
-            val newQuery = geocodeQueryFor(
-                address = s.address.takeIf { it.isNotBlank() },
-                stationName = s.stationName.takeIf { it.isNotBlank() },
-                city = s.city.takeIf { it.isNotBlank() },
-                province = s.province.takeIf { it.isNotBlank() },
-            )
+            val newQuery = geocodeQueryOf(s)
             val addressChanged = newQuery != originalGeocodeQuery
             // When the user edited the address, the stored coords are stale.
             // Save with null lat/lng — the next map open will pick them up via
@@ -1156,15 +1242,7 @@ class SessionEditViewModel @Inject constructor(
                     // fields read as one — nulling the exact GPS coordinates
                     // this autofill just stored in favour of a later, less
                     // precise text geocode.
-                    if (data.latitude != null && data.longitude != null) {
-                        val s = _state.value
-                        originalGeocodeQuery = geocodeQueryFor(
-                            address = s.address.takeIf { it.isNotBlank() },
-                            stationName = s.stationName.takeIf { it.isNotBlank() },
-                            city = s.city.takeIf { it.isNotBlank() },
-                            province = s.province.takeIf { it.isNotBlank() },
-                        )
-                    }
+                    if (data.latitude != null && data.longitude != null) rebaseGeocodeQuery()
                     "Filled from current location."
                 }
             }
@@ -1187,13 +1265,19 @@ class SessionEditViewModel @Inject constructor(
      *  deferred to save() (see [pendingPickPropagation]); here we only
      *  surface a heads-up so the wider effect isn't a surprise. */
     fun applyPickedLocation(lat: Double, lng: Double) {
-        // Commit the picked coordinates synchronously. The reverse-geocode
-        // below is a network call that can take seconds — a Save tapped
-        // before it returns must snapshot the picked coords, not the
-        // pre-pick state (which would silently discard the pick).
-        _state.update { it.copy(latitude = lat, longitude = lng) }
-        pendingPickPropagation = lat to lng
         viewModelScope.launch {
+            // After process death the picker pops back onto a freshly
+            // created ViewModel whose form is still loading — a pick
+            // applied now would be overwritten when the load lands. Once
+            // loaded, the join returns without suspending (Main.immediate),
+            // so the commit below stays synchronous.
+            loadJob.join()
+            // Commit the picked coordinates synchronously. The reverse-geocode
+            // below is a network call that can take seconds — a Save tapped
+            // before it returns must snapshot the picked coords, not the
+            // pre-pick state (which would silently discard the pick).
+            _state.update { it.copy(latitude = lat, longitude = lng) }
+            pendingPickPropagation = lat to lng
             val located = locationAutofill.reverseGeocodeAt(lat, lng)
             _state.update {
                 it.copy(
@@ -1202,13 +1286,8 @@ class SessionEditViewModel @Inject constructor(
                     address = located?.address ?: it.address,
                 )
             }
+            rebaseGeocodeQuery()
             val s = _state.value
-            originalGeocodeQuery = geocodeQueryFor(
-                address = s.address.takeIf { it.isNotBlank() },
-                stationName = s.stationName.takeIf { it.isNotBlank() },
-                city = s.city.takeIf { it.isNotBlank() },
-                province = s.province.takeIf { it.isNotBlank() },
-            )
 
             val key = propagationKey(
                 brand = s.brand.takeIf { it.isNotBlank() },
@@ -1290,8 +1369,26 @@ class SessionEditViewModel @Inject constructor(
         val orphans = touchedReceiptPaths - originalReceiptPaths
         if (orphans.isEmpty()) return
         appScope.launch {
-            orphans.forEach { receiptImageStore.delete(it) }
+            // Same shared-path guard as reconcileReceiptFiles. It also covers
+            // a screen recreated after process death: its originals come
+            // from this instance's load, so a copy an earlier instance
+            // already saved (a dropped pop, then the process died) is in
+            // the touched set but not the originals — and must survive.
+            val stillReferenced = sessionReceiptRepository.findAll()
+                .mapTo(mutableSetOf()) { it.filePath }
+            (orphans - stillReferenced).forEach { receiptImageStore.delete(it) }
         }
+    }
+
+    private companion object {
+        /** SavedStateHandle key for [captureDraft]'s bundle, and the keys
+         *  inside it. */
+        const val DRAFT_KEY = "session_edit_draft"
+        const val DRAFT_FORM = "form"
+        const val DRAFT_TOUCHED_RECEIPTS = "touchedReceipts"
+        const val DRAFT_GEOCODE_BASELINE = "geocodeBaseline"
+        const val DRAFT_PICK_PROPAGATION = "pickPropagation"
+        const val DRAFT_COMMITTED_ID = "committedSessionId"
     }
 }
 
