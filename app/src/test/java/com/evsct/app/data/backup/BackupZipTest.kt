@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.util.Random
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.After
@@ -83,7 +84,9 @@ class BackupZipTest {
     }
 
     @Test
-    fun `unknown entries count toward the total cap`() {
+    fun `unknown entries count toward the inflation guard`() {
+        // Drained, never written — but inflating them is the work a bomb
+        // makes the restore do, so they're metered all the same.
         assertFailsWith<IOException> {
             scanToTemp(
                 zipOf(
@@ -91,9 +94,76 @@ class BackupZipTest {
                     "b.bin" to ByteArray(700),
                 ),
                 maxEntryBytes = 10_000,
-                maxTotalBytes = 1_000,
+                inflationAllowanceBytes = 1_000,
+                maxInflationRatio = 0,
             )
         }
+    }
+
+    @Test
+    fun `highly compressible media beyond the inflation ratio throws`() {
+        // 512 KiB of zeros deflates to well under 1 KiB: a bomb's shape.
+        assertFailsWith<IOException> {
+            scanToTemp(
+                zipOf("receipts/r.jpg" to ByteArray(512 * 1024)),
+                inflationAllowanceBytes = 64 * 1024,
+                maxInflationRatio = 20,
+            )
+        }
+    }
+
+    @Test
+    fun `incompressible media passes the inflation guard`() {
+        // Photos and PDFs barely deflate, so a real backup's media sits at a
+        // ratio near 1, far inside the guard.
+        scanToTemp(
+            zipOf(
+                "backup.json" to "{}".toByteArray(),
+                "receipts/r.jpg" to randomBytes(512 * 1024),
+            ),
+            inflationAllowanceBytes = 64 * 1024,
+            maxInflationRatio = 20,
+        )
+        assertEquals(512 * 1024L, File(tempDir, "receipts/r.jpg").length())
+    }
+
+    @Test
+    fun `a backup larger than the old fixed total cap is not refused for its size`() {
+        // Stand-in for a multi-GiB receipt collection: well over this test's
+        // allowance, but incompressible, so only free space could stop it.
+        scanToTemp(
+            zipOf(*Array(8) { "receipts/r$it.jpg" to randomBytes(256 * 1024) }),
+            spaceBudgetBytes = 4L * 1024 * 1024,
+            inflationAllowanceBytes = 64 * 1024,
+        )
+        assertEquals(8, File(tempDir, "receipts").listFiles()?.size)
+    }
+
+    @Test
+    fun `media beyond the free-space budget throws`() {
+        assertFailsWith<IOException> {
+            scanToTemp(
+                zipOf(
+                    "receipts/a.jpg" to randomBytes(64 * 1024),
+                    "receipts/b.jpg" to randomBytes(64 * 1024),
+                ),
+                spaceBudgetBytes = 100 * 1024,
+            )
+        }
+    }
+
+    @Test
+    fun `json and drained entries don't spend the free-space budget`() {
+        // backup.json is read into memory and unknown entries are discarded:
+        // neither lands on disk.
+        val json = scanToTemp(
+            zipOf(
+                "backup.json" to randomBytes(64 * 1024),
+                "future-metadata.bin" to randomBytes(64 * 1024),
+            ),
+            spaceBudgetBytes = 1_024,
+        )
+        assertEquals(64 * 1024, json?.size)
     }
 
     @Test
@@ -183,17 +253,23 @@ class BackupZipTest {
         assertFalse(File(tempDir.parentFile, "escaped.bin").exists())
     }
 
+    private fun randomBytes(n: Int): ByteArray = ByteArray(n).also { Random(n.toLong()).nextBytes(it) }
+
     private fun scanToTemp(
         stream: ByteArrayInputStream,
+        spaceBudgetBytes: Long = 4L * 1024 * 1024,
         maxJsonBytes: Long = 1L * 1024 * 1024,
         maxEntryBytes: Long = 1L * 1024 * 1024,
-        maxTotalBytes: Long = 4L * 1024 * 1024,
         maxEntries: Int = 100,
+        inflationAllowanceBytes: Long = 4L * 1024 * 1024,
+        maxInflationRatio: Long = 20,
     ): ByteArray? = BackupZip.scanToTemp(
         stream, tempDir,
+        spaceBudgetBytes = spaceBudgetBytes,
         maxJsonBytes = maxJsonBytes,
         maxEntryBytes = maxEntryBytes,
-        maxTotalBytes = maxTotalBytes,
         maxEntries = maxEntries,
+        inflationAllowanceBytes = inflationAllowanceBytes,
+        maxInflationRatio = maxInflationRatio,
     )
 }
