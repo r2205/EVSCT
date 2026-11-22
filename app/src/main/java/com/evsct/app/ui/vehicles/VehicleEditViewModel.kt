@@ -1,6 +1,7 @@
 package com.evsct.app.ui.vehicles
 
 import android.net.Uri
+import android.os.Bundle
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,6 +15,7 @@ import com.evsct.app.util.Units
 import com.evsct.app.util.VehicleImageStore
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -114,8 +116,21 @@ class VehicleEditViewModel @Inject constructor(
         exitRequested = false
     }
 
+    /** Unsaved edits from before the process died, when this screen is being
+     *  recreated — see [captureDraft]. Read before the provider below
+     *  replaces the key's saved value. */
+    private val restoredDraft: Bundle? = savedStateHandle.get<Bundle>(DRAFT_KEY)
+
+    /** Seeds the form from the database (or new-vehicle defaults), then lays
+     *  any [restoredDraft] over it. A photo-picker result redelivered after
+     *  process death waits for it, or the load would overwrite the pick. */
+    private val loadJob: Job
+
     init {
-        viewModelScope.launch {
+        // Called only when Android actually saves state (the app going to
+        // the background), not on every keystroke.
+        savedStateHandle.setSavedStateProvider(DRAFT_KEY) { captureDraft() }
+        loadJob = viewModelScope.launch {
             val units = appPreferences.userUnits.first()
             if (vehicleId > 0) {
                 val v = repository.findById(vehicleId)
@@ -163,6 +178,37 @@ class VehicleEditViewModel @Inject constructor(
             // Every load path above has finished seeding the form; whatever
             // the state holds now is "as loaded" for the dirty check.
             dirtyBaseline = _state.value
+            // After the baseline, so restored edits read as unsaved: the
+            // discard prompt still guards them.
+            restoredDraft?.let(::applyDraft)
+        }
+    }
+
+    /**
+     * What process death must not lose: the form's unsaved edits (see
+     * [VehicleFormDraft]) and the bookkeeping that gives them meaning — the
+     * photo copies made so far (save and back-out cleanup must still find
+     * them) and a row an earlier save already committed (a retry must
+     * update it, not insert a duplicate).
+     *
+     * Before the load lands there is nothing new to capture, so whatever
+     * was restored is handed back as-is: dying twice in a row must not
+     * drop it.
+     */
+    private fun captureDraft(): Bundle {
+        val baseline = dirtyBaseline ?: return restoredDraft ?: Bundle()
+        return Bundle().apply {
+            putBundle(DRAFT_FORM, VehicleFormDraft.capture(_state.value, baseline))
+            putStringArrayList(DRAFT_TOUCHED_IMAGES, ArrayList(touchedImagePaths))
+            committedVehicleId?.let { putLong(DRAFT_COMMITTED_ID, it) }
+        }
+    }
+
+    private fun applyDraft(draft: Bundle) {
+        draft.getStringArrayList(DRAFT_TOUCHED_IMAGES)?.let { touchedImagePaths += it }
+        if (draft.containsKey(DRAFT_COMMITTED_ID)) committedVehicleId = draft.getLong(DRAFT_COMMITTED_ID)
+        draft.getBundle(DRAFT_FORM)?.let { form ->
+            _state.update { VehicleFormDraft.restore(form, it) }
         }
     }
 
@@ -201,7 +247,13 @@ class VehicleEditViewModel @Inject constructor(
                 _state.update { it.copy(transientMessage = "Could not attach photo. Try again or pick a different file.") }
                 return@launch
             }
+            // Recorded before the wait below, so cleanup finds the copy even
+            // if the screen goes away first.
             touchedImagePaths += path
+            // The photo picker is where Android most often kills the app;
+            // its result then arrives on a recreated ViewModel whose form
+            // may still be loading, and the load would replace the photo.
+            loadJob.join()
             _state.update { it.copy(imagePath = path) }
         }
     }
@@ -283,11 +335,15 @@ class VehicleEditViewModel @Inject constructor(
      *  referenced by any surviving row. */
     private suspend fun reconcileImageFiles(finalPath: String?) {
         imageCleanupHandled = true
-        val toDelete = touchedImagePaths.filter { it != finalPath }
-        if (toDelete.isEmpty()) return
+        deleteUnreferenced(touchedImagePaths.filter { it != finalPath })
+    }
+
+    /** Deletes those of [paths] that no vehicle row references. */
+    private suspend fun deleteUnreferenced(paths: List<String>) {
+        if (paths.isEmpty()) return
         val stillReferenced = repository.observeAll().first()
             .mapNotNullTo(mutableSetOf()) { it.imagePath }
-        toDelete.filterNot { it in stillReferenced }.forEach { imageStore.delete(it) }
+        paths.filterNot { it in stillReferenced }.forEach { imageStore.delete(it) }
     }
 
     override fun onCleared() {
@@ -298,7 +354,21 @@ class VehicleEditViewModel @Inject constructor(
         val orphans = touchedImagePaths.filter { it != originalImagePath }
         if (orphans.isEmpty()) return
         appScope.launch {
-            orphans.forEach { imageStore.delete(it) }
+            // Same shared-path guard as reconcileImageFiles. It also covers
+            // a screen recreated after process death: its original comes
+            // from this instance's load, so a photo an earlier instance
+            // already saved (a dropped pop, then the process died) is in the
+            // touched set but isn't the original — and must survive.
+            deleteUnreferenced(orphans)
         }
+    }
+
+    private companion object {
+        /** SavedStateHandle key for [captureDraft]'s bundle, and the keys
+         *  inside it. */
+        const val DRAFT_KEY = "vehicle_edit_draft"
+        const val DRAFT_FORM = "form"
+        const val DRAFT_TOUCHED_IMAGES = "touchedImages"
+        const val DRAFT_COMMITTED_ID = "committedVehicleId"
     }
 }

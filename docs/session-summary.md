@@ -774,6 +774,20 @@ vehicle on the same trip.
   adjustPan devices panned off-screen while typing (see
   "Soft-keyboard (IME) handling"). Delete stays in the top bar,
   away from where thumbs land.
+- **Unsaved edits survive process death** (November 2026): the form
+  lived only in ViewModel memory, so Android killing the app behind the
+  photo picker (the likeliest moment) silently reverted it to the
+  database row. `VehicleFormDraft` mirrors the session form's
+  `SessionFormDraft`: it captures only the fields that differ from the
+  form as loaded, through a `SavedStateHandle` saved-state provider
+  (called only when Android saves state), and lays them over a fresh
+  load. The ViewModel also carries its photo-copy bookkeeping
+  (`touchedImagePaths`) and an already-committed row id, so a retry
+  after a dropped pop still updates rather than duplicates. A picked
+  photo that arrives on the recreated screen waits for the load
+  (`loadJob`), which used to overwrite `imagePath` and orphan the copy
+  on disk, and back-out cleanup gets `reconcileImageFiles`'
+  still-referenced guard, so it never deletes a photo a row uses.
 
 ### Trips
 
@@ -1611,6 +1625,18 @@ the unit pref as a parameter; aggregates pass the default-currency to
   escaping of user-controlled names, dot decimals under comma locales,
   the monthly table, and the map section (basemap, pins, routes, legend,
   and its absence when nothing is located).
+- **`ui/vehicles/VehicleFormDraftTest.kt`** (November 2026, Robolectric)
+  — the vehicle form's process-death draft through a real `Parcel`: an
+  unedited form captures nothing, every editable field round-trips,
+  cleared values (the photo included) stay cleared, untouched fields
+  take the fresh load.
+- **`ui/vehicles/VehicleEditViewModelTest.kt`** (November 2026,
+  Robolectric, in-memory Room, real `SavedStateHandle`) — unsaved edits
+  survive process death, and a second death before the reload; a photo
+  picked while the recreated form is still loading (the load held back
+  by a gated DataStore) is kept and saved; a photo picked before the
+  death is cleaned up on back-out; after a dropped pop, a retry updates
+  the committed row and back-out keeps its photo.
 - **`ui/VehicleScopeTest.kt`** — bucket membership, `needsVehiclePicker`,
   fallbacks, and token round-trips.
 - **`ui/theme/ColorSchemeTest.kt`** — palette properties (see Theme).
@@ -1894,7 +1920,8 @@ stats edges (PRs #72–#77). In November a full-app security and bug audit found
 serious security issues and four medium bugs, fixed together. Highlights
 of what got fixed and built (newest first):
 
-- **November 2026 audit fixes** (branch `claude/funny-ride-7u356s`):
+- **November 2026 audit fixes** (PR #103, branch
+  `claude/funny-ride-7u356s`; the vehicle-form follow-up is PR #102):
   - **Backups restore what export writes**: the fixed 2 GiB total and
     5,000-entry restore caps (and 10 MiB `backup.json`) refused backups
     export had written without complaint. Restore now uses an
@@ -1907,6 +1934,10 @@ of what got fixed and built (newest first):
     single-group comma case follows the device locale.
   - **Session form survives process death**: `SessionFormDraft` in the
     ViewModel's `SavedStateHandle`; picker results wait for the reload.
+  - **Vehicle form survives process death** (#102, follow-up): the same
+    fix as `VehicleFormDraft`. A photo picked while the recreated form
+    loads is no longer overwritten (and orphaned), and back-out cleanup
+    keeps a photo a row still references.
 
 - **September 2026 review fixes** (PRs #72–#77, branch
   `claude/sweet-meitner-4cd0mz`, restarted from `main` between PRs):
